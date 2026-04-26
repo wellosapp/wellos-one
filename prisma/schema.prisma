@@ -1,0 +1,22 @@
+// Wellos Prisma schema
+//
+// MVP: Postgres 16 via Supabase. Use the pooler URL for runtime queries,
+// the direct URL for migrations only.
+//
+// Models will be added as Epic 1+ work begins. Foundation tables planned
+// per docs/wellos-studio-start-plan.md "Database Setup" section:
+// tenants, locations, users, roles, role_assignments, feature_flags,
+// tenant_feature_flags, idempotency_keys, audit_log, and onward.
+//
+// Multi-tenant rule: every tenant-owned table has tenant_id + tenant-scoped
+// indexes. Supabase RLS is enforced on top of application-level scoping.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}

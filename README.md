@@ -11,7 +11,28 @@ This monorepo ships **two products** sharing one backend, one database, and one 
 
 ## Running locally
 
-TBD — fill in once Epic 1 is scaffolded. Until then, follow [`docs/00-V2-per-build-setup.md`](./docs/00-V2-per-build-setup.md) end-to-end to provision accounts, local toolchain, the repo, managed services (Railway / Supabase / Upstash / Vercel / Clerk / Stripe / Postmark / TextLink), domain + TLS, and CI.
+Prerequisites: Node 20.x LTS, pnpm 10.x (auto-installed via Corepack from the `packageManager` pin in `package.json`), Docker (for local Postgres/Redis if developing offline).
+
+```bash
+# Install workspace dependencies
+pnpm install
+
+# Run all apps in parallel (api on :3001, web on :3002, studio on :3003)
+pnpm dev
+
+# Or run individually
+pnpm --filter @wellos/api dev
+pnpm --filter @wellos/web dev
+pnpm --filter @wellos/studio dev
+
+# Quality gates
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
+
+For first-time setup of accounts, managed services (Railway / Supabase / Upstash / Vercel / Clerk / Postmark), and domain + TLS, follow [`docs/00-V2-per-build-setup.md`](./docs/00-V2-per-build-setup.md) end-to-end.
 
 ## Documentation
 

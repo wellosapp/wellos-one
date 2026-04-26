@@ -1,0 +1,11 @@
+{
+  "name": "Wellos Studio",
+  "short_name": "Wellos",
+  "description": "Lighter booking, payments, and CRM for solo practitioners and small studios.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafaf7",
+  "theme_color": "#1a1a1a",
+  "icons": []
+}
