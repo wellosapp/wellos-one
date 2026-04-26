@@ -54,7 +54,7 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 | Layer | Choice | Notes |
 |---|---|---|
 | Language | TypeScript on Node.js 20 LTS | strict mode, no `any` without a comment explaining why |
-| Package manager | **pnpm 9.x** | not npm, not yarn |
+| Package manager | **pnpm 10.x** | not npm, not yarn. Pin via `packageManager` field in `package.json` once Epic 1 scaffolds the workspace. |
 | Backend HTTP | **Fastify** | not Express, not NestJS |
 | DB | **Postgres 16 via Supabase** | use the **pooler** URL (port 6543) for runtime, **direct** URL (port 5432) for Prisma migrations only |
 | ORM | **Prisma** | (v1 spec referenced Drizzle — v2 wins; flag if unsure) |
@@ -111,7 +111,7 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 1. **Never commit `.env` files or secrets.** The only env file committed is `.env.example` with empty placeholders.
 2. **Never push directly to `main`.** Always work on a `feature/*` branch and open a PR.
 3. **Never run destructive commands** (`rm -rf`, `DROP TABLE`, force push, `git reset --hard` on `main`) without the human confirming.
-4. **Use pnpm, not npm or yarn.**
+4. **Use pnpm 10, not npm or yarn.**
 5. **TypeScript strict mode is on. No `any` without a comment explaining why.**
 6. **New database columns require a Prisma migration in `/prisma/migrations`.** Never edit existing tables without a migration. Migrations are additive (expand, not contract).
 7. **Multi-tenant from day one** — every query scoped by `tenant_id`. Supabase RLS enabled on all tables. Never write a query that trusts a single-tenant assumption.
