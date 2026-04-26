@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# WellOs / Velura — VPS Instance Bootstrap Script
+# Wellos — VPS Instance Bootstrap Script (Phase 2 reference)
 # ============================================================================
 #
 # Runs ONCE at first boot on a fresh Ubuntu 24.04 LTS VPS instance.
@@ -292,4 +292,4 @@ echo "Next steps (separate PRs):"
 echo "  - Install provider CLI (aws / doctl / hcloud) for registry auth"
 echo "  - Wire GHCR docker login for pulling release images"
 echo "  - Run certbot once DNS resolves for the subdomains"
-echo "  - Write nginx server blocks for app.velura.com / booking.velura.com / etc."
+echo "  - Write nginx server blocks for app.wellos.one / book.wellos.one / app.wellos.studio / etc."
