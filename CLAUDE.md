@@ -1,4 +1,4 @@
-# CLAUDE.md — WellOs / Velura Project Conventions
+# CLAUDE.md — Wellos Project Conventions
 
 This file is the standing order sheet for Claude Code working in this repo. It merges the workflow rules from `00-V2-per-build-setup.md` §3.4 with a skill-routing layer so the right installed skills fire automatically for each type of work.
 
@@ -8,9 +8,17 @@ This file is the standing order sheet for Claude Code working in this repo. It m
 
 ## 1. What we're building
 
-**Project codename:** WellOs · **Product name:** Velura
-**Category:** Multi-vertical booking + scheduling + payments + CRM SaaS (Mindbody / Vagaro / GlossGenius rebuild)
+**Product family:** there are two products under the Wellos brand, sharing one backend, one database, one event bus, one tenant model:
+
+| Product | Public domain | What it is |
+|---|---|---|
+| **Wellos** | `wellos.one` | Full multi-vertical platform (salon, massage, medspa, fitness/studio, personal training). The Mindbody / Vagaro / GlossGenius rebuild. |
+| **Wellos Studio** | `wellos.studio` | Lighter PWA for solo practitioners and small studios — calendar, booking, SMS, email, CRM, payments. Same backend, simplified UI, gated feature set. See `docs/wellos-studio-start-plan.md`. |
+
+**Category:** Multi-vertical booking + scheduling + payments + CRM SaaS
 **Verticals at launch:** salon, massage, medspa, fitness/studio, personal training
+
+> **Naming history:** the project iterated through "Velura" (full app codename) and "Fundamira Salon" (light app) before settling on Wellos / Wellos Studio in April 2026. Spec docs (`04-booking-flow.md`, `05-`, `10-`, `11-`, `12-`, `006-booking-design-refresh.md`) still contain legacy references to scrub during a later content pass — when reading them, mentally substitute Velura → Wellos and Fundamira → Wellos Studio.
 
 ---
 
@@ -68,7 +76,7 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 | Mobile | **PWA in MVP** — React Native deferred to Growth phase | do NOT build RN in MVP |
 | Automations | **n8n** (self-hosted) + internal bridge | |
 | Backend hosting | **Railway** (API + BullMQ worker) | two services in one project (API + worker), staging is a separate Railway project |
-| Frontend hosting | **Vercel** (Hobby tier in MVP) | one project, custom domain `app.<platform-domain>`, separate project for staging |
+| Frontend hosting | **Vercel** (Hobby tier in MVP) | one project, custom domain `app.wellos.one`, separate project for staging |
 | DNS / registrar | **Cloudflare** | gray-cloud (DNS only) at MVP — orange-cloud proxying interferes with Vercel/Railway TLS provisioning |
 | Monorepo | pnpm workspaces | |
 | Error tracking | **Sentry** | separate projects for `web` and `api`, source maps uploaded at deploy |
@@ -82,8 +90,9 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 ```
 /
 ├── apps/
-│   ├── web/                  # Next.js 14 App Router — deployed to Vercel
-│   └── api/                  # Fastify + BullMQ worker — deployed to Railway
+│   ├── web/                  # Full Wellos staff/admin app — Next.js 14 → Vercel → app.wellos.one
+│   ├── studio/               # Wellos Studio PWA — Next.js 14 → Vercel → app.wellos.studio
+│   └── api/                  # Fastify + BullMQ worker — Railway → api.wellos.one (shared by both products)
 ├── packages/
 │   ├── shared/               # Shared types, utils, schema
 │   └── notifications/        # SmsProvider + EmailProvider interfaces and adapters
@@ -175,7 +184,7 @@ PR body must include: ticket reference (`Closes O-X` / `Refs O-X`), one-paragrap
 - **Squash and merge.** One PR = one commit on `main`.
 - Delete the feature branch after merge.
 - Railway + Vercel auto-deploy on push to `main`. Watch Railway's deploy log and Vercel's deployment dashboard until both go green.
-- Hit `https://app.<platform-domain>` and `https://api.<platform-domain>/healthz` after deploy — both 200 means production is live on the new version.
+- Hit `https://app.wellos.one` and `https://api.wellos.one/healthz` after deploy — both 200 means production is live on the new version.
 
 ### 6.5 When things fail
 
@@ -245,7 +254,7 @@ Design polish (load when the ticket is visual / UX):
 - **`emil-design-eng`** — design-engineering polish.
 - **`landing-page-design`** — marketing / landing surfaces only.
 - **`ux-designer`** — flows + information architecture.
-- **`liquid-glass-design`** — ONLY if we explicitly want glass/translucent. **Velura default is warm matte — do not apply by default.**
+- **`liquid-glass-design`** — ONLY if we explicitly want glass/translucent. **Wellos default is warm matte — do not apply by default.**
 
 Skip in MVP (defer to Growth):
 - ~~`building-native-ui`~~, ~~`react-native-best-practices`~~, ~~`react-native-design`~~, ~~`sleek-design-mobile-apps`~~, ~~`vercel-react-native-skills`~~ — PWA-only in MVP.
@@ -303,9 +312,9 @@ Use whenever work touches the `automations` module or the n8n bridge.
 | Vercel deployed but page shows "Application error" | Check Vercel runtime logs (Functions tab). Usually a runtime env var is missing. |
 | Supabase connection times out from Railway | Confirm Railway is using the **pooler** connection string (port 6543), not direct (5432). |
 | Prisma migration fails with "prepared statement already exists" | You're using the pooler URL for migrations — switch to `DIRECT_URL` for `prisma migrate`, keep `DATABASE_URL` (pooler) for runtime. |
-| Clerk webhook doesn't fire | Verify the webhook URL is the `https://api.<platform-domain>/...` form, not the Railway-default `*.up.railway.app` URL (Clerk requires a stable domain). |
+| Clerk webhook doesn't fire | Verify the webhook URL is the `https://api.wellos.one/...` form, not the Railway-default `*.up.railway.app` URL (Clerk requires a stable domain). |
 | Stripe webhook signature verification fails | Wrong `STRIPE_WEBHOOK_SECRET` — there's a separate one per webhook endpoint, and a separate one per env (test vs live). |
-| Postmark email goes to spam | DKIM probably failed to verify. Run `dig TXT _domainkey.<platform-domain>` and confirm Postmark sees it as verified. |
+| Postmark email goes to spam | DKIM probably failed to verify. Run `dig TXT _domainkey.wellos.one` and confirm Postmark sees it as verified. |
 | Postmark webhook fires but handler 401s | Postmark uses Basic Auth on webhooks. Set the user/pass in Postmark's webhook config and on your handler. |
 | TextLink message stuck in queue | One of the 3 SIMs is offline. Check Devices Console; physical phone may be off Wi-Fi or low battery. |
 | TextLink inbound webhook missing STOP message | Confirm "Received Message" webhook is configured in TextLink — separate from "Sent" and "Failed". |
