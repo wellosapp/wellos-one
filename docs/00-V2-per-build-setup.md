@@ -128,7 +128,7 @@ Every developer working on the project needs the same local toolchain. Pin versi
 | Tool | Version | Install |
 |---|---|---|
 | **Node.js** | 20.x LTS | `nvm install 20 && nvm use 20` |
-| **pnpm** | 9.x | `corepack enable && corepack prepare pnpm@9 --activate` |
+| **pnpm** | 10.x | `corepack enable && corepack prepare pnpm@10 --activate` |
 | **Docker Desktop** | latest | docker.com — used for local Postgres/Redis if developing offline |
 | **Git** | 2.40+ | git-scm.com |
 | **`gh`** (GitHub CLI) | latest | `brew install gh` |
