@@ -1,0 +1,27 @@
+{
+  "name": "wellos",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Wellos and Wellos Studio monorepo — multi-vertical booking + scheduling + payments + CRM platform",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --parallel build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r --parallel --no-bail lint",
+    "typecheck": "pnpm -r --parallel --no-bail typecheck",
+    "test": "pnpm -r --parallel --no-bail test"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
+  }
+}

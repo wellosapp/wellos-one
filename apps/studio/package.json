@@ -1,0 +1,27 @@
+{
+  "name": "@wellos/studio",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Wellos Studio — lighter PWA for solo practitioners and small studios, deployed to Vercel at app.wellos.studio",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --port 3003",
+    "start": "next start --port 3003",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'test placeholder — wire Vitest in a follow-up PR' && exit 0"
+  },
+  "dependencies": {
+    "next": "14.2.18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.13",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.18",
+    "typescript": "5.6.3"
+  }
+}
