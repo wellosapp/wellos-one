@@ -1,0 +1,25 @@
+# Normalize line endings across Windows dev and Linux production.
+# All text files use LF in the repo; Windows devs get LF in their working tree too.
+* text=auto eol=lf
+
+# Shell scripts must always be LF so they run on the Droplet.
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# Windows-only files that must stay CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary files — never convert.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.woff      binary
+*.woff2     binary
