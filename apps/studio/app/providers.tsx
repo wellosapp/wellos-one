@@ -1,5 +1,6 @@
 'use client';
 
+import { ClerkProvider } from '@clerk/nextjs';
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { useEffect } from 'react';
@@ -27,5 +28,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // hook for any future provider setup
   }, []);
 
-  return <PostHogProvider client={posthog}>{children}</PostHogProvider>;
+  return (
+    <ClerkProvider
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
+    >
+      <PostHogProvider client={posthog}>{children}</PostHogProvider>
+    </ClerkProvider>
+  );
 }

@@ -1,12 +1,17 @@
 'use client';
 
-// PostHog provider wraps the entire app on the client side. Initialization
-// runs once when this component mounts in the browser. Keys come from
-// NEXT_PUBLIC_* env vars baked into the bundle at build time (so they're
-// frontend-safe — see PostHog's "publishable" key model).
+// ClerkProvider wraps PostHog so a future posthog.identify(clerkUserId) hook
+// can read useUser() without rearranging the tree. Auth env (publishableKey)
+// auto-resolves from NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY.
 //
+// PostHog provider wraps the rest of the app on the client side. Init runs
+// once at module load. Keys come from NEXT_PUBLIC_* env vars baked into the
+// bundle at build time (frontend-safe).
+//
+// See https://clerk.com/docs/quickstarts/nextjs
 // See https://posthog.com/docs/libraries/next-js
 
+import { ClerkProvider } from '@clerk/nextjs';
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { useEffect } from 'react';
@@ -39,5 +44,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // hook for any future provider setup that needs DOM access.
   }, []);
 
-  return <PostHogProvider client={posthog}>{children}</PostHogProvider>;
+  return (
+    <ClerkProvider
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
+    >
+      <PostHogProvider client={posthog}>{children}</PostHogProvider>
+    </ClerkProvider>
+  );
 }

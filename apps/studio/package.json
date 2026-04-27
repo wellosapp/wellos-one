@@ -12,6 +12,7 @@
     "test": "echo 'test placeholder — wire Vitest in a follow-up PR' && exit 0"
   },
   "dependencies": {
+    "@clerk/nextjs": "6.12.4",
     "@sentry/nextjs": "8.42.0",
     "next": "14.2.35",
     "posthog-js": "1.196.1",
