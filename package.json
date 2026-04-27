@@ -16,15 +16,24 @@
     "test": "pnpm -r --parallel --no-bail test"
   },
   "devDependencies": {
+    "@prisma/client": "5.22.0",
+    "prisma": "5.22.0",
     "typescript": "5.6.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
       "@sentry/cli",
       "@sentry/profiling-node",
       "core-js",
       "esbuild",
+      "prisma",
       "unrs-resolver"
     ]
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx --tsconfig apps/api/tsconfig.json prisma/seed.ts"
   }
 }

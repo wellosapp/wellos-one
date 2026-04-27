@@ -5,6 +5,8 @@ import './instrument.js';
 import * as Sentry from '@sentry/node';
 import Fastify from 'fastify';
 
+import prismaPlugin from './plugins/prisma.js';
+
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
@@ -20,6 +22,8 @@ const app = Fastify({
 // Hook Sentry into Fastify's error pipeline. Captures unhandled errors and
 // sends them to Sentry with route + request context attached.
 Sentry.setupFastifyErrorHandler(app);
+
+await app.register(prismaPlugin);
 
 app.get('/healthz', async () => {
   return { ok: true };
