@@ -1,10 +1,18 @@
+import { withSentryConfig } from '@sentry/nextjs';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    // Type-safe `<Link href="...">` based on actual route segments.
     typedRoutes: true,
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT_STUDIO,
+  hideSourceMaps: true,
+  silent: !process.env.CI,
+  tunnelRoute: '/monitoring',
+  automaticVercelMonitors: false,
+});

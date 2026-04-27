@@ -181,9 +181,41 @@ All accounts live under email `luexwellness@gmail.com` unless otherwise noted. 2
 
 **Status: deferred** — see `textlink_deferred` memory. Existing TextLink account with 3 SIMs already paid. Webhook URLs (`api.wellos.one/webhooks/textlink/*`) need Railway up first (✅ done) but SIM allocation strategy lives in `textlink-integration-guide.md` which is still pending export from Claude.ai project. Will pick up before Epic 8 (Notifications).
 
-### 3.10 Sentry / PostHog / BetterStack
+### 3.10 Sentry (error tracking)
 
-**Status: not yet set up** — v2 §7 (the next thing to do). All free tiers.
+- **Account:** TBD (created during this PR's pre-work)
+- **Plan:** Free tier (5K errors/mo)
+- **Projects (3, one per app surface):**
+  - `wellos-api` — Node SDK, instrumented in `apps/api/src/instrument.ts`
+  - `wellos-web` — Next.js SDK, configured via `apps/web/sentry.{client,server,edge}.config.ts`
+  - `wellos-studio` — Next.js SDK, configured via `apps/studio/sentry.{client,server,edge}.config.ts`
+- **Source-map upload:** `SENTRY_AUTH_TOKEN` set in Vercel env for both `wellos-web` and `wellos-studio` projects → `withSentryConfig` in each `next.config.mjs` uploads source maps on every Vercel build → production stack traces stay un-minified
+- **Sample rates:** 10% traces + 10% profiling in production, 100% in dev. Replay: 10% normal sessions, 100% on error.
+- **Verification endpoints:**
+  - `GET https://api.wellos.one/__test/error` (only when `NODE_ENV !== 'production'`)
+  - "Throw a test error (Sentry)" button on both Next hello pages
+- **Local dev:** Sentry disabled unless `SENTRY_ENABLED_LOCAL=true` (Node) or `NEXT_PUBLIC_SENTRY_ENABLED_LOCAL=true` (browser)
+
+### 3.11 PostHog (product analytics + session replay)
+
+- **Account:** TBD (created during this PR's pre-work)
+- **Plan:** Free tier (1M events/mo)
+- **Project:** `wellos` (single project, both frontends share the publishable key)
+- **Region:** us.posthog.com (US data residency)
+- **Wired in:** `apps/web/app/providers.tsx` and `apps/studio/app/providers.tsx` (PostHogProvider wrapping `{children}` in each layout)
+- **Capture defaults:** pageview + pageleave on; person profiles `identified_only` (no PII for anonymous users); session replay with all inputs masked
+- **Backend captures:** none yet — Node SDK can be added later when we want server-side analytics
+
+### 3.12 BetterStack (uptime monitoring)
+
+- **Account:** TBD (created during this PR's pre-work)
+- **Plan:** Free tier (10 monitors)
+- **Monitors (3, 60-second interval):**
+  - `https://api.wellos.one/healthz`
+  - `https://app.wellos.one`
+  - `https://app.wellos.studio`
+- **Alert routing:** email-only at MVP (Slack later)
+- **Status page:** not yet exposed publicly (BetterStack provides one for free; can publish if we want a customer-facing health page)
 
 ---
 
