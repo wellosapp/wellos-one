@@ -47,7 +47,7 @@ As of this document, the MVP infrastructure foundation is in place but product f
 | Auth | Clerk | App exists in development environment; webhook deferred |
 | Payments | Stripe | Deferred |
 | SMS | TextLink | Deferred |
-| Observability | Sentry/PostHog/BetterStack | SDKs wired in code; account/DSN setup pending pre-work |
+| Observability | Sentry/PostHog/BetterStack | **Live and verified end-to-end (2026-04-27)** |
 
 ---
 
@@ -115,12 +115,19 @@ Deferred does not mean optional forever. It means do not fake completeness befor
 
 ### Immediate next infra tasks
 
-Before going deep into feature development, finish these:
-1. ~~Set up Sentry for API and web~~ — SDK wired; verify post-deploy via `/__test/error` and the throw-error button
-2. ~~Set up PostHog in the web app~~ — SDK wired; verify by loading both apps and checking PostHog "Live" tab
-3. ~~Set up BetterStack or Uptime Robot~~ — monitors configured during this PR's pre-work
+All immediate infra tasks completed:
+1. ~~Set up Sentry for API and web~~ — verified end-to-end 2026-04-27 (test errors captured in all 3 projects with un-minified stack traces)
+2. ~~Set up PostHog in the web app~~ — verified 2026-04-27 (pageviews, pageleave, web vitals, autocapture all flowing for both Next apps)
+3. ~~Set up BetterStack or Uptime Robot~~ — 3 monitors green, 3-min interval (free-tier)
 4. ~~Fix the Git/Vercel identity mismatch~~ — done 2026-04-26
-5. Rename the Railway auto-generated project if desired (5-min cosmetic, not blocking)
+5. ~~Rename the Railway auto-generated project~~ — DEFERRED (still `diligent-achievement`; cosmetic only)
+
+**Small follow-ups noted but not yet done** (none blocking Epic 1):
+- Resolve/delete 3 misrouted events in `wellos-api` Sentry (from initial DSN paste mistake)
+- Fix `apple-mobile-web-app-capable` deprecation warning in `apps/studio/app/layout.tsx`
+- Add favicon to both Next apps
+- Investigate "11 issues" badge in Chrome DevTools console on app.wellos.one (likely benign init logs)
+- Rename Railway project `diligent-achievement` → `wellos-prod`
 
 ### Then start Epic 1
 
