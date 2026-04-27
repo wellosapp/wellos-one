@@ -183,7 +183,7 @@ All accounts live under email `luexwellness@gmail.com` unless otherwise noted. 2
 
 ### 3.10 Sentry (error tracking)
 
-- **Account:** TBD (created during this PR's pre-work)
+- **Account:** active under `luexwellness@gmail.com`
 - **Plan:** Free tier (5K errors/mo)
 - **Projects (3, one per app surface):**
   - `wellos-api` — Node SDK, instrumented in `apps/api/src/instrument.ts`
@@ -198,7 +198,7 @@ All accounts live under email `luexwellness@gmail.com` unless otherwise noted. 2
 
 ### 3.11 PostHog (product analytics + session replay)
 
-- **Account:** TBD (created during this PR's pre-work)
+- **Account:** active under `luexwellness@gmail.com`
 - **Plan:** Free tier (1M events/mo)
 - **Project:** `wellos` (single project, both frontends share the publishable key)
 - **Region:** us.posthog.com (US data residency)
@@ -208,9 +208,9 @@ All accounts live under email `luexwellness@gmail.com` unless otherwise noted. 2
 
 ### 3.12 BetterStack (uptime monitoring)
 
-- **Account:** TBD (created during this PR's pre-work)
+- **Account:** active under `luexwellness@gmail.com`
 - **Plan:** Free tier (10 monitors)
-- **Monitors (3, 60-second interval):**
+- **Monitors (3, 3-minute interval — free-tier limit):**
   - `https://api.wellos.one/healthz`
   - `https://app.wellos.one`
   - `https://app.wellos.studio`
