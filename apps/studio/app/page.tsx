@@ -1,3 +1,5 @@
+import { ThrowErrorButton } from './throw-error-button';
+
 export default function Home() {
   return (
     <main style={{ padding: '4rem 2rem', fontFamily: 'system-ui, sans-serif' }}>
@@ -9,6 +11,7 @@ export default function Home() {
         Hello-world scaffold — full app coming, deploying to{' '}
         <code>app.wellos.studio</code>.
       </p>
+      <ThrowErrorButton />
     </main>
   );
 }

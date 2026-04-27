@@ -20,6 +20,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@sentry/cli",
+      "@sentry/profiling-node",
+      "core-js",
       "esbuild",
       "unrs-resolver"
     ]
