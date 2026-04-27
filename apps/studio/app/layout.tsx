@@ -21,6 +21,12 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
+// ClerkProvider validates NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY at module import,
+// so prerendering any route without that env var crashes the build. Forcing
+// dynamic skips prerender; routes render on-demand at request time when the
+// env is present. Revisit if/when a static marketing surface needs SSG.
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: {
