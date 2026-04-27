@@ -1,15 +1,21 @@
 // Wellos Prisma schema
 //
-// MVP: Postgres 16 via Supabase. Use the pooler URL for runtime queries,
-// the direct URL for migrations only.
+// MVP: Postgres 16 via Supabase. DATABASE_URL points at the Transaction Pooler
+// (port 6543) for runtime; DIRECT_URL points at the Session Pooler (port 5432)
+// for `prisma migrate` only — the Transaction Pooler can't run migrations
+// because of prepared-statement reuse.
 //
-// Models will be added as Epic 1+ work begins. Foundation tables planned
-// per docs/wellos-studio-start-plan.md "Database Setup" section:
-// tenants, locations, users, roles, role_assignments, feature_flags,
-// tenant_feature_flags, idempotency_keys, audit_log, and onward.
-//
-// Multi-tenant rule: every tenant-owned table has tenant_id + tenant-scoped
-// indexes. Supabase RLS is enforced on top of application-level scoping.
+// Conventions:
+//   - cuid v1 IDs (`@default(cuid())`) for now. Epic 2 spec calls for cuid2;
+//     revisit when we upgrade past Prisma 5.x. (Today's blocker: Prisma 6's
+//     auto-install-CLI postinstall recurses badly under pnpm 10 workspaces.)
+//   - camelCase fields in Prisma, snake_case in Postgres via @map / @@map.
+//   - Every tenant-owned table carries `tenant_id` plus a tenant-scoped index.
+//   - Soft delete (`deleted_at`) on entities an admin might "delete";
+//     join tables, append-only logs, and TTL'd rows hard-delete instead.
+//   - Supabase RLS lands in a follow-up PR (placeholder dir at supabase/policies/).
+//     The API uses the Supabase service role at runtime, which bypasses RLS;
+//     RLS becomes the safety net once any frontend talks to Supabase directly.
 
 generator client {
   provider = "prisma-client-js"
@@ -19,4 +25,185 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum ActorType {
+  user
+  system
+  webhook
+}
+
+// ---------- Tenancy & users ----------
+
+model Tenant {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt      @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  locations          Location[]
+  users              User[]
+  roleAssignments    RoleAssignment[]
+  tenantFeatureFlags TenantFeatureFlag[]
+  idempotencyKeys    IdempotencyKey[]
+  auditEntries       AuditLog[]
+
+  @@index([deletedAt])
+  @@map("tenants")
+}
+
+model Location {
+  id        String    @id @default(cuid())
+  tenantId  String    @map("tenant_id")
+  name      String
+  timezone  String    @default("America/New_York")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt      @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@map("locations")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  clerkUserId String?   @unique @map("clerk_user_id")
+  email       String
+  firstName   String?   @map("first_name")
+  lastName    String?   @map("last_name")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  roleAssignments RoleAssignment[]
+  auditEntries    AuditLog[]       @relation("AuditActor")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@map("users")
+}
+
+// ---------- RBAC ----------
+
+model Role {
+  id          String    @id @default(cuid())
+  name        String    @unique // 'admin' | 'manager' | 'staff'
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  assignments RoleAssignment[]
+
+  @@map("roles")
+}
+
+model RoleAssignment {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, userId, roleId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("role_assignments")
+}
+
+// ---------- Feature flags ----------
+
+model FeatureFlag {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  description    String?
+  category       String?
+  defaultEnabled Boolean  @default(false) @map("default_enabled")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt      @map("updated_at")
+
+  tenantOverrides TenantFeatureFlag[]
+
+  @@map("feature_flags")
+}
+
+model TenantFeatureFlag {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  featureFlagId String    @map("feature_flag_id")
+  enabled       Boolean
+  // Plan-limit numbers, e.g. { "maxLocations": 1, "maxStaff": 5 }.
+  limits        Json?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt      @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  featureFlag FeatureFlag @relation(fields: [featureFlagId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, featureFlagId])
+  @@index([tenantId])
+  @@map("tenant_feature_flags")
+}
+
+// ---------- Idempotency ----------
+
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  tenantId       String?  @map("tenant_id")
+  key            String
+  method         String
+  path           String
+  requestHash    String   @map("request_hash")
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime @map("expires_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, key, method, path])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// ---------- Audit log ----------
+// Append-only. No `updatedAt`, no soft-delete; rows are immutable once written.
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  tenantId    String?   @map("tenant_id")
+  actorUserId String?   @map("actor_user_id")
+  actorType   ActorType @map("actor_type")
+  action      String
+  entityType  String    @map("entity_type")
+  entityId    String    @map("entity_id")
+  before      Json?
+  after       Json?
+  ip          String?
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  actor  User?   @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@map("audit_log")
 }
