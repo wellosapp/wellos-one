@@ -38,6 +38,7 @@ For first-time setup of accounts, managed services (Railway / Supabase / Upstash
 
 All engineering docs live in [`docs/`](./docs). Start with:
 
+- [`docs/INFRASTRUCTURE.md`](./docs/INFRASTRUCTURE.md) — **current state snapshot** of every running service, env var, DNS record, and deploy URL. Update after every infra change.
 - [`docs/00-V2-per-build-setup.md`](./docs/00-V2-per-build-setup.md) — **canonical** setup checklist + daily workflow (v2, managed PaaS path)
 - [`docs/mindbody-rebuild-master-spec.md`](./docs/mindbody-rebuild-master-spec.md) — engineering blueprint (single source of truth for the full Wellos app)
 - [`docs/wellos-studio-start-plan.md`](./docs/wellos-studio-start-plan.md) — startup plan for the Wellos Studio lighter sibling
