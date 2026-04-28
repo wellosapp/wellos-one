@@ -74,7 +74,11 @@ model Location {
 
 model User {
   id          String    @id @default(cuid())
-  tenantId    String    @map("tenant_id")
+  // tenantId nullable: webhook-created users start as orphans (no tenant
+  // assigned). Bootstrap admin (sub-step 8) and Epic 2 invite flow assign
+  // tenant_id later. Postgres treats NULL as distinct in unique constraints,
+  // so multiple orphans can share an email until they're claimed.
+  tenantId    String?   @map("tenant_id")
   clerkUserId String?   @unique @map("clerk_user_id")
   email       String
   firstName   String?   @map("first_name")
@@ -83,7 +87,7 @@ model User {
   updatedAt   DateTime  @updatedAt      @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   roleAssignments RoleAssignment[]
   auditEntries    AuditLog[]       @relation("AuditActor")
 
