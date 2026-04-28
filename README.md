@@ -11,28 +11,97 @@ This monorepo ships **two products** sharing one backend, one database, and one 
 
 ## Running locally
 
-Prerequisites: Node 20.x LTS, pnpm 10.x (auto-installed via Corepack from the `packageManager` pin in `package.json`), Docker (for local Postgres/Redis if developing offline).
+### Prerequisites
+
+- **Node 20.x LTS** (currently tested on 20.20.x)
+- **pnpm 10.x** — auto-installed via Corepack from the `packageManager` pin in `package.json`
+- A filled-in password-manager entry for the Wellos accounts (Supabase, Clerk, Postmark, Upstash, Sentry, PostHog) — see [`docs/INFRASTRUCTURE.md`](./docs/INFRASTRUCTURE.md) §3 for the full list
+
+> Docker is **not** required at MVP — we run on managed Supabase + Upstash. Docker only becomes relevant for the Phase 2 DigitalOcean migration target.
+
+### Fresh-clone walkthrough
+
+The dev setup needs **four** env files because of how each tool reads its environment. The `setup-env` script creates all four with the right shape; you fill in the values.
 
 ```bash
-# Install workspace dependencies
-pnpm install
+git clone git@github.com:wellosapp/wellos-one.git
+cd wellos-one
+pnpm install                                  # also runs `prisma generate` via postinstall
 
-# Run all apps in parallel (api on :3001, web on :3002, studio on :3003)
-pnpm dev
+# Scaffold all four env files (idempotent — safe to re-run; pass --force to overwrite)
+bash scripts/setup-env.sh                     # macOS / Linux / Git Bash on Windows
+# pwsh scripts/setup-env.ps1                  # Windows PowerShell
 
-# Or run individually
+# Fill in real values:
+#   - .env                       (root: full schema, used by `prisma` CLI)
+#   - apps/api/.env              (same schema as root; tsx loads .env from CWD)
+#   - apps/web/.env.local        (NEXT_PUBLIC_* + Clerk routing only)
+#   - apps/studio/.env.local     (same shape as web, plus Studio-specific vars)
+
+# After editing root .env, re-sync to apps/api so they don't drift:
+bash scripts/setup-env.sh --force             # or:  cp .env apps/api/.env
+```
+
+Why four files (not one):
+
+- **Root `.env`** is read by the Prisma CLI (`pnpm prisma db seed`, migrations). Prisma reads it from the schema's directory.
+- **`apps/api/.env`** is read by `tsx` (4.x) when `pnpm --filter @wellos/api dev` runs — tsx auto-loads `.env` from CWD, and Prisma 5 doesn't walk up to find the root `.env`. We track this as a follow-up to consolidate via `dotenv-cli` (see [`docs/SESSION-HANDOFF-2026-04-28.md`](./docs/SESSION-HANDOFF-2026-04-28.md)).
+- **`apps/web/.env.local`** and **`apps/studio/.env.local`** are read by Next.js per app directory. Only `NEXT_PUBLIC_*` and Clerk routing vars belong here — Next.js never sees the root `.env`.
+
+### Run the dev servers
+
+```bash
+pnpm dev                                      # all three apps in parallel
+# api on :3001  ·  web on :3002  ·  studio on :3003
+
+# or individually:
 pnpm --filter @wellos/api dev
 pnpm --filter @wellos/web dev
 pnpm --filter @wellos/studio dev
+```
 
-# Quality gates
-pnpm typecheck
+### Smoke check
+
+```bash
+# API health (expect: {"ok":true,"db":"ok"})
+curl -sS http://localhost:3001/healthz
+
+# Visit http://localhost:3002 — sign in via Clerk, then check
+# http://localhost:3001/me with the session token (devtools → cookies →
+# __session). Expect a payload with your DB user populated by the Clerk
+# webhook from earlier in your session.
+```
+
+If `/healthz` returns `db: "error"`, the API can't reach Postgres — most likely `DATABASE_URL` is wrong, or you're using the direct connection (`db.<ref>.supabase.co`, IPv6-only) instead of the **Transaction Pooler** URL on port 6543. See [`docs/INFRASTRUCTURE.md`](./docs/INFRASTRUCTURE.md) §3.4.
+
+### Database migrations & seed
+
+The dev DB is the production Supabase project — there's no separate dev DB at MVP (per [`docs/01A-current-build-context.md`](./docs/01A-current-build-context.md) §7). Migrations land via PR; for a fresh clone there's nothing to run unless you're working on a new schema change.
+
+```bash
+# Create a new migration (interactive — needs DIRECT_URL)
+pnpm --filter @wellos/api db:migrate
+
+# Apply pending migrations to the connected DB (non-interactive, used by Railway)
+pnpm --filter @wellos/api db:migrate:deploy
+
+# Seed roles + feature flags (idempotent)
+pnpm --filter @wellos/api db:seed
+
+# Open Prisma Studio against the connected DB
+pnpm --filter @wellos/api db:studio
+```
+
+### Quality gates
+
+```bash
+pnpm typecheck                                # all 4 workspaces
 pnpm lint
 pnpm test
 pnpm build
 ```
 
-For first-time setup of accounts, managed services (Railway / Supabase / Upstash / Vercel / Clerk / Postmark), and domain + TLS, follow [`docs/00-V2-per-build-setup.md`](./docs/00-V2-per-build-setup.md) end-to-end.
+For first-time setup of the managed-service accounts (Railway / Supabase / Upstash / Vercel / Clerk / Postmark) and domain + TLS, follow [`docs/00-V2-per-build-setup.md`](./docs/00-V2-per-build-setup.md) end-to-end.
 
 ## Documentation
 
