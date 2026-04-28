@@ -8,6 +8,7 @@ import Fastify from 'fastify';
 import clerkPlugin from './plugins/clerk.js';
 import corsPlugin from './plugins/cors.js';
 import prismaPlugin from './plugins/prisma.js';
+import adminRoutes from './routes/admin/index.js';
 import meRoutes from './routes/me.js';
 import webhookRoutes from './routes/webhooks/index.js';
 
@@ -67,6 +68,7 @@ app.get('/', async () => {
 
 // Protected routes — pulled into routes/ files as the surface grows.
 await app.register(meRoutes);
+await app.register(adminRoutes);
 
 // Webhooks last, encapsulated. Raw-body content-type parser is scoped to
 // this register call only so non-webhook routes keep Fastify's default

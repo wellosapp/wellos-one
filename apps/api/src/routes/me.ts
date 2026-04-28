@@ -7,6 +7,11 @@ import { requireAuth } from '../middleware/requireAuth.js';
 //
 // `user: null` is meaningful: it means the Clerk webhook hasn't populated this
 // user in our DB yet (debug signal — webhook outage, race with first login).
+//
+// Deliberately uses requireAuth + inline lookup, NOT the loadCurrentUser
+// preHandler from sub-step 6. loadCurrentUser would 401 on the
+// pre-webhook-sync case and lose this debug signal — /me is the one
+// endpoint where we want to surface it instead of hiding it behind a 401.
 export default async function meRoutes(app: FastifyInstance): Promise<void> {
   app.get('/me', { preHandler: requireAuth }, async (request) => {
     const { userId, sessionId } = getAuth(request);
