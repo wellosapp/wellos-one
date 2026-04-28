@@ -64,7 +64,13 @@ function parseAndValidateArgs(): Args {
 
 async function main(): Promise<void> {
   const args = parseAndValidateArgs();
-  const prisma = new PrismaClient();
+  // Prefer DIRECT_URL (session pooler, port 5432) for one-off scripts —
+  // the transaction pooler (DATABASE_URL, port 6543) breaks Prisma's
+  // prepared statements ("prepared statement s0 already exists") even
+  // with ?pgbouncer=true. The session pooler handles them correctly.
+  // Falls back to DATABASE_URL if DIRECT_URL isn't set.
+  const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
+  const prisma = new PrismaClient(url ? { datasources: { db: { url } } } : {});
 
   try {
     const candidates = await prisma.user.findMany({
