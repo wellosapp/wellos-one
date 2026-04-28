@@ -9,6 +9,7 @@ import clerkPlugin from './plugins/clerk.js';
 import corsPlugin from './plugins/cors.js';
 import prismaPlugin from './plugins/prisma.js';
 import meRoutes from './routes/me.js';
+import webhookRoutes from './routes/webhooks/index.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -51,6 +52,12 @@ app.get('/', async () => {
 
 // Protected routes — pulled into routes/ files as the surface grows.
 await app.register(meRoutes);
+
+// Webhooks last, encapsulated. Raw-body content-type parser is scoped to
+// this register call only so non-webhook routes keep Fastify's default
+// JSON parser. requireAuth NOT applied — provider HMAC (svix for Clerk)
+// is the authentication mechanism.
+await app.register(webhookRoutes);
 
 // Verification endpoint for confirming Sentry is wired correctly. Hit this
 // from anywhere (curl, browser) and a deliberate error should appear in
