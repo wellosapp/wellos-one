@@ -39,8 +39,23 @@ await app.register(prismaPlugin);
 
 // Public routes — no requireAuth. /healthz is hit by BetterStack uptime
 // monitoring without credentials; / is a humans-curl smoke target.
+//
+// /healthz also pings Postgres so the Prisma connection pool stays warm
+// between Railway serverless cold starts. Without this, the first webhook
+// after an idle period times out trying to reach Supabase pooler. BetterStack
+// hits us every 3 minutes — that's enough to keep the pool warm.
+//
+// If the DB ping fails, we still return 200 so BetterStack doesn't false-
+// alarm on Supabase blips, but include `db: 'error'` in the body so a deeper
+// monitor can detect it.
 app.get('/healthz', async () => {
-  return { ok: true };
+  try {
+    await app.prisma.$queryRaw`SELECT 1`;
+    return { ok: true, db: 'ok' };
+  } catch (err) {
+    app.log.warn({ err }, '/healthz DB ping failed');
+    return { ok: true, db: 'error' };
+  }
 });
 
 app.get('/', async () => {
