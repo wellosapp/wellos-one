@@ -12,6 +12,14 @@ export const metadata: Metadata = {
     title: 'Wellos Studio',
     statusBarStyle: 'default',
   },
+  // `appleWebApp.capable` only emits the deprecated
+  // <meta name="apple-mobile-web-app-capable">. Modern browsers want the
+  // standardized <meta name="mobile-web-app-capable"> too — emitting both
+  // keeps install-to-home-screen working on iOS < 16 while silencing the
+  // Chrome/Safari devtools deprecation warning.
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
 };
 
 export const viewport: Viewport = {
