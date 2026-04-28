@@ -5,7 +5,10 @@ import './instrument.js';
 import * as Sentry from '@sentry/node';
 import Fastify from 'fastify';
 
+import clerkPlugin from './plugins/clerk.js';
+import corsPlugin from './plugins/cors.js';
 import prismaPlugin from './plugins/prisma.js';
+import meRoutes from './routes/me.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -23,8 +26,18 @@ const app = Fastify({
 // sends them to Sentry with route + request context attached.
 Sentry.setupFastifyErrorHandler(app);
 
+// Plugin order:
+//   1. CORS — first so OPTIONS preflights short-circuit before JWKS work.
+//   2. Clerk — populates request.auth on every request; does NOT block.
+//      Per-route opt-in via requireAuth keeps /healthz + future
+//      /webhooks/* routes open.
+//   3. Prisma — DB decorator.
+await app.register(corsPlugin);
+await app.register(clerkPlugin);
 await app.register(prismaPlugin);
 
+// Public routes — no requireAuth. /healthz is hit by BetterStack uptime
+// monitoring without credentials; / is a humans-curl smoke target.
 app.get('/healthz', async () => {
   return { ok: true };
 });
@@ -35,6 +48,9 @@ app.get('/', async () => {
     healthz: '/healthz',
   };
 });
+
+// Protected routes — pulled into routes/ files as the surface grows.
+await app.register(meRoutes);
 
 // Verification endpoint for confirming Sentry is wired correctly. Hit this
 // from anywhere (curl, browser) and a deliberate error should appear in
