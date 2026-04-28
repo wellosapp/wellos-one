@@ -76,18 +76,6 @@ await app.register(adminRoutes);
 // is the authentication mechanism.
 await app.register(webhookRoutes);
 
-// Verification endpoint for confirming Sentry is wired correctly. Hit this
-// from anywhere (curl, browser) and a deliberate error should appear in
-// Sentry's wellos-api project within 30 seconds.
-//
-// Gated to NODE_ENV !== 'production' so it can't be hit on real traffic.
-// Remove or move behind an auth check before any real production launch.
-if (process.env.NODE_ENV !== 'production' || process.env.SENTRY_TEST_ROUTE_ENABLED === 'true') {
-  app.get('/__test/error', async () => {
-    throw new Error('Sentry test error from /__test/error — if you see this in Sentry, the wire is good.');
-  });
-}
-
 const start = async () => {
   try {
     await app.listen({ port: PORT, host: HOST });
