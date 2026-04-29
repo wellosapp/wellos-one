@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { Badge, Button, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
 import { getClient, type ClientWriteBody } from '@/lib/api/clients';
 
@@ -50,64 +51,61 @@ export default async function ClientDetailPage({
   const deleteAction = deleteClientAction.bind(null, id);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="flex flex-col gap-s6">
       <div>
         <Link
           href="/admin/clients"
-          style={{ color: '#1a5cff', textDecoration: 'none', fontSize: '0.9rem' }}
+          className="t-body-sm text-accent no-underline hover:underline"
         >
           ← Back to clients
         </Link>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '1rem' }}>
-        <h1 style={{ margin: 0 }}>
-          {client.firstName}
-          {client.lastName ? ` ${client.lastName}` : ''}
-        </h1>
+      <header className="flex flex-wrap items-baseline justify-between gap-s4">
+        <div className="flex flex-col gap-s1">
+          <span className="t-eyebrow text-accent">Client</span>
+          <h1 className="t-display-lg">
+            {client.firstName}
+            {client.lastName ? ` ${client.lastName}` : ''}
+          </h1>
+        </div>
         {client.deletedAt && (
-          <span
-            style={{
-              padding: '0.25rem 0.5rem',
-              background: '#fee',
-              border: '1px solid #c33',
-              borderRadius: '4px',
-              color: '#900',
-              fontSize: '0.85rem',
-            }}
-          >
+          <Badge tone="red">
             Soft-deleted {new Date(client.deletedAt).toLocaleString()}
-          </span>
+          </Badge>
         )}
-      </div>
+      </header>
 
-      <ClientForm
-        action={updateAction}
-        initial={clientToFormDefaults(client)}
-        submitLabel="Save changes"
-        successMessage="Client updated."
-      />
+      <Card padding="lg">
+        <ClientForm
+          action={updateAction}
+          initial={clientToFormDefaults(client)}
+          submitLabel="Save changes"
+          successMessage="Client updated."
+        />
+      </Card>
 
       {!client.deletedAt && (
-        <form action={deleteAction} style={{ marginTop: '2rem' }}>
-          <button
-            type="submit"
-            style={{
-              padding: '0.5rem 1rem',
-              background: '#fff',
-              color: '#c33',
-              border: '1px solid #c33',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-            }}
-          >
-            Soft-delete client
-          </button>
-          <span style={{ marginLeft: '0.75rem', color: '#666', fontSize: '0.85rem' }}>
-            Hides from lists but keeps history. Reversible by an admin via DB.
-          </span>
-        </form>
+        <Card padding="md" className="border border-red/20 bg-red-pale/40">
+          <div className="flex flex-wrap items-center justify-between gap-s4">
+            <div className="flex flex-col gap-s1">
+              <h2 className="t-display-sm">Soft-delete client</h2>
+              <p className="t-body-sm text-ink-soft">
+                Hides from lists but keeps history. Reversible by an admin via DB.
+              </p>
+            </div>
+            <form action={deleteAction}>
+              <Button
+                type="submit"
+                variant="ghost"
+                size="md"
+                className="text-red hover:bg-red-pale"
+              >
+                Soft-delete
+              </Button>
+            </form>
+          </div>
+        </Card>
       )}
     </div>
   );

@@ -1,21 +1,28 @@
 import Link from 'next/link';
 
+import { Card } from '@/components/ui';
+
 import { ClientForm } from '../ClientForm';
 import { createClientAction } from '../_actions';
 
 export default function NewClientPage() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="flex flex-col gap-s6">
       <div>
         <Link
           href="/admin/clients"
-          style={{ color: '#1a5cff', textDecoration: 'none', fontSize: '0.9rem' }}
+          className="t-body-sm text-accent no-underline hover:underline"
         >
           ← Back to clients
         </Link>
       </div>
-      <h1 style={{ margin: 0 }}>New client</h1>
-      <ClientForm action={createClientAction} submitLabel="Create client" />
+      <header className="flex flex-col gap-s1">
+        <span className="t-eyebrow text-accent">Clients</span>
+        <h1 className="t-display-lg">New client</h1>
+      </header>
+      <Card padding="lg">
+        <ClientForm action={createClientAction} submitLabel="Create client" />
+      </Card>
     </div>
   );
 }

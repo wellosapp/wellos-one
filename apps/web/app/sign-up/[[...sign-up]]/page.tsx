@@ -2,7 +2,7 @@ import { SignUp } from '@clerk/nextjs';
 
 export default function SignUpPage() {
   return (
-    <main style={{ display: 'flex', justifyContent: 'center', padding: '4rem 1rem' }}>
+    <main className="flex justify-center px-s4 py-s12">
       <SignUp />
     </main>
   );
