@@ -10,7 +10,11 @@
 
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)']);
+// /admin(.*) requires a Clerk session at the edge. Role-based authorization
+// (admin vs manager vs staff) is enforced by the Fastify API on every
+// /admin/* request — the UI just refuses to render anonymous traffic, then
+// trusts the backend's 401/403 envelope downstream.
+const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/admin(.*)']);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {
