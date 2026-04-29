@@ -1,7 +1,10 @@
 'use client';
 
-import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
+// useFormState (react-dom) is the React-18 equivalent of useActionState
+// (react), which only exists in React 19. Next.js 14 ships a React 18
+// canary at runtime, so the older hook is what's actually available
+// here. Signatures are identical: (action, initialState) => [state, action].
+import { useFormState, useFormStatus } from 'react-dom';
 
 import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
 
@@ -76,7 +79,7 @@ export function ClientForm({
   submitLabel = 'Save',
   successMessage = 'Saved.',
 }: Props) {
-  const [state, formAction] = useActionState<ActionState, FormData>(action, { ok: false });
+  const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
   // After the action returns with a duplicate warning, re-display the values
   // the user submitted. After success, fall back to the action's echoed
