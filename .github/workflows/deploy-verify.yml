@@ -18,6 +18,17 @@ name: Verify Production Deploy
 on:
   push:
     branches: [main]
+    # Only run when paths Railway actually watches change. Frontend-only
+    # commits (apps/web, apps/studio, docs/, .github/, etc.) don't trigger
+    # a Railway deploy, so /version stays on the previous SHA -- which
+    # would false-fail this workflow if it ran on every push.
+    # Keep this list in sync with INFRASTRUCTURE.md sec 3.2 "Watch paths".
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'prisma/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
 
 jobs:
   verify-api:
