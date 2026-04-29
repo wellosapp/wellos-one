@@ -16,6 +16,7 @@ type SearchParams = {
   q?: string;
   intakeStatus?: string;
   page?: string;
+  includeDeleted?: string;
 };
 
 function isValidIntakeStatus(v: unknown): v is ClientIntakeStatus {
@@ -41,11 +42,22 @@ export default async function ClientsListPage({
   const intakeStatus = isValidIntakeStatus(sp.intakeStatus) ? sp.intakeStatus : undefined;
   const page = Math.max(1, Number(sp.page) || 1);
   const skip = (page - 1) * PAGE_SIZE;
+  // Accept any truthy string ('true', '1', etc.). Anything else (or absent)
+  // means "exclude soft-deleted" — the default the soft-delete extension
+  // enforces.
+  const includeDeleted =
+    sp.includeDeleted === 'true' || sp.includeDeleted === '1';
 
   let data: Awaited<ReturnType<typeof listClients>> | null = null;
   let errorMessage: string | null = null;
   try {
-    data = await listClients({ q, intakeStatus, take: PAGE_SIZE, skip });
+    data = await listClients({
+      q,
+      intakeStatus,
+      take: PAGE_SIZE,
+      skip,
+      includeDeleted,
+    });
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
       errorMessage = 'You do not have admin access to this tenant.';
@@ -146,6 +158,30 @@ export default async function ClientsListPage({
         </div>
       )}
 
+      {includeDeleted && (
+        <div
+          style={{
+            padding: '0.5rem 0.75rem',
+            background: '#fff8e1',
+            border: '1px solid #f9a825',
+            borderRadius: '4px',
+            color: '#665100',
+            fontSize: '0.9rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>
+            Including soft-deleted clients. Soft-deleted rows show in the list
+            but their detail page warns they are deleted.
+          </span>
+          <Link href="/admin/clients" style={{ color: '#665100' }}>
+            Hide soft-deleted
+          </Link>
+        </div>
+      )}
+
       {data && (
         <>
           <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
@@ -205,6 +241,7 @@ export default async function ClientsListPage({
                     query: {
                       ...(q ? { q } : {}),
                       ...(intakeStatus ? { intakeStatus } : {}),
+                      ...(includeDeleted ? { includeDeleted: 'true' } : {}),
                       page: page - 1,
                     },
                   }}
@@ -219,6 +256,7 @@ export default async function ClientsListPage({
                     query: {
                       ...(q ? { q } : {}),
                       ...(intakeStatus ? { intakeStatus } : {}),
+                      ...(includeDeleted ? { includeDeleted: 'true' } : {}),
                       page: page + 1,
                     },
                   }}
