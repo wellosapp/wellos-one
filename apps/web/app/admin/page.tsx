@@ -3,7 +3,12 @@ import Link from 'next/link';
 import { Card } from '@/components/ui';
 
 type Surface =
-  | { title: string; description: string; status: 'live'; href: '/admin/clients' }
+  | {
+      title: string;
+      description: string;
+      status: 'live';
+      href: '/admin/clients' | '/admin/services';
+    }
   | { title: string; description: string; status: 'soon' };
 
 const SURFACES: Surface[] = [
@@ -14,9 +19,10 @@ const SURFACES: Surface[] = [
     status: 'live',
   },
   {
+    href: '/admin/services',
     title: 'Services',
     description: 'Service catalog with duration, base price, and eligible staff.',
-    status: 'soon',
+    status: 'live',
   },
   {
     title: 'Staff',
