@@ -1,44 +1,33 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 
-// Admin shell. Header with nav + UserButton, body slot for child routes.
-//
-// Styling: inline styles, mirroring apps/web/app/dashboard/page.tsx. The
-// design system bootstrap (Tailwind + tokens from 10-design-system-buildout.md)
-// is its own focused PR — admin UI gets re-skinned then. Keep this scaffold
-// functional and minimal until then.
-
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.75rem 1.5rem',
-          borderBottom: '1px solid #e5e5e5',
-          background: '#fafafa',
-        }}
-      >
-        <nav style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+    <div className="flex min-h-screen flex-col bg-surface">
+      <header className="flex items-center justify-between border-b border-surface-3 bg-white/70 px-s8 py-s4 backdrop-blur">
+        <nav className="flex items-center gap-s8">
           <Link
             href="/admin"
-            style={{ fontWeight: 600, textDecoration: 'none', color: '#111' }}
+            className="t-display-sm font-display text-ink no-underline"
           >
             Wellos Admin
           </Link>
-          <Link href="/admin/clients" style={{ color: '#444', textDecoration: 'none' }}>
+          <Link
+            href="/admin/clients"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
             Clients
           </Link>
         </nav>
         <UserButton afterSignOutUrl="/" />
       </header>
-      <main style={{ flex: 1, padding: '1.5rem 2rem' }}>{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-s8 py-s8">
+        {children}
+      </main>
     </div>
   );
 }

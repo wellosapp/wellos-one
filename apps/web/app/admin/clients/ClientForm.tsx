@@ -6,6 +6,7 @@
 // here. Signatures are identical: (action, initialState) => [state, action].
 import { useFormState, useFormStatus } from 'react-dom';
 
+import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/ui';
 import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
 
 import type { ActionState } from './_actions';
@@ -17,52 +18,12 @@ const INTAKE_STATUS_LABELS: Record<ClientIntakeStatus, string> = {
   expired: 'Expired',
 };
 
-const inputStyle: React.CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  border: '1px solid #ccc',
-  borderRadius: '4px',
-  fontSize: '0.95rem',
-  width: '100%',
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.25rem',
-  fontSize: '0.9rem',
-  color: '#333',
-};
-
-const errorTextStyle: React.CSSProperties = {
-  color: '#c33',
-  fontSize: '0.85rem',
-  marginTop: '0.25rem',
-};
-
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <span style={errorTextStyle}>{message}</span>;
-}
-
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      style={{
-        padding: '0.6rem 1.25rem',
-        background: pending ? '#888' : '#111',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-        fontSize: '0.95rem',
-        cursor: pending ? 'wait' : 'pointer',
-      }}
-    >
+    <Button type="submit" variant="primary" size="md" loading={pending}>
       {pending ? 'Saving…' : label}
-    </button>
+    </Button>
   );
 }
 
@@ -89,199 +50,173 @@ export function ClientForm({
   const showAcknowledge = Boolean(state.duplicateWarning);
 
   return (
-    <form action={formAction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '720px' }}>
-      {state.ok && (
-        <div
-          role="status"
-          style={{
-            padding: '0.75rem',
-            background: '#e8f5e9',
-            border: '1px solid #66bb6a',
-            borderRadius: '4px',
-            color: '#1b5e20',
-          }}
-        >
-          {successMessage}
-        </div>
-      )}
+    <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
+      {state.ok && <Alert tone="success">{successMessage}</Alert>}
 
       {state.error && (
-        <div
-          role="alert"
-          style={{
-            padding: '0.75rem',
-            background: '#fee',
-            border: '1px solid #c33',
-            borderRadius: '4px',
-            color: '#900',
-          }}
-        >
-          {state.error}
+        <Alert tone="error">
+          <div>{state.error}</div>
           {state.duplicateWarning && (
-            <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+            <div className="mt-s2 t-body-sm">
               {state.duplicateWarning.matchedByEmail > 0 && (
                 <div>· {state.duplicateWarning.matchedByEmail} match by email</div>
               )}
               {state.duplicateWarning.matchedByPhone > 0 && (
                 <div>· {state.duplicateWarning.matchedByPhone} match by phone</div>
               )}
-              <div style={{ marginTop: '0.5rem' }}>
+              <div className="mt-s2">
                 Save anyway? Click <strong>{submitLabel}</strong> again — duplicates will be allowed.
               </div>
             </div>
           )}
-        </div>
+        </Alert>
       )}
 
-      {showAcknowledge && (
-        <input type="hidden" name="acknowledgeDuplicate" value="1" />
-      )}
+      {showAcknowledge && <input type="hidden" name="acknowledgeDuplicate" value="1" />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-        <label style={labelStyle}>
-          First name *
-          <input
+      <div className="grid grid-cols-1 gap-s4 md:grid-cols-2">
+        <FormField label="First name" required error={fieldErrors.firstName}>
+          <Input
             type="text"
             name="firstName"
             required
             defaultValue={values.firstName ?? ''}
-            style={inputStyle}
+            error={Boolean(fieldErrors.firstName)}
           />
-          <FieldError message={fieldErrors.firstName} />
-        </label>
-        <label style={labelStyle}>
-          Last name
-          <input
+        </FormField>
+        <FormField label="Last name" error={fieldErrors.lastName}>
+          <Input
             type="text"
             name="lastName"
             defaultValue={values.lastName ?? ''}
-            style={inputStyle}
+            error={Boolean(fieldErrors.lastName)}
           />
-          <FieldError message={fieldErrors.lastName} />
-        </label>
-        <label style={labelStyle}>
-          Email
-          <input
+        </FormField>
+        <FormField label="Email" error={fieldErrors.email}>
+          <Input
             type="email"
             name="email"
             defaultValue={values.email ?? ''}
-            style={inputStyle}
+            error={Boolean(fieldErrors.email)}
           />
-          <FieldError message={fieldErrors.email} />
-        </label>
-        <label style={labelStyle}>
-          Phone
-          <input
+        </FormField>
+        <FormField label="Phone" error={fieldErrors.phone}>
+          <Input
             type="tel"
             name="phone"
             defaultValue={values.phone ?? ''}
-            style={inputStyle}
+            error={Boolean(fieldErrors.phone)}
           />
-          <FieldError message={fieldErrors.phone} />
-        </label>
-        <label style={labelStyle}>
-          Date of birth
-          <input
+        </FormField>
+        <FormField label="Date of birth" error={fieldErrors.dateOfBirth}>
+          <Input
             type="date"
             name="dateOfBirth"
             defaultValue={values.dateOfBirth ?? ''}
-            style={inputStyle}
+            error={Boolean(fieldErrors.dateOfBirth)}
           />
-          <FieldError message={fieldErrors.dateOfBirth} />
-        </label>
-        <label style={labelStyle}>
-          Intake status
-          <select
+        </FormField>
+        <FormField label="Intake status" error={fieldErrors.intakeStatus}>
+          <Select
             name="intakeStatus"
             defaultValue={values.intakeStatus ?? 'pending'}
-            style={inputStyle}
+            error={Boolean(fieldErrors.intakeStatus)}
           >
             {(Object.keys(INTAKE_STATUS_LABELS) as ClientIntakeStatus[]).map((s) => (
               <option key={s} value={s}>
                 {INTAKE_STATUS_LABELS[s]}
               </option>
             ))}
-          </select>
-          <FieldError message={fieldErrors.intakeStatus} />
-        </label>
+          </Select>
+        </FormField>
       </div>
 
-      <fieldset style={{ border: '1px solid #ddd', padding: '1rem', borderRadius: '4px' }}>
-        <legend style={{ padding: '0 0.5rem', color: '#444' }}>Address</legend>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <label style={labelStyle}>
-            Line 1
-            <input type="text" name="addressLine1" defaultValue={values.addressLine1 ?? ''} style={inputStyle} />
-            <FieldError message={fieldErrors.addressLine1} />
-          </label>
-          <label style={labelStyle}>
-            Line 2
-            <input type="text" name="addressLine2" defaultValue={values.addressLine2 ?? ''} style={inputStyle} />
-            <FieldError message={fieldErrors.addressLine2} />
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.75rem' }}>
-            <label style={labelStyle}>
-              City
-              <input type="text" name="city" defaultValue={values.city ?? ''} style={inputStyle} />
-              <FieldError message={fieldErrors.city} />
-            </label>
-            <label style={labelStyle}>
-              State
-              <input type="text" name="state" defaultValue={values.state ?? ''} style={inputStyle} />
-              <FieldError message={fieldErrors.state} />
-            </label>
-            <label style={labelStyle}>
-              Postal code
-              <input type="text" name="postalCode" defaultValue={values.postalCode ?? ''} style={inputStyle} />
-              <FieldError message={fieldErrors.postalCode} />
-            </label>
-          </div>
-          <label style={labelStyle}>
-            Country
-            <input type="text" name="country" defaultValue={values.country ?? ''} style={inputStyle} />
-            <FieldError message={fieldErrors.country} />
-          </label>
+      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+        <legend className="t-eyebrow px-s2 text-ink-soft">Address</legend>
+        <FormField label="Line 1" error={fieldErrors.addressLine1}>
+          <Input
+            type="text"
+            name="addressLine1"
+            defaultValue={values.addressLine1 ?? ''}
+            error={Boolean(fieldErrors.addressLine1)}
+          />
+        </FormField>
+        <FormField label="Line 2" error={fieldErrors.addressLine2}>
+          <Input
+            type="text"
+            name="addressLine2"
+            defaultValue={values.addressLine2 ?? ''}
+            error={Boolean(fieldErrors.addressLine2)}
+          />
+        </FormField>
+        <div className="grid grid-cols-1 gap-s3 md:grid-cols-[2fr_1fr_1fr]">
+          <FormField label="City" error={fieldErrors.city}>
+            <Input
+              type="text"
+              name="city"
+              defaultValue={values.city ?? ''}
+              error={Boolean(fieldErrors.city)}
+            />
+          </FormField>
+          <FormField label="State" error={fieldErrors.state}>
+            <Input
+              type="text"
+              name="state"
+              defaultValue={values.state ?? ''}
+              error={Boolean(fieldErrors.state)}
+            />
+          </FormField>
+          <FormField label="Postal code" error={fieldErrors.postalCode}>
+            <Input
+              type="text"
+              name="postalCode"
+              defaultValue={values.postalCode ?? ''}
+              error={Boolean(fieldErrors.postalCode)}
+            />
+          </FormField>
         </div>
+        <FormField label="Country" error={fieldErrors.country}>
+          <Input
+            type="text"
+            name="country"
+            defaultValue={values.country ?? ''}
+            error={Boolean(fieldErrors.country)}
+          />
+        </FormField>
       </fieldset>
 
-      <fieldset style={{ border: '1px solid #ddd', padding: '1rem', borderRadius: '4px' }}>
-        <legend style={{ padding: '0 0.5rem', color: '#444' }}>Emergency contact</legend>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-          <label style={labelStyle}>
-            Name
-            <input
+      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+        <legend className="t-eyebrow px-s2 text-ink-soft">Emergency contact</legend>
+        <div className="grid grid-cols-1 gap-s3 md:grid-cols-2">
+          <FormField label="Name" error={fieldErrors.emergencyContactName}>
+            <Input
               type="text"
               name="emergencyContactName"
               defaultValue={values.emergencyContactName ?? ''}
-              style={inputStyle}
+              error={Boolean(fieldErrors.emergencyContactName)}
             />
-            <FieldError message={fieldErrors.emergencyContactName} />
-          </label>
-          <label style={labelStyle}>
-            Phone
-            <input
+          </FormField>
+          <FormField label="Phone" error={fieldErrors.emergencyContactPhone}>
+            <Input
               type="tel"
               name="emergencyContactPhone"
               defaultValue={values.emergencyContactPhone ?? ''}
-              style={inputStyle}
+              error={Boolean(fieldErrors.emergencyContactPhone)}
             />
-            <FieldError message={fieldErrors.emergencyContactPhone} />
-          </label>
+          </FormField>
         </div>
       </fieldset>
 
-      <label style={labelStyle}>
-        Notes
-        <textarea
+      <FormField label="Notes" error={fieldErrors.notes}>
+        <Textarea
           name="notes"
           rows={4}
           defaultValue={values.notes ?? ''}
-          style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical' }}
+          error={Boolean(fieldErrors.notes)}
         />
-        <FieldError message={fieldErrors.notes} />
-      </label>
+      </FormField>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
+      <div className="flex gap-s3">
         <SubmitButton label={submitLabel} />
       </div>
     </form>

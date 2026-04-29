@@ -1,6 +1,21 @@
 import type { Metadata } from 'next';
+import { DM_Sans, Sora } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sora',
+  display: 'swap',
+});
+
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  variable: '--font-dm-sans',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Wellos',
@@ -19,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

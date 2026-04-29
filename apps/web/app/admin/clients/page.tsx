@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
 import { listClients, type ClientIntakeStatus } from '@/lib/api/clients';
 import { ApiError } from '@/lib/api/client';
 
@@ -10,6 +11,13 @@ const INTAKE_STATUS_LABELS: Record<ClientIntakeStatus, string> = {
   sent: 'Sent',
   completed: 'Completed',
   expired: 'Expired',
+};
+
+const INTAKE_STATUS_TONE: Record<ClientIntakeStatus, 'neutral' | 'amber' | 'green' | 'red'> = {
+  pending: 'neutral',
+  sent: 'amber',
+  completed: 'green',
+  expired: 'red',
 };
 
 type SearchParams = {
@@ -42,9 +50,6 @@ export default async function ClientsListPage({
   const intakeStatus = isValidIntakeStatus(sp.intakeStatus) ? sp.intakeStatus : undefined;
   const page = Math.max(1, Number(sp.page) || 1);
   const skip = (page - 1) * PAGE_SIZE;
-  // Accept any truthy string ('true', '1', etc.). Anything else (or absent)
-  // means "exclude soft-deleted" — the default the soft-delete extension
-  // enforces.
   const includeDeleted =
     sp.includeDeleted === 'true' || sp.includeDeleted === '1';
 
@@ -71,180 +76,133 @@ export default async function ClientsListPage({
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const baseQuery: Record<string, string> = {
+    ...(q ? { q } : {}),
+    ...(intakeStatus ? { intakeStatus } : {}),
+    ...(includeDeleted ? { includeDeleted: 'true' } : {}),
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <h1 style={{ margin: 0 }}>Clients</h1>
-        <Link
-          href="/admin/clients/new"
-          style={{
-            padding: '0.5rem 1rem',
-            background: '#111',
-            color: '#fff',
-            borderRadius: '4px',
-            textDecoration: 'none',
-            fontSize: '0.9rem',
-          }}
-        >
-          New client
-        </Link>
-      </div>
-
-      <form
-        method="get"
-        style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}
-      >
-        <input
-          type="text"
-          name="q"
-          defaultValue={q ?? ''}
-          placeholder="Search name, email, or phone"
-          style={{
-            flex: 1,
-            padding: '0.5rem 0.75rem',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            fontSize: '0.95rem',
-          }}
-        />
-        <select
-          name="intakeStatus"
-          defaultValue={intakeStatus ?? ''}
-          style={{
-            padding: '0.5rem 0.75rem',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            fontSize: '0.95rem',
-          }}
-        >
-          <option value="">All intake statuses</option>
-          {(Object.keys(INTAKE_STATUS_LABELS) as ClientIntakeStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {INTAKE_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          style={{
-            padding: '0.5rem 1rem',
-            border: '1px solid #111',
-            background: '#fff',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-        >
-          Search
-        </button>
-      </form>
-
-      {errorMessage && (
-        <div
-          style={{
-            padding: '0.75rem',
-            background: '#fee',
-            border: '1px solid #c33',
-            borderRadius: '4px',
-            color: '#900',
-          }}
-        >
-          {errorMessage}
+    <div className="flex flex-col gap-s6">
+      <header className="flex items-center justify-between gap-s4">
+        <div className="flex flex-col gap-s1">
+          <span className="t-eyebrow text-accent">Clients</span>
+          <h1 className="t-display-lg">All clients</h1>
         </div>
-      )}
+        <Link href="/admin/clients/new" className="no-underline">
+          <Button variant="accent" size="md">
+            New client
+          </Button>
+        </Link>
+      </header>
+
+      <Card padding="sm">
+        <form method="get" className="flex flex-wrap items-center gap-s3">
+          <Input
+            type="text"
+            name="q"
+            defaultValue={q ?? ''}
+            placeholder="Search name, email, or phone"
+            className="min-w-[220px] flex-1"
+          />
+          <Select
+            name="intakeStatus"
+            defaultValue={intakeStatus ?? ''}
+            className="min-w-[180px] flex-none"
+          >
+            <option value="">All intake statuses</option>
+            {(Object.keys(INTAKE_STATUS_LABELS) as ClientIntakeStatus[]).map((s) => (
+              <option key={s} value={s}>
+                {INTAKE_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </Select>
+          <Button variant="primary" size="md" type="submit">
+            Search
+          </Button>
+        </form>
+      </Card>
+
+      {errorMessage && <Alert tone="error">{errorMessage}</Alert>}
 
       {includeDeleted && (
-        <div
-          style={{
-            padding: '0.5rem 0.75rem',
-            background: '#fff8e1',
-            border: '1px solid #f9a825',
-            borderRadius: '4px',
-            color: '#665100',
-            fontSize: '0.9rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>
-            Including soft-deleted clients. Soft-deleted rows show in the list
-            but their detail page warns they are deleted.
+        <Alert tone="warning">
+          <span className="flex flex-wrap items-center justify-between gap-s3">
+            <span>
+              Including soft-deleted clients. Soft-deleted rows show in the list but their
+              detail page warns they are deleted.
+            </span>
+            <Link
+              href="/admin/clients"
+              className="t-body-sm text-amber underline-offset-2 hover:underline"
+            >
+              Hide soft-deleted
+            </Link>
           </span>
-          <Link href="/admin/clients" style={{ color: '#665100' }}>
-            Hide soft-deleted
-          </Link>
-        </div>
+        </Alert>
       )}
 
       {data && (
         <>
-          <p style={{ margin: 0, color: '#666', fontSize: '0.9rem' }}>
+          <p className="t-body-sm text-ink-soft">
             {total === 0
               ? 'No clients yet.'
               : `${total} client${total === 1 ? '' : 's'} total · page ${page} of ${totalPages}`}
           </p>
+
           {data.clients.length > 0 && (
-            <table
-              style={{
-                width: '100%',
-                borderCollapse: 'collapse',
-                fontSize: '0.95rem',
-              }}
-            >
-              <thead>
-                <tr style={{ borderBottom: '2px solid #ccc', textAlign: 'left' }}>
-                  <th style={{ padding: '0.5rem' }}>Name</th>
-                  <th style={{ padding: '0.5rem' }}>Email</th>
-                  <th style={{ padding: '0.5rem' }}>Phone</th>
-                  <th style={{ padding: '0.5rem' }}>Intake</th>
-                  <th style={{ padding: '0.5rem' }}>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.clients.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '0.5rem' }}>
-                      <Link
-                        href={`/admin/clients/${c.id}`}
-                        style={{ color: '#1a5cff', textDecoration: 'none' }}
-                      >
-                        {c.firstName}
-                        {c.lastName ? ` ${c.lastName}` : ''}
-                      </Link>
-                    </td>
-                    <td style={{ padding: '0.5rem', color: '#444' }}>{c.email ?? '—'}</td>
-                    <td style={{ padding: '0.5rem', color: '#444' }}>{c.phone ?? '—'}</td>
-                    <td style={{ padding: '0.5rem' }}>
-                      {INTAKE_STATUS_LABELS[c.intakeStatus]}
-                    </td>
-                    <td style={{ padding: '0.5rem', color: '#666' }}>
-                      {formatDate(c.createdAt)}
-                    </td>
+            <Card padding="sm" className="overflow-hidden p-0">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b border-surface-3 bg-surface-2 text-left">
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Name</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Email</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Phone</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Intake</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.clients.map((c) => (
+                    <tr
+                      key={c.id}
+                      className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
+                    >
+                      <td className="px-s4 py-s3 t-body-md">
+                        <Link
+                          href={`/admin/clients/${c.id}`}
+                          className="text-accent no-underline hover:underline"
+                        >
+                          {c.firstName}
+                          {c.lastName ? ` ${c.lastName}` : ''}
+                        </Link>
+                      </td>
+                      <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.email ?? '—'}</td>
+                      <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.phone ?? '—'}</td>
+                      <td className="px-s4 py-s3">
+                        <Badge tone={INTAKE_STATUS_TONE[c.intakeStatus]}>
+                          {INTAKE_STATUS_LABELS[c.intakeStatus]}
+                        </Badge>
+                      </td>
+                      <td className="px-s4 py-s3 t-body-sm text-ink-soft">
+                        {formatDate(c.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
           )}
 
           {totalPages > 1 && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <div className="flex items-center gap-s4">
               {page > 1 && (
                 <Link
                   href={{
                     pathname: '/admin/clients',
-                    query: {
-                      ...(q ? { q } : {}),
-                      ...(intakeStatus ? { intakeStatus } : {}),
-                      ...(includeDeleted ? { includeDeleted: 'true' } : {}),
-                      page: page - 1,
-                    },
+                    query: { ...baseQuery, page: page - 1 },
                   }}
+                  className="t-body-sm text-accent no-underline hover:underline"
                 >
                   ← Previous
                 </Link>
@@ -253,13 +211,9 @@ export default async function ClientsListPage({
                 <Link
                   href={{
                     pathname: '/admin/clients',
-                    query: {
-                      ...(q ? { q } : {}),
-                      ...(intakeStatus ? { intakeStatus } : {}),
-                      ...(includeDeleted ? { includeDeleted: 'true' } : {}),
-                      page: page + 1,
-                    },
+                    query: { ...baseQuery, page: page + 1 },
                   }}
+                  className="t-body-sm text-accent no-underline hover:underline"
                 >
                   Next →
                 </Link>
