@@ -35,6 +35,13 @@ enum ActorType {
   webhook
 }
 
+enum ClientIntakeStatus {
+  pending
+  sent
+  completed
+  expired
+}
+
 // ---------- Tenancy & users ----------
 
 model Tenant {
@@ -42,7 +49,7 @@ model Tenant {
   name      String
   slug      String    @unique
   createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt      @map("updated_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   locations          Location[]
@@ -51,6 +58,10 @@ model Tenant {
   tenantFeatureFlags TenantFeatureFlag[]
   idempotencyKeys    IdempotencyKey[]
   auditEntries       AuditLog[]
+  clients            Client[]
+  staff              Staff[]
+  services           Service[]
+  clientTags         ClientTag[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -62,7 +73,7 @@ model Location {
   name      String
   timezone  String    @default("America/New_York")
   createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt      @map("updated_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -84,7 +95,7 @@ model User {
   firstName   String?   @map("first_name")
   lastName    String?   @map("last_name")
   createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
   tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -104,7 +115,7 @@ model Role {
   name        String    @unique // 'admin' | 'manager' | 'staff'
   description String?
   createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt      @map("updated_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
   assignments RoleAssignment[]
@@ -118,7 +129,7 @@ model RoleAssignment {
   userId    String   @map("user_id")
   roleId    String   @map("role_id")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -139,7 +150,7 @@ model FeatureFlag {
   category       String?
   defaultEnabled Boolean  @default(false) @map("default_enabled")
   createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt      @map("updated_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   tenantOverrides TenantFeatureFlag[]
 
@@ -154,7 +165,7 @@ model TenantFeatureFlag {
   // Plan-limit numbers, e.g. { "maxLocations": 1, "maxStaff": 5 }.
   limits        Json?
   createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt      @map("updated_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -210,4 +221,154 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorUserId])
   @@map("audit_log")
+}
+
+// ---------- Epic 2: Clients, staff, services ----------
+//
+// Per docs/09-dev-handoff.md "Epic 2":
+//   - Soft delete on Client / Staff / Service / ClientTag (deleted_at).
+//   - Email + phone are NOT unique at the DB level (uniqueness is a UI-only
+//     duplicate warning — same email can belong to multiple family members,
+//     phone numbers change hands).
+//   - Tags are a separate table with a M2M join, NOT a JSON array on Client.
+//   - Staff working hours stored as a JSON column for MVP; a normalized
+//     schedule table is a Phase 2 upgrade.
+//   - StaffService is a pure M2M join (no per-staff price/duration overrides
+//     yet — add when a real need surfaces).
+
+model Client {
+  id                    String             @id @default(cuid())
+  tenantId              String             @map("tenant_id")
+  firstName             String             @map("first_name")
+  lastName              String?            @map("last_name")
+  email                 String?
+  phone                 String?
+  dateOfBirth           DateTime?          @map("date_of_birth") @db.Date
+  addressLine1          String?            @map("address_line1")
+  addressLine2          String?            @map("address_line2")
+  city                  String?
+  state                 String?
+  postalCode            String?            @map("postal_code")
+  country               String?
+  emergencyContactName  String?            @map("emergency_contact_name")
+  emergencyContactPhone String?            @map("emergency_contact_phone")
+  intakeStatus          ClientIntakeStatus @default(pending) @map("intake_status")
+  notes                 String?
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+  deletedAt             DateTime?          @map("deleted_at")
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tagAssignments ClientTagAssignment[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, email])
+  @@index([tenantId, phone])
+  @@map("clients")
+}
+
+model Staff {
+  id                String    @id @default(cuid())
+  tenantId          String    @map("tenant_id")
+  firstName         String    @map("first_name")
+  lastName          String?   @map("last_name")
+  email             String?
+  phone             String?
+  // Free-text job title (e.g. "Massage Therapist", "Esthetician"). RBAC roles
+  // live separately in RoleAssignment — this is presentation, not authorization.
+  jobTitle          String?   @map("job_title")
+  // Day-of-week → array of { start, end } shifts. Validated at the API layer
+  // via Zod when CRUD lands in E2-S5; stored as JSONB for MVP.
+  // Example: { "mon": [{ "start": "09:00", "end": "17:00" }], ... }
+  workingHours      Json?     @map("working_hours")
+  // Hourly rate stored in cents (integer) to dodge floating-point money math.
+  hourlyRateCents   Int?      @map("hourly_rate_cents")
+  // Commission as a percentage (0-100). Decimal column for precision.
+  commissionRatePct Decimal?  @map("commission_rate_pct") @db.Decimal(5, 2)
+  active            Boolean   @default(true)
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services StaffService[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, email])
+  @@index([tenantId, active])
+  @@map("staff")
+}
+
+model Service {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  name            String
+  description     String?
+  // Service duration in minutes. The booking engine snaps to this grid.
+  durationMinutes Int       @map("duration_minutes")
+  // Base price in cents.
+  basePriceCents  Int       @map("base_price_cents")
+  // Hex color for calendar rendering (e.g. "#7B9E89"). UI maps to design tokens.
+  color           String?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff  StaffService[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, active])
+  @@map("services")
+}
+
+// Pure M2M join between Staff and Service. No per-staff overrides yet.
+model StaffService {
+  staffId   String   @map("staff_id")
+  serviceId String   @map("service_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+  @@index([serviceId])
+  @@map("staff_services")
+}
+
+model ClientTag {
+  id        String    @id @default(cuid())
+  tenantId  String    @map("tenant_id")
+  name      String
+  // Hex color for tag pill rendering.
+  color     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  assignments ClientTagAssignment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@map("client_tags")
+}
+
+// Pure M2M join between Client and ClientTag.
+model ClientTagAssignment {
+  clientId  String   @map("client_id")
+  tagId     String   @map("tag_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  client Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag    ClientTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, tagId])
+  @@index([tagId])
+  @@map("client_tag_assignments")
 }
