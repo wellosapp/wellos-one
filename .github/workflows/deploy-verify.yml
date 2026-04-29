@@ -1,0 +1,55 @@
+name: Verify Production Deploy
+
+# Polls api.wellos.one/version after a push to main and asserts that
+# the running commit matches the just-merged commit. If it doesn't match
+# within the timeout, the workflow fails and GitHub emails the team.
+#
+# Why: Railway can silently roll back to the previous container when a
+# new deploy fails healthcheck. From the outside, /healthz stays 200 and
+# nothing alerts. Without this job, a stuck-on-old-code state is only
+# noticed when someone manually clicks around in the app and sees stale
+# behavior. The 2026-04-29 incident lost ~50 minutes that way.
+#
+# Vercel side intentionally NOT verified here: PR previews fail by design
+# (Hobby-plan / git-identity issue per INFRASTRUCTURE.md sec 5.3) and
+# Vercel production deploys auto-flip the live URL atomically — there's
+# no stuck-on-old-code failure mode to catch.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  verify-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Railway build to start in earnest
+        # Build typically takes 4-6 min; the polling loop below has its
+        # own 10-min retry budget on top of this initial sleep, so total
+        # window is ~13 min. Plenty for a healthy deploy; tight enough
+        # that a stuck deploy fails the workflow within ~15 min of merge.
+        run: sleep 180
+
+      - name: Poll /version until commit matches or timeout
+        env:
+          API_URL: https://api.wellos.one
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          short_expected="${EXPECTED_SHA:0:7}"
+          deadline=$(( $(date +%s) + 600 ))   # 10 minutes from now
+          attempt=0
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            attempt=$(( attempt + 1 ))
+            body=$(curl -fsS "${API_URL}/version" 2>/dev/null || echo '')
+            running=$(echo "$body" | jq -r '.commit // "unknown"' 2>/dev/null || echo 'unknown')
+            short_running="${running:0:7}"
+            echo "attempt #${attempt}: prod commit=${short_running}, expected=${short_expected}"
+            if [ "$short_running" = "$short_expected" ]; then
+              echo "::notice title=Deploy verified::api.wellos.one is running ${short_expected}"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error title=Deploy stuck::api.wellos.one is still running ${short_running} after 10+ min, expected ${short_expected}. Check Railway dashboard."
+          exit 1

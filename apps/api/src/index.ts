@@ -63,6 +63,29 @@ app.get('/', async () => {
   return {
     service: 'wellos-api',
     healthz: '/healthz',
+    version: '/version',
+  };
+});
+
+// /version exposes the running commit SHA so post-deploy verification
+// (GitHub Actions, BetterStack, manual curl) can confirm prod is on the
+// expected build. Without this, a failed Railway deploy that silently
+// rolls back to the previous container is invisible from outside —
+// /healthz stays 200 because the *old* container is still alive.
+// (Lesson from the 2026-04-29 incident: 50 min stuck on stale code with
+//  no external signal.)
+//
+// Railway populates RAILWAY_GIT_COMMIT_SHA + friends automatically. Locally
+// they're undefined and we report "unknown".
+const BOOTED_AT = new Date().toISOString();
+app.get('/version', async () => {
+  return {
+    service: 'wellos-api',
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? 'unknown',
+    deploymentId: process.env.RAILWAY_DEPLOYMENT_ID ?? 'unknown',
+    environment:
+      process.env.RAILWAY_ENVIRONMENT_NAME ?? process.env.NODE_ENV ?? 'unknown',
+    bootedAt: BOOTED_AT,
   };
 });
 
