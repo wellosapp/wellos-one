@@ -1,18 +1,33 @@
 import { PrismaClient } from '@prisma/client';
 
-// Single PrismaClient per process. Cached on globalThis in non-production so
-// that tsx-watch reloads don't open a new connection pool on every save —
+import { softDeleteExtension } from './softDelete.js';
+
+// Single extended PrismaClient per process. Cached on globalThis in non-production
+// so that tsx-watch reloads don't open a new connection pool on every save —
 // without this, dev sessions exhaust Supabase pooled connections fast.
-declare global {
-  // eslint-disable-next-line no-var
-  var __wellosPrisma: PrismaClient | undefined;
+function buildClient() {
+  return new PrismaClient({
+    log: process.env.NODE_ENV === 'production' ? ['error'] : ['warn', 'error'],
+  }).$extends(softDeleteExtension);
 }
 
-export const prisma: PrismaClient =
-  globalThis.__wellosPrisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'production' ? ['error'] : ['warn', 'error'],
-  });
+export type ExtendedPrismaClient = ReturnType<typeof buildClient>;
+
+// The shape passed to a $transaction callback. Extended clients return a
+// transaction client that's also extended, so the bare `Prisma.TransactionClient`
+// type doesn't match. Helpers that take a tx (e.g. audit-log writers in
+// services/) should accept this type.
+export type ExtendedTransactionClient = Parameters<
+  Parameters<ExtendedPrismaClient['$transaction']>[0]
+>[0];
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __wellosPrisma: ExtendedPrismaClient | undefined;
+}
+
+export const prisma: ExtendedPrismaClient =
+  globalThis.__wellosPrisma ?? buildClient();
 
 if (process.env.NODE_ENV !== 'production') {
   globalThis.__wellosPrisma = prisma;
@@ -30,5 +45,8 @@ if (process.env.NODE_ENV !== 'production') {
 void prisma.$connect().catch((err) => {
   // Logged via console so it surfaces in Railway logs even before Fastify
   // boots its own logger.
-  console.warn('[prisma] eager $connect failed at boot:', err instanceof Error ? err.message : err);
+  console.warn(
+    '[prisma] eager $connect failed at boot:',
+    err instanceof Error ? err.message : err,
+  );
 });
