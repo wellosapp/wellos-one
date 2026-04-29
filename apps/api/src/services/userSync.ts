@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import type { ActorType, PrismaClient, User } from '@prisma/client';
+import type { ActorType, User } from '@prisma/client';
+
+import type {
+  ExtendedPrismaClient,
+  ExtendedTransactionClient,
+} from '../db/client.js';
 
 // Pure DB layer for Clerk webhook events. Idempotent by design:
 //   user.created  → upsert by clerkUserId
@@ -39,7 +44,7 @@ function pickPrimaryEmail(d: ClerkUserCreatedOrUpdated['data']): string | null {
 }
 
 async function writeAudit(
-  tx: Prisma.TransactionClient,
+  tx: ExtendedTransactionClient,
   args: {
     tenantId: string | null;
     action: string;
@@ -72,7 +77,7 @@ export type SyncResult = {
 };
 
 export async function syncUserFromClerk(
-  prisma: PrismaClient,
+  prisma: ExtendedPrismaClient,
   event: ClerkWebhookEvent,
 ): Promise<SyncResult> {
   if (event.type === 'user.deleted') {

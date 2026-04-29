@@ -1,12 +1,11 @@
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 
-import { prisma } from '../db/client.js';
+import { prisma, type ExtendedPrismaClient } from '../db/client.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    prisma: PrismaClient;
+    prisma: ExtendedPrismaClient;
   }
 }
 
