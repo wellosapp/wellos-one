@@ -69,6 +69,14 @@ export type CreateClientBody = z.infer<typeof CreateClientBodySchema>;
 export const UpdateClientBodySchema = CreateClientBodySchema.partial();
 export type UpdateClientBody = z.infer<typeof UpdateClientBodySchema>;
 
+// Query strings only carry strings; `z.coerce.boolean()` is just `Boolean(v)`,
+// which returns true for any non-empty string — including the literal "false".
+// Parse explicitly so `?includeDeleted=false` round-trips to `false`.
+const QueryBool = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((v) => v === true || v === 'true' || v === '1');
+
 // GET /admin/clients query params. All optional.
 //   q              — substring search across firstName, lastName, email, phone
 //   intakeStatus   — filter to one status
@@ -80,7 +88,7 @@ export const ListClientsQuerySchema = z.object({
   intakeStatus: ClientIntakeStatusSchema.optional(),
   take: z.coerce.number().int().min(1).max(200).default(50),
   skip: z.coerce.number().int().min(0).default(0),
-  includeDeleted: z.coerce.boolean().default(false),
+  includeDeleted: QueryBool,
 });
 export type ListClientsQuery = z.infer<typeof ListClientsQuerySchema>;
 
