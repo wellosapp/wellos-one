@@ -25,7 +25,12 @@ export type ServiceWriteBody = {
   basePriceCents: number;
   color?: string;
   active?: boolean;
+  staffIds?: string[];
 };
+
+// Detail endpoint augments Service with staffIds (a derived projection of
+// staff_services join rows). List endpoint omits this for performance.
+export type ServiceWithStaff = Service & { staffIds: string[] };
 
 export type ListServicesResponse = {
   services: Service[];
@@ -54,20 +59,22 @@ export async function listServices(
   });
 }
 
-export async function getService(id: string): Promise<{ service: Service }> {
-  return apiFetch<{ service: Service }>(`/admin/services/${id}`);
+export async function getService(
+  id: string,
+): Promise<{ service: ServiceWithStaff }> {
+  return apiFetch<{ service: ServiceWithStaff }>(`/admin/services/${id}`);
 }
 
 export async function createService(
   body: ServiceWriteBody,
-): Promise<{ service: Service }> {
+): Promise<{ service: ServiceWithStaff }> {
   return apiFetch('/admin/services', { method: 'POST', body });
 }
 
 export async function updateService(
   id: string,
   body: Partial<ServiceWriteBody>,
-): Promise<{ service: Service }> {
+): Promise<{ service: ServiceWithStaff }> {
   return apiFetch(`/admin/services/${id}`, { method: 'PATCH', body });
 }
 

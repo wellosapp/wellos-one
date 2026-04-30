@@ -18,9 +18,17 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
+type StaffOption = {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  jobTitle: string | null;
+};
+
 type Props = {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   initial?: ServiceFormValues;
+  staff: StaffOption[];
   submitLabel?: string;
   successMessage?: string;
 };
@@ -28,6 +36,7 @@ type Props = {
 export function ServiceForm({
   action,
   initial,
+  staff,
   submitLabel = 'Save',
   successMessage = 'Saved.',
 }: Props) {
@@ -38,6 +47,7 @@ export function ServiceForm({
   // reflects what was just saved.
   const values = state.values ?? initial ?? {};
   const fieldErrors = state.fieldErrors ?? {};
+  const initialStaffIds = new Set(values.staffIds ?? []);
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
@@ -139,6 +149,44 @@ export function ServiceForm({
           </label>
         </FormField>
       </div>
+
+      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+        <legend className="t-eyebrow px-s2 text-ink-soft">Staff who can perform this service</legend>
+        {staff.length === 0 ? (
+          <p className="t-body-sm text-ink-soft">
+            No staff exist yet. Create some on the Staff page first.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-s2 md:grid-cols-2">
+            {staff.map((s) => {
+              const fullName = `${s.firstName}${s.lastName ? ' ' + s.lastName : ''}`;
+              return (
+                <label
+                  key={s.id}
+                  className="flex cursor-pointer items-center gap-s2 rounded-sm px-s2 py-s1 transition-colors duration-fast hover:bg-surface-2"
+                >
+                  <input
+                    type="checkbox"
+                    name="staffIds"
+                    value={s.id}
+                    defaultChecked={initialStaffIds.has(s.id)}
+                    className="h-[18px] w-[18px] cursor-pointer accent-accent"
+                  />
+                  <span className="flex flex-col">
+                    <span className="t-body-md text-ink">{fullName}</span>
+                    {s.jobTitle && (
+                      <span className="t-caption text-ink-soft">{s.jobTitle}</span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        {fieldErrors.staffIds && (
+          <span className="t-caption text-red font-sans">{fieldErrors.staffIds}</span>
+        )}
+      </fieldset>
 
       <div className="flex gap-s3">
         <SubmitButton label={submitLabel} />

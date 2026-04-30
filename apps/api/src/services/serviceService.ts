@@ -23,6 +23,11 @@ import type {
 // Audit log: create/update/delete all write an audit_log row inside the
 // same transaction as the mutation. Action names: service.created,
 // service.updated, service.deleted. Actor is the authenticated user.
+//
+// StaffService M2M: Service.staffIds on the create/update body is the
+// inverse of Staff.serviceIds (managed in staffService.ts). Both write to
+// the same staff_services join table. Either side can replace the
+// assignment set atomically with the parent write.
 
 const SERVICE_SAFE_FIELDS = {
   id: true,
@@ -38,8 +43,15 @@ const SERVICE_SAFE_FIELDS = {
   deletedAt: true,
 } satisfies Prisma.ServiceSelect;
 
-export type CreateServiceResult = { service: Service };
-export type UpdateServiceResult = { service: Service };
+// Detail endpoint augments Service with staffIds (a derived projection of
+// staff_services join rows, not a column). List endpoint omits this for
+// per-row M2M-lookup cost reasons.
+export type ServiceWithStaff = Service & { staffIds: string[] };
+
+export type CreateServiceResult = { service: ServiceWithStaff };
+export type UpdateServiceResult = { service: ServiceWithStaff };
+
+type AuditPayload = (Service & { staffIds: string[] }) | null;
 
 async function writeAudit(
   tx: ExtendedTransactionClient,
@@ -48,8 +60,8 @@ async function writeAudit(
     actorUserId: string;
     action: 'service.created' | 'service.updated' | 'service.deleted';
     entityId: string;
-    before: Service | null;
-    after: Service | null;
+    before: AuditPayload;
+    after: AuditPayload;
   },
 ): Promise<void> {
   await tx.auditLog.create({
@@ -70,6 +82,57 @@ async function writeAudit(
   });
 }
 
+// Verify every requested staffId belongs to this tenant. Returns the
+// validated set. Throws if any ID is invalid -- 400 over silent drop.
+async function validateStaffIds(
+  tx: ExtendedTransactionClient,
+  args: { tenantId: string; staffIds: string[] },
+): Promise<string[]> {
+  if (args.staffIds.length === 0) return [];
+  const found = await tx.staff.findMany({
+    where: { tenantId: args.tenantId, id: { in: args.staffIds } },
+    select: { id: true },
+  });
+  const foundIds = new Set(found.map((s) => s.id));
+  const missing = args.staffIds.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) {
+    const err = new Error(
+      `Unknown staff IDs for this tenant: ${missing.join(', ')}`,
+    );
+    (err as Error & { code?: string }).code = 'INVALID_STAFF_IDS';
+    throw err;
+  }
+  return [...foundIds];
+}
+
+// Replace the staff_services rows for a service with exactly the given
+// set. Caller is responsible for already having validated the IDs.
+async function replaceServiceStaff(
+  tx: ExtendedTransactionClient,
+  args: { serviceId: string; staffIds: string[] },
+): Promise<void> {
+  await tx.staffService.deleteMany({ where: { serviceId: args.serviceId } });
+  if (args.staffIds.length > 0) {
+    await tx.staffService.createMany({
+      data: args.staffIds.map((sid) => ({
+        staffId: sid,
+        serviceId: args.serviceId,
+      })),
+    });
+  }
+}
+
+async function loadStaffIds(
+  tx: ExtendedTransactionClient,
+  serviceId: string,
+): Promise<string[]> {
+  const rows = await tx.staffService.findMany({
+    where: { serviceId },
+    select: { staffId: true },
+  });
+  return rows.map((r) => r.staffId);
+}
+
 export async function createService(
   prisma: ExtendedPrismaClient,
   args: {
@@ -81,6 +144,10 @@ export async function createService(
   const { tenantId, actorUserId, body } = args;
 
   return prisma.$transaction(async (tx) => {
+    const validatedStaffIds = body.staffIds
+      ? await validateStaffIds(tx, { tenantId, staffIds: body.staffIds })
+      : [];
+
     const service = await tx.service.create({
       data: {
         tenantId,
@@ -97,16 +164,28 @@ export async function createService(
       select: SERVICE_SAFE_FIELDS,
     });
 
+    if (body.staffIds) {
+      await replaceServiceStaff(tx, {
+        serviceId: service.id,
+        staffIds: validatedStaffIds,
+      });
+    }
+
+    const withStaff: ServiceWithStaff = {
+      ...service,
+      staffIds: validatedStaffIds,
+    };
+
     await writeAudit(tx, {
       tenantId,
       actorUserId,
       action: 'service.created',
       entityId: service.id,
       before: null,
-      after: service,
+      after: withStaff,
     });
 
-    return { service };
+    return { service: withStaff };
   });
 }
 
@@ -154,10 +233,15 @@ export async function getServiceById(
     tenantId: string;
     id: string;
   },
-): Promise<Service | null> {
-  return prisma.service.findFirst({
-    where: { tenantId: args.tenantId, id: args.id },
-    select: SERVICE_SAFE_FIELDS,
+): Promise<ServiceWithStaff | null> {
+  return prisma.$transaction(async (tx) => {
+    const service = await tx.service.findFirst({
+      where: { tenantId: args.tenantId, id: args.id },
+      select: SERVICE_SAFE_FIELDS,
+    });
+    if (!service) return null;
+    const staffIds = await loadStaffIds(tx, service.id);
+    return { ...service, staffIds };
   });
 }
 
@@ -173,23 +257,45 @@ export async function updateService(
   const { tenantId, actorUserId, id, body } = args;
 
   return prisma.$transaction(async (tx) => {
-    const before = await tx.service.findFirst({
+    const beforeService = await tx.service.findFirst({
       where: { tenantId, id },
       select: SERVICE_SAFE_FIELDS,
     });
-    if (!before) return null;
+    if (!beforeService) return null;
+    const beforeStaffIds = await loadStaffIds(tx, id);
+    const before: ServiceWithStaff = { ...beforeService, staffIds: beforeStaffIds };
 
-    // Empty PATCH → no-op. Don't write an audit row for a non-change.
-    const hasChanges = Object.keys(body).length > 0;
-    if (!hasChanges) {
+    // Empty PATCH (no service fields, no staffIds) → no-op.
+    const hasServiceChanges =
+      Object.keys(body).filter((k) => k !== 'staffIds').length > 0;
+    const hasStaffIdsChange = 'staffIds' in body && body.staffIds !== undefined;
+    if (!hasServiceChanges && !hasStaffIdsChange) {
       return { service: before };
     }
 
-    const after = await tx.service.update({
-      where: { id },
-      data: body,
-      select: SERVICE_SAFE_FIELDS,
-    });
+    let afterService = beforeService;
+    if (hasServiceChanges) {
+      // Strip staffIds (not a service column) before passing data to update.
+      const { staffIds: _omit, ...serviceFields } = body;
+      void _omit;
+      afterService = await tx.service.update({
+        where: { id },
+        data: serviceFields,
+        select: SERVICE_SAFE_FIELDS,
+      });
+    }
+
+    let afterStaffIds = beforeStaffIds;
+    if (hasStaffIdsChange) {
+      const validated = await validateStaffIds(tx, {
+        tenantId,
+        staffIds: body.staffIds!,
+      });
+      await replaceServiceStaff(tx, { serviceId: id, staffIds: validated });
+      afterStaffIds = validated;
+    }
+
+    const after: ServiceWithStaff = { ...afterService, staffIds: afterStaffIds };
 
     await writeAudit(tx, {
       tenantId,
@@ -215,25 +321,29 @@ export async function softDeleteService(
   const { tenantId, actorUserId, id } = args;
 
   return prisma.$transaction(async (tx) => {
-    const before = await tx.service.findFirst({
+    const beforeService = await tx.service.findFirst({
       where: { tenantId, id },
       select: SERVICE_SAFE_FIELDS,
     });
-    if (!before) return { deleted: false };
+    if (!beforeService) return { deleted: false };
+    const beforeStaffIds = await loadStaffIds(tx, id);
 
-    const after = await tx.service.update({
+    const afterService = await tx.service.update({
       where: { id },
       data: { deletedAt: new Date() },
       select: SERVICE_SAFE_FIELDS,
     });
 
+    // Don't tear down staff_services rows on soft-delete: assignment
+    // history is part of the audit/reporting trail. The booking engine
+    // will filter on service.deletedAt at query time.
     await writeAudit(tx, {
       tenantId,
       actorUserId,
       action: 'service.deleted',
-      entityId: after.id,
-      before,
-      after,
+      entityId: id,
+      before: { ...beforeService, staffIds: beforeStaffIds },
+      after: { ...afterService, staffIds: beforeStaffIds },
     });
 
     return { deleted: true };
