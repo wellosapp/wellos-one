@@ -28,6 +28,12 @@ export default function AdminLayout({
           >
             Services
           </Link>
+          <Link
+            href="/admin/staff"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Staff
+          </Link>
         </nav>
         <UserButton afterSignOutUrl="/" />
       </header>

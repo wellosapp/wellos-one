@@ -7,7 +7,7 @@ type Surface =
       title: string;
       description: string;
       status: 'live';
-      href: '/admin/clients' | '/admin/services';
+      href: '/admin/clients' | '/admin/services' | '/admin/staff';
     }
   | { title: string; description: string; status: 'soon' };
 
@@ -25,9 +25,10 @@ const SURFACES: Surface[] = [
     status: 'live',
   },
   {
+    href: '/admin/staff',
     title: 'Staff',
     description: 'Staff members, working hours, commission rates, and service eligibility.',
-    status: 'soon',
+    status: 'live',
   },
 ];
 

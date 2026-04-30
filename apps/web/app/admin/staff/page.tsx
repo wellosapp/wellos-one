@@ -2,66 +2,54 @@ import Link from 'next/link';
 
 import { DeleteConfirmButton } from '@/components/admin/DeleteConfirmButton';
 import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
-import { listClients, type ClientIntakeStatus } from '@/lib/api/clients';
+import { listStaff } from '@/lib/api/staff';
 import { ApiError } from '@/lib/api/client';
 
-import { deleteClientAction } from './_actions';
+import { deleteStaffAction } from './_actions';
 
 const PAGE_SIZE = 25;
 
-const INTAKE_STATUS_LABELS: Record<ClientIntakeStatus, string> = {
-  pending: 'Pending',
-  sent: 'Sent',
-  completed: 'Completed',
-  expired: 'Expired',
-};
-
-const INTAKE_STATUS_TONE: Record<ClientIntakeStatus, 'neutral' | 'amber' | 'green' | 'red'> = {
-  pending: 'neutral',
-  sent: 'amber',
-  completed: 'green',
-  expired: 'red',
-};
-
 type SearchParams = {
   q?: string;
-  intakeStatus?: string;
+  active?: string;
   page?: string;
   includeDeleted?: string;
 };
 
-function isValidIntakeStatus(v: unknown): v is ClientIntakeStatus {
-  return v === 'pending' || v === 'sent' || v === 'completed' || v === 'expired';
+function formatHourly(cents: number | null): string {
+  if (cents === null) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(cents / 100);
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+function formatPct(value: number | string | null): string {
+  if (value === null) return '—';
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(n)) return '—';
+  return `${n.toFixed(2)}%`;
 }
 
-export default async function ClientsListPage({
+export default async function StaffListPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
   const q = sp.q?.trim() || undefined;
-  const intakeStatus = isValidIntakeStatus(sp.intakeStatus) ? sp.intakeStatus : undefined;
+  const active = sp.active === 'true' ? true : sp.active === 'false' ? false : undefined;
   const page = Math.max(1, Number(sp.page) || 1);
   const skip = (page - 1) * PAGE_SIZE;
   const includeDeleted =
     sp.includeDeleted === 'true' || sp.includeDeleted === '1';
 
-  let data: Awaited<ReturnType<typeof listClients>> | null = null;
+  let data: Awaited<ReturnType<typeof listStaff>> | null = null;
   let errorMessage: string | null = null;
   try {
-    data = await listClients({
+    data = await listStaff({
       q,
-      intakeStatus,
+      active,
       take: PAGE_SIZE,
       skip,
       includeDeleted,
@@ -81,7 +69,7 @@ export default async function ClientsListPage({
 
   const baseQuery: Record<string, string> = {
     ...(q ? { q } : {}),
-    ...(intakeStatus ? { intakeStatus } : {}),
+    ...(active !== undefined ? { active: String(active) } : {}),
     ...(includeDeleted ? { includeDeleted: 'true' } : {}),
   };
 
@@ -89,12 +77,12 @@ export default async function ClientsListPage({
     <div className="flex flex-col gap-s6">
       <header className="flex items-center justify-between gap-s4">
         <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Clients</span>
-          <h1 className="t-display-lg">All clients</h1>
+          <span className="t-eyebrow text-accent">Staff</span>
+          <h1 className="t-display-lg">All staff</h1>
         </div>
-        <Link href="/admin/clients/new" className="no-underline">
+        <Link href="/admin/staff/new" className="no-underline">
           <Button variant="accent" size="md">
-            New client
+            New staff
           </Button>
         </Link>
       </header>
@@ -105,20 +93,17 @@ export default async function ClientsListPage({
             type="text"
             name="q"
             defaultValue={q ?? ''}
-            placeholder="Search name, email, or phone"
-            className="min-w-[220px] flex-1"
+            placeholder="Search name, email, phone, or job title"
+            className="min-w-[260px] flex-1"
           />
           <Select
-            name="intakeStatus"
-            defaultValue={intakeStatus ?? ''}
+            name="active"
+            defaultValue={active === undefined ? '' : String(active)}
             className="min-w-[180px] flex-none"
           >
-            <option value="">All intake statuses</option>
-            {(Object.keys(INTAKE_STATUS_LABELS) as ClientIntakeStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {INTAKE_STATUS_LABELS[s]}
-              </option>
-            ))}
+            <option value="">All statuses</option>
+            <option value="true">Active only</option>
+            <option value="false">Inactive only</option>
           </Select>
           <Button variant="primary" size="md" type="submit">
             Search
@@ -132,11 +117,11 @@ export default async function ClientsListPage({
         <Alert tone="warning">
           <span className="flex flex-wrap items-center justify-between gap-s3">
             <span>
-              Including soft-deleted clients. Soft-deleted rows show in the list but their
-              detail page warns they are deleted.
+              Including soft-deleted staff. Soft-deleted rows show in the list
+              but are hidden from booking and reports.
             </span>
             <Link
-              href="/admin/clients"
+              href="/admin/staff"
               className="t-body-sm text-amber underline-offset-2 hover:underline"
             >
               Hide soft-deleted
@@ -149,62 +134,74 @@ export default async function ClientsListPage({
         <>
           <p className="t-body-sm text-ink-soft">
             {total === 0
-              ? 'No clients yet.'
-              : `${total} client${total === 1 ? '' : 's'} total · page ${page} of ${totalPages}`}
+              ? 'No staff yet.'
+              : `${total} staff member${total === 1 ? '' : 's'} total · page ${page} of ${totalPages}`}
           </p>
 
-          {data.clients.length > 0 && (
+          {data.staff.length > 0 && (
             <Card padding="sm" className="overflow-hidden p-0">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-surface-3 bg-surface-2 text-left">
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Name</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Title</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Email</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Phone</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Intake</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Created</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Hourly</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Commission</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Status</th>
                     <th className="t-eyebrow px-s4 py-s3 text-right text-ink-soft">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.clients.map((c) => {
-                    const deleteAction = deleteClientAction.bind(null, c.id);
+                  {data.staff.map((s) => {
+                    const deleteAction = deleteStaffAction.bind(null, s.id);
+                    const fullName = `${s.firstName}${s.lastName ? ' ' + s.lastName : ''}`;
                     return (
                       <tr
-                        key={c.id}
+                        key={s.id}
                         className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
                       >
                         <td className="px-s4 py-s3 t-body-md">
                           <Link
-                            href={`/admin/clients/${c.id}`}
+                            href={`/admin/staff/${s.id}`}
                             className="text-accent no-underline hover:underline"
                           >
-                            {c.firstName}
-                            {c.lastName ? ` ${c.lastName}` : ''}
+                            {fullName}
                           </Link>
                         </td>
-                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.email ?? '—'}</td>
-                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.phone ?? '—'}</td>
-                        <td className="px-s4 py-s3">
-                          <Badge tone={INTAKE_STATUS_TONE[c.intakeStatus]}>
-                            {INTAKE_STATUS_LABELS[c.intakeStatus]}
-                          </Badge>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {s.jobTitle ?? '—'}
                         </td>
-                        <td className="px-s4 py-s3 t-body-sm text-ink-soft">
-                          {formatDate(c.createdAt)}
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {s.email ?? '—'}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatHourly(s.hourlyRateCents)}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatPct(s.commissionRatePct)}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          {s.deletedAt ? (
+                            <Badge tone="red">Soft-deleted</Badge>
+                          ) : s.active ? (
+                            <Badge tone="green">Active</Badge>
+                          ) : (
+                            <Badge tone="neutral">Inactive</Badge>
+                          )}
                         </td>
                         <td className="px-s4 py-s3">
                           <div className="flex items-center justify-end gap-s3">
                             <Link
-                              href={`/admin/clients/${c.id}`}
+                              href={`/admin/staff/${s.id}`}
                               className="t-body-sm text-accent no-underline hover:underline"
                             >
                               Edit
                             </Link>
-                            {!c.deletedAt && (
+                            {!s.deletedAt && (
                               <DeleteConfirmButton
                                 action={deleteAction}
-                                confirmMessage={`Soft-delete ${c.firstName}${c.lastName ? ' ' + c.lastName : ''}? Hides from lists; reversible by an admin via DB.`}
+                                confirmMessage={`Soft-delete ${fullName}? Hides from booking and lists; preserves service assignments for audit. Reversible by an admin via DB.`}
                               />
                             )}
                           </div>
@@ -222,7 +219,7 @@ export default async function ClientsListPage({
               {page > 1 && (
                 <Link
                   href={{
-                    pathname: '/admin/clients',
+                    pathname: '/admin/staff',
                     query: { ...baseQuery, page: page - 1 },
                   }}
                   className="t-body-sm text-accent no-underline hover:underline"
@@ -233,7 +230,7 @@ export default async function ClientsListPage({
               {page < totalPages && (
                 <Link
                   href={{
-                    pathname: '/admin/clients',
+                    pathname: '/admin/staff',
                     query: { ...baseQuery, page: page + 1 },
                   }}
                   className="t-body-sm text-accent no-underline hover:underline"

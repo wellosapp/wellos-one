@@ -1,8 +1,11 @@
 import Link from 'next/link';
 
+import { DeleteConfirmButton } from '@/components/admin/DeleteConfirmButton';
 import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
 import { listServices } from '@/lib/api/services';
 import { ApiError } from '@/lib/api/client';
+
+import { deleteServiceAction } from './_actions';
 
 const PAGE_SIZE = 25;
 
@@ -146,53 +149,73 @@ export default async function ServicesListPage({
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Price</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Color</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Status</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-right text-ink-soft">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.services.map((s) => (
-                    <tr
-                      key={s.id}
-                      className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
-                    >
-                      <td className="px-s4 py-s3 t-body-md">
-                        <Link
-                          href={`/admin/services/${s.id}`}
-                          className="text-accent no-underline hover:underline"
-                        >
-                          {s.name}
-                        </Link>
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {formatDuration(s.durationMinutes)}
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {formatPrice(s.basePriceCents)}
-                      </td>
-                      <td className="px-s4 py-s3">
-                        {s.color ? (
-                          <span className="inline-flex items-center gap-s2">
-                            <span
-                              aria-hidden="true"
-                              className="inline-block h-[14px] w-[14px] rounded-sm border border-surface-3"
-                              style={{ backgroundColor: s.color }}
-                            />
-                            <code className="t-body-sm text-ink-soft">{s.color}</code>
-                          </span>
-                        ) : (
-                          <span className="t-body-sm text-ink-soft">—</span>
-                        )}
-                      </td>
-                      <td className="px-s4 py-s3">
-                        {s.deletedAt ? (
-                          <Badge tone="red">Soft-deleted</Badge>
-                        ) : s.active ? (
-                          <Badge tone="green">Active</Badge>
-                        ) : (
-                          <Badge tone="neutral">Inactive</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {data.services.map((s) => {
+                    const deleteAction = deleteServiceAction.bind(null, s.id);
+                    return (
+                      <tr
+                        key={s.id}
+                        className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
+                      >
+                        <td className="px-s4 py-s3 t-body-md">
+                          <Link
+                            href={`/admin/services/${s.id}`}
+                            className="text-accent no-underline hover:underline"
+                          >
+                            {s.name}
+                          </Link>
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatDuration(s.durationMinutes)}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatPrice(s.basePriceCents)}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          {s.color ? (
+                            <span className="inline-flex items-center gap-s2">
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-[14px] w-[14px] rounded-sm border border-surface-3"
+                                style={{ backgroundColor: s.color }}
+                              />
+                              <code className="t-body-sm text-ink-soft">{s.color}</code>
+                            </span>
+                          ) : (
+                            <span className="t-body-sm text-ink-soft">—</span>
+                          )}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          {s.deletedAt ? (
+                            <Badge tone="red">Soft-deleted</Badge>
+                          ) : s.active ? (
+                            <Badge tone="green">Active</Badge>
+                          ) : (
+                            <Badge tone="neutral">Inactive</Badge>
+                          )}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          <div className="flex items-center justify-end gap-s3">
+                            <Link
+                              href={`/admin/services/${s.id}`}
+                              className="t-body-sm text-accent no-underline hover:underline"
+                            >
+                              Edit
+                            </Link>
+                            {!s.deletedAt && (
+                              <DeleteConfirmButton
+                                action={deleteAction}
+                                confirmMessage={`Soft-delete "${s.name}"? Hides from booking and lists; reversible by an admin via DB.`}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Card>
