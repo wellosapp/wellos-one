@@ -19,12 +19,13 @@ Per `docs/000-CLAUDE-session-start-snippet.md`:
 7. Memory files load automatically. Especially relevant to this session's work:
    - `MEMORY.md` (index, always loaded)
    - `deployed_surface.md` — refreshed with Service + Staff CRUD endpoints, /version, deploy-verify, row actions component, observability section
+   - `feedback_session_workflow.md` — **NEW STANDING RULE** — fixed 8-phase session flow with self-verification + user-smoke + spec-audit checkpoints. Read this FIRST every session. Don't skip phases; don't improvise the order.
    - `project_node_version_pin.md` — **NEW** — root engines.node capped at <21 (Nixpacks Node-24 ABI mismatch hotfix)
    - `reference_railway_hobby_slow_recovery.md` — **NEW** — Hobby plan recovers later than Pro during Railway incidents; expect extra wait before assuming app bugs
    - `feedback_admin_lists_need_row_actions.md` — **NEW STANDING RULE** — every admin list ships with rightmost Actions column (Edit link + Soft-delete button) from PR 1; not a follow-up
    - `project_pre_launch_sweep.md` — appended color-picker entry for the Service form
 
-**Local path:** `H:\Projects\wellos-one`. Repo: `wellosapp/wellos-one`. Main at `1a47136` after PR #40.
+**Local path:** `H:\Projects\wellos-one`. Repo: `wellosapp/wellos-one`. Main at `1a47136` after PR #40 (this doc itself ships in PR #41).
 
 ---
 
