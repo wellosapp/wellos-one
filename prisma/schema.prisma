@@ -55,6 +55,162 @@ enum AppointmentStatus {
   no_show      @map("no_show")
 }
 
+// ---------- Tier A: Client memory + triage enums (Epic 3) ----------
+//
+// Per docs/04-booking UI UX Update/wellos-booking-ui-walkthrough-v2-notes-package
+// /wellos-booking-ui-walkthrough-v2-notes.md §4.3 + docs/05-booking-enhancements.md
+// §§2-4. Decisions Q1-Q11 from session 2026-04-30.
+
+// 12 categories per v2-notes §4.3. `session` and `customer_request` extend the
+// master spec's 10-value list to support staff session notes and customer-
+// authored pre-visit notes as semantically distinct.
+enum ClientNoteCategory {
+  general
+  preference
+  formula
+  allergy
+  medical
+  clinical
+  behavioral
+  billing
+  relationship
+  internal
+  session
+  customer_request
+}
+
+enum ClientNotePriority {
+  normal
+  alert
+}
+
+// Author type. The three nullable author FKs on ClientNote disambiguate the
+// concrete row; this enum lets us filter/index by type cheaply without a join.
+// Invariant (app-layer): exactly one of authorStaffId / authorClientId /
+// authorUserId is non-null when authorType in (customer/staff/admin); all
+// three are null when authorType = system.
+enum ClientNoteAuthorType {
+  customer
+  staff
+  admin
+  system
+}
+
+// Where the note originated. 7 surfaces per v2-notes §4.3.
+enum ClientNoteSourceSurface {
+  public_booking
+  magic_link_manage
+  appointment_detail
+  calendar_drawer
+  client_profile
+  intake_form
+  system_transition
+}
+
+// Visibility on ClientNote. 5 values per v2-notes §4.3 (extends master spec's
+// 3-value model with `customer_submitted` sentinel + `protected_clinical`
+// reservation for medspa partition).
+enum ClientNoteVisibility {
+  location
+  provider_only      @map("provider_only")
+  admin_only         @map("admin_only")
+  customer_submitted @map("customer_submitted")
+  protected_clinical @map("protected_clinical")
+}
+
+// Visibility on MediaAsset. 3-value enum (Q3 decision); files don't need
+// the customer_submitted sentinel because the uploadedByClient boolean
+// captures that, and don't need protected_clinical until Phase-2 partition.
+// Used to be ClientFileVisibility; renamed during the universal media-asset
+// pivot to match the broader MediaAsset table.
+enum MediaAssetVisibility {
+  location
+  provider_only @map("provider_only")
+  admin_only    @map("admin_only")
+}
+
+// Access class per the R2 spec §2.5. Drives which bucket the object sits in
+// and how URLs are generated (CDN-direct vs signed-and-short-lived).
+enum MediaAccessClass {
+  public_booking    @map("public_booking")
+  tenant_staff      @map("tenant_staff")
+  client_owned      @map("client_owned")
+  protected_medspa  @map("protected_medspa")
+  generated
+}
+
+// Polymorphic owner of a MediaAsset. Tenant brand, location photos, service
+// galleries, staff avatars, client files, appointment uploads, campaign
+// QR codes — all in one table with owner_type discriminating.
+enum MediaOwnerType {
+  tenant
+  location
+  service
+  staff
+  client
+  appointment
+  campaign
+}
+
+// Trigger moments at which an alert-priority note must surface.
+// Stored as a Postgres enum array on ClientNote.alertTriggers (Q1 decision).
+enum ClientNoteAlertTrigger {
+  booking
+  check_in @map("check_in")
+  checkout
+}
+
+// Trigger context for an acknowledgment row. Wider than ClientNoteAlertTrigger
+// (master spec §5.2.3 adds `manual` for staff acknowledging an alert outside
+// the three trigger moments).
+enum ClientNoteAckTriggerContext {
+  booking
+  check_in @map("check_in")
+  checkout
+  manual
+}
+
+// Triage question types per 05-booking-enhancements.md §2.
+enum ServiceBookingQuestionType {
+  chips_single
+  chips_multi
+  short_text
+  long_text
+  slider
+  yes_no
+  photo_upload
+}
+
+enum ServiceContentDeliveryType {
+  prep
+  aftercare
+  reminder_with_content
+}
+
+enum ServiceContentDeliveryChannel {
+  sms
+  email
+  both
+}
+
+// Where the appointment was created from. Surfaces in reporting + abuse
+// detection. Tier A column on Appointment (added 2026-04-30).
+enum AppointmentSource {
+  web
+  staff
+  widget
+  api
+  import
+  campaign
+  walk_in   @map("walk_in")
+  quick_book @map("quick_book")
+}
+
+// Tenant-editable file folder taxonomy. Used by ClientFile.folder.
+// Per the master spec §5.2.4 default folders. Free string (not enum) on
+// the column so tenants can add custom folders, but these are the
+// suggested seed values.
+
 // ---------- Tenancy & users ----------
 
 model Tenant {
@@ -65,17 +221,31 @@ model Tenant {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  locations          Location[]
-  users              User[]
-  roleAssignments    RoleAssignment[]
-  tenantFeatureFlags TenantFeatureFlag[]
-  idempotencyKeys    IdempotencyKey[]
-  auditEntries       AuditLog[]
-  clients            Client[]
-  staff              Staff[]
-  services           Service[]
-  clientTags         ClientTag[]
-  appointments       Appointment[]
+  locations                 Location[]
+  users                     User[]
+  roleAssignments           RoleAssignment[]
+  tenantFeatureFlags        TenantFeatureFlag[]
+  idempotencyKeys           IdempotencyKey[]
+  auditEntries              AuditLog[]
+  clients                   Client[]
+  staff                     Staff[]
+  services                  Service[]
+  clientTags                ClientTag[]
+  appointments              Appointment[]
+
+  // Tier A
+  clientNotes               ClientNote[]
+  // Multi-tenant ownership (every MediaAsset has a tenantId).
+  mediaAssets               MediaAsset[]              @relation("MediaAssetTenantScope")
+  // Tenant as polymorphic owner (brand assets, booking-page hero, policies).
+  brandMediaAssets          MediaAsset[]              @relation("MediaAssetTenant")
+  tenantMediaRoot           TenantMediaRoot?
+  soapNotes                 SoapNote[]
+  soapNoteRevisions         SoapNoteRevision[]
+  clientNoteAcks            ClientNoteAcknowledgment[]
+  serviceBookingQuestions   ServiceBookingQuestion[]
+  appointmentBookingAnswers AppointmentBookingAnswer[]
+  serviceContentDeliveries  ServiceContentDelivery[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -92,6 +262,7 @@ model Location {
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   appointments Appointment[]
+  mediaAssets  MediaAsset[]  @relation("MediaAssetLocation")
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -113,9 +284,10 @@ model User {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  tenant          Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  roleAssignments RoleAssignment[]
-  auditEntries    AuditLog[]       @relation("AuditActor")
+  tenant              Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  roleAssignments     RoleAssignment[]
+  auditEntries        AuditLog[]       @relation("AuditActor")
+  authoredClientNotes ClientNote[]     @relation("ClientNoteAuthorUser")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -269,6 +441,26 @@ model Client {
   emergencyContactPhone String?            @map("emergency_contact_phone")
   intakeStatus          ClientIntakeStatus @default(pending) @map("intake_status")
   notes                 String?
+
+  // Tier A — Communication preferences (Client CRM #2 from feature matrix).
+  // Used by Epic 8 notification dispatch to gate SMS/email sends. Default
+  // false so newly-created clients receive both until they opt out.
+  smsOptedOut           Boolean            @default(false) @map("sms_opted_out")
+  emailOptedOut         Boolean            @default(false) @map("email_opted_out")
+  // Optional channel preference. Null = system picks based on booking spec
+  // (typically SMS for confirmation, email for receipts). Not stored as an
+  // enum yet — values: 'sms' | 'email' | 'both'. Promote to enum when we
+  // add the second client-facing notification surface.
+  preferredChannel      String?            @map("preferred_channel")
+
+  // Tier A — Banned client flag (Client CRM #9). Booking surfaces (public
+  // and staff) check this before allowing creation. `bannedAt` lets us
+  // scope reporting; `bannedReason` is internal-only (never shown to
+  // banned clients themselves).
+  banned                Boolean            @default(false)
+  bannedReason          String?            @map("banned_reason")
+  bannedAt              DateTime?          @map("banned_at")     @db.Timestamptz(3)
+
   createdAt             DateTime           @default(now()) @map("created_at")
   updatedAt             DateTime           @updatedAt @map("updated_at")
   deletedAt             DateTime?          @map("deleted_at")
@@ -276,11 +468,17 @@ model Client {
   tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   tagAssignments ClientTagAssignment[]
   appointments   Appointment[]
+  notes_         ClientNote[]          @relation("ClientNoteClient")
+  authoredNotes  ClientNote[]          @relation("ClientNoteAuthorClient")
+  mediaAssets    MediaAsset[]          @relation("MediaAssetClient")
+  soapNotes      SoapNote[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
   @@index([tenantId, phone])
+  // Banned-flag index for fast booking-time gate.
+  @@index([tenantId, banned])
   @@map("clients")
 }
 
@@ -311,6 +509,15 @@ model Staff {
   services     StaffService[]
   appointments Appointment[]
 
+  // Tier A inverse relations.
+  authoredNotes        ClientNote[]               @relation("ClientNoteAuthorStaff")
+  uploadedMediaAssets  MediaAsset[]               @relation("MediaAssetUploadedByStaff")
+  ownedMediaAssets     MediaAsset[]               @relation("MediaAssetStaff")
+  authoredSoapNotes    SoapNote[]                 @relation("SoapNoteAuthorStaff")
+  lockedSoapNotes      SoapNote[]                 @relation("SoapNoteLockedByStaff")
+  soapNoteRevisions    SoapNoteRevision[]         @relation("SoapNoteRevisionAuthor")
+  noteAcknowledgments  ClientNoteAcknowledgment[] @relation("ClientNoteAckStaff")
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -333,13 +540,24 @@ model Service {
   // Hex color for calendar rendering (e.g. "#7B9E89"). UI maps to design tokens.
   color              String?
   active             Boolean   @default(true)
+
+  // Prep / aftercare / what-to-expect content lives in R2 as markdown docs
+  // per the R2 UI/UX buildout spec §2.4 + §13.2 (services/{serviceId}/docs/
+  // {prep|aftercare|what-to-expect|contraindications}.md). Stored as
+  // MediaAsset rows with owner_type='service' + folder='docs'. No DB columns
+  // for the content itself.
+
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
   deletedAt          DateTime? @map("deleted_at")
 
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  staff        StaffService[]
-  appointments Appointment[]
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff             StaffService[]
+  appointments      Appointment[]
+  notes             ClientNote[]
+  mediaAssets       MediaAsset[]             @relation("MediaAssetService")
+  bookingQuestions  ServiceBookingQuestion[]
+  contentDeliveries ServiceContentDelivery[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -423,6 +641,11 @@ model Appointment {
 
   state             AppointmentStatus @default(confirmed)
 
+  // Tier A — Where the appointment was created from. Reporting + abuse
+  // detection. Nullable so existing rows pre-Tier-A migrate cleanly; new
+  // rows must always set this from the route layer.
+  source            AppointmentSource?
+
   notes             String?
   createdByUserId   String?           @map("created_by_user_id")
   cancelledAt       DateTime?         @map("cancelled_at")       @db.Timestamptz(3)
@@ -439,10 +662,435 @@ model Appointment {
   staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
   service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
+  // Tier A inverse relations.
+  notes_              ClientNote[]
+  mediaAssets         MediaAsset[]               @relation("MediaAssetAppointment")
+  soapNotes           SoapNote[]
+  bookingAnswers      AppointmentBookingAnswer[]
+  noteAcknowledgments ClientNoteAcknowledgment[]
+
   @@index([tenantId, scheduledStartAt])
   @@index([staffId, scheduledStartAt])
   @@index([clientId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, state, scheduledStartAt])
+  // Tier A — source-based reporting (e.g. "appointments via direct campaign link").
+  @@index([tenantId, source, scheduledStartAt])
   @@map("appointments")
+}
+
+// ---------- Tier A: Client memory + triage tables (Epic 3) ----------
+//
+// Per docs/04-booking UI UX Update/wellos_booking_coverage_matrix.md.
+// Schema decisions Q1-Q11 from session 2026-04-30.
+
+// Client notes — the single most important Tier A table. 12 categories,
+// 5-value visibility, 7 source surfaces, alert triggers (Postgres enum
+// array per Q1), pinned/archived/expires, author tri-type
+// (customer/staff/admin/system) with three nullable FKs (Q5).
+model ClientNote {
+  id             String                   @id @default(cuid())
+  tenantId       String                   @map("tenant_id")
+  clientId       String                   @map("client_id")
+
+  category       ClientNoteCategory
+  priority       ClientNotePriority       @default(normal)
+  title          String?
+  body           String
+
+  // Optional links — a note may attach to an appointment, a service, both, or neither.
+  appointmentId  String?                  @map("appointment_id")
+  serviceId      String?                  @map("service_id")
+
+  authorType     ClientNoteAuthorType     @map("author_type")
+  authorStaffId  String?                  @map("author_staff_id")
+  authorClientId String?                  @map("author_client_id")
+  authorUserId   String?                  @map("author_user_id")
+
+  sourceSurface  ClientNoteSourceSurface  @map("source_surface")
+  visibility     ClientNoteVisibility
+
+  // Even a 'location'-visible note is internal-only unless this is true.
+  customerVisible Boolean                 @default(false) @map("customer_visible")
+
+  // Postgres enum array (Q1). Empty array means the note does not surface
+  // as alert. @default([]) so Prisma always emits the DB DEFAULT and
+  // future migrations don't regress to NOT NULL without default.
+  alertTriggers  ClientNoteAlertTrigger[] @default([]) @map("alert_triggers")
+
+  pinned         Boolean                  @default(false)
+  expiresAt      DateTime?                @map("expires_at")  @db.Timestamptz(3)
+  archivedAt     DateTime?                @map("archived_at") @db.Timestamptz(3)
+
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt      @map("updated_at")
+  deletedAt      DateTime?                @map("deleted_at")
+
+  tenant          Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client          Client                     @relation("ClientNoteClient", fields: [clientId], references: [id], onDelete: Cascade)
+  appointment     Appointment?               @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  service         Service?                   @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  authorStaff     Staff?                     @relation("ClientNoteAuthorStaff", fields: [authorStaffId], references: [id], onDelete: SetNull)
+  authorClient    Client?                    @relation("ClientNoteAuthorClient", fields: [authorClientId], references: [id], onDelete: SetNull)
+  authorUser      User?                      @relation("ClientNoteAuthorUser", fields: [authorUserId], references: [id], onDelete: SetNull)
+  acknowledgments ClientNoteAcknowledgment[]
+  attachedAssets  MediaAsset[]               @relation("MediaAssetNote")
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId, category])
+  @@index([appointmentId])
+  @@index([serviceId])
+  @@index([clientId, priority])
+  @@map("client_notes")
+}
+
+// Universal polymorphic media asset table per `wellos_calendar_booking_r2_uiux_buildout.md`
+// §2.6. Owns ALL R2-backed media — tenant brand assets, location photos,
+// service galleries + service docs (prep/aftercare/what-to-expect/contraindications.md),
+// staff avatars + intro videos, client reference photos, appointment uploads,
+// campaign QR codes, generated thumbnails/optimized variants/exported PDFs.
+//
+// Polymorphic owner: ownerType discriminates which of the optional FK
+// columns is populated. Convention: exactly one of (tenantOwnerId, locationOwnerId,
+// serviceOwnerId, staffOwnerId, clientOwnerId, appointmentOwnerId,
+// campaignOwnerId) is non-null per row, matching ownerType.
+//
+// Storage path = R2 object key. Bucket selection follows access_class:
+//   public_booking → public bucket (CDN/custom-domain URL)
+//   tenant_staff / client_owned / protected_medspa → private/protected
+//     bucket (signed URLs, short TTL, RBAC-gated)
+//   generated → inherits parent's access class
+//
+// Soft-delete via deletedAt (auto-filtered by the soft-delete extension).
+// archivedAt is a separate "admin archived but not deleted" state — rows
+// with archivedAt set still appear in reports but are hidden from active
+// surfaces. Both can be set; archived ⊆ active rows in normal queries.
+model MediaAsset {
+  id              String           @id @default(cuid())
+  tenantId        String           @map("tenant_id")
+
+  // Bucket name (e.g. wellos-prod-public-media). Used by signed-URL
+  // generation. Resolved from access_class + tenant_media_roots config.
+  bucket          String
+
+  // R2 object key. Convention: tenants/{tenantId}/{ownerType}/{ownerId}/{folder}/{id}-{safeFileName}
+  // EXIF stripping happens at upload time (backend job).
+  objectKey       String           @map("object_key")
+
+  accessClass     MediaAccessClass @map("access_class")
+
+  ownerType       MediaOwnerType   @map("owner_type")
+  // Polymorphic owner FKs — exactly one non-null per row matching ownerType.
+  // No @relation on ownerType column itself; per-owner FK is below.
+  tenantOwnerId      String? @map("tenant_owner_id")
+  locationOwnerId    String? @map("location_owner_id")
+  serviceOwnerId     String? @map("service_owner_id")
+  staffOwnerId       String? @map("staff_owner_id")
+  clientOwnerId      String? @map("client_owner_id")
+  appointmentOwnerId String? @map("appointment_owner_id")
+  campaignOwnerId    String? @map("campaign_owner_id")
+
+  // Optional link to a specific ClientNote — when a note "carries" attached
+  // photos. Null when the asset is a free-floating attachment on the
+  // appointment / client / service / etc.
+  noteId          String?          @map("note_id")
+
+  // Folder taxonomy under the owner (e.g. 'gallery', 'docs', 'before-after',
+  // 'avatar', 'intro-video', 'reference-uploads', 'qr', 'thumbnails').
+  // Free string so tenants can add custom folders.
+  folder          String
+
+  fileName        String           @map("file_name")
+  mimeType        String           @map("mime_type")
+  sizeBytes       BigInt           @map("size_bytes")
+  checksumSha256  String?          @map("checksum_sha256")
+
+  // Image/video metadata.
+  width           Int?
+  height          Int?
+  durationSeconds Int?             @map("duration_seconds")
+
+  altText         String?          @map("alt_text")
+  caption         String?
+
+  // Worker-generated variant URLs/keys. Shape: { thumb: { key, width, height }, w600: {...}, w1200: {...}, optimized: {...} }
+  variants        Json             @default("{}")
+
+  // Free-form metadata (e.g. EXIF data we kept, source camera model, etc.)
+  metadata        Json             @default("{}")
+
+  visibility      MediaAssetVisibility @default(location)
+
+  // Booking spec uses 'protected' boolean independent of access_class for
+  // future medspa partition. Set to true for medspa-protected records;
+  // worker uses this to migrate to the protected bucket later.
+  protected       Boolean          @default(false)
+
+  uploadedByUserId  String?        @map("uploaded_by_user_id")
+  uploadedByStaffId String?        @map("uploaded_by_staff_id")
+  uploadedByClient  Boolean        @default(false) @map("uploaded_by_client")
+
+  uploadedAt      DateTime         @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  archivedAt      DateTime?        @map("archived_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt      @map("updated_at")
+  deletedAt       DateTime?        @map("deleted_at")
+
+  tenant            Tenant       @relation("MediaAssetTenantScope", fields: [tenantId], references: [id], onDelete: Restrict)
+  // Polymorphic owner relations — only the matching one is populated per row.
+  tenantOwner       Tenant?      @relation("MediaAssetTenant",      fields: [tenantOwnerId],      references: [id], onDelete: SetNull, map: "media_assets_tenant_owner_fkey")
+  locationOwner     Location?    @relation("MediaAssetLocation",    fields: [locationOwnerId],    references: [id], onDelete: SetNull)
+  serviceOwner      Service?     @relation("MediaAssetService",     fields: [serviceOwnerId],     references: [id], onDelete: SetNull)
+  staffOwner        Staff?       @relation("MediaAssetStaff",       fields: [staffOwnerId],       references: [id], onDelete: SetNull)
+  clientOwner       Client?      @relation("MediaAssetClient",      fields: [clientOwnerId],     references: [id], onDelete: SetNull)
+  appointmentOwner  Appointment? @relation("MediaAssetAppointment", fields: [appointmentOwnerId], references: [id], onDelete: SetNull)
+  // campaignOwner intentionally has no Prisma relation — Campaign table is Tier C.
+
+  note              ClientNote?  @relation("MediaAssetNote",        fields: [noteId], references: [id], onDelete: SetNull)
+  uploadedByStaff   Staff?       @relation("MediaAssetUploadedByStaff", fields: [uploadedByStaffId], references: [id], onDelete: SetNull)
+
+  @@unique([bucket, objectKey])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, ownerType])
+  @@index([tenantOwnerId])
+  @@index([locationOwnerId])
+  @@index([serviceOwnerId])
+  @@index([staffOwnerId])
+  @@index([clientOwnerId])
+  @@index([appointmentOwnerId])
+  @@index([campaignOwnerId])
+  @@index([noteId])
+  @@index([tenantId, archivedAt])
+  @@map("media_assets")
+}
+
+// Per-tenant R2 bucket configuration. Provisioned at tenant signup.
+// One row per tenant.
+model TenantMediaRoot {
+  id               String    @id @default(cuid())
+  tenantId         String    @unique @map("tenant_id")
+  publicBucket     String    @map("public_bucket")
+  privateBucket    String    @map("private_bucket")
+  // Reserved for medspa-protected partition in a later PR.
+  protectedBucket  String?   @map("protected_bucket")
+  rootPrefix       String    @map("root_prefix")
+  cdnBaseUrl       String?   @map("cdn_base_url")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_media_roots")
+}
+
+// Onboarding seed data: which folders to provision per owner type.
+// Used by the admin media manager + the tenant signup function.
+model MediaFolderTemplate {
+  id                  String           @id @default(cuid())
+  productScope        String           @map("product_scope") // 'wellos' | 'studio' | 'both'
+  ownerType           MediaOwnerType   @map("owner_type")
+  folderKey           String           @map("folder_key")
+  label               String
+  defaultAccessClass  MediaAccessClass @map("default_access_class")
+  required            Boolean          @default(false)
+  displayOrder        Int              @default(0) @map("display_order")
+
+  @@unique([ownerType, folderKey])
+  @@index([ownerType, displayOrder])
+  @@map("media_folder_templates")
+}
+
+// Clinical SOAP notes. Per Q2 we DROP the 1:1 unique on appointmentId — a
+// long appointment may generate multiple SOAP entries (e.g. multi-stage
+// medspa procedure).
+model SoapNote {
+  id              String             @id @default(cuid())
+  tenantId        String             @map("tenant_id")
+  clientId        String             @map("client_id")
+  appointmentId   String             @map("appointment_id")
+  authorStaffId   String             @map("author_staff_id")
+
+  subjective      String?
+  objective       String?
+  assessment      String?
+  plan            String?
+
+  additionalNotes String?            @map("additional_notes")
+  templateId      String?            @map("template_id")
+
+  icdCodes        String[]           @default([]) @map("icd_codes")
+  cptCodes        String[]           @default([]) @map("cpt_codes")
+
+  locked          Boolean            @default(false)
+  lockedAt        DateTime?          @map("locked_at")  @db.Timestamptz(3)
+  lockedByStaffId String?            @map("locked_by_staff_id")
+
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt      @map("updated_at")
+  deletedAt       DateTime?          @map("deleted_at")
+
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client        Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointment   Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  authorStaff   Staff              @relation("SoapNoteAuthorStaff", fields: [authorStaffId], references: [id], onDelete: Restrict)
+  lockedByStaff Staff?             @relation("SoapNoteLockedByStaff", fields: [lockedByStaffId], references: [id], onDelete: SetNull)
+  revisions     SoapNoteRevision[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId, createdAt])
+  @@index([appointmentId])
+  @@map("soap_notes")
+}
+
+// Append-only revision history when a locked SoapNote is edited.
+model SoapNoteRevision {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  noteId           String   @map("note_id")
+  revisionNumber   Int      @map("revision_number")
+
+  subjective       String?
+  objective        String?
+  assessment       String?
+  plan             String?
+  additionalNotes  String?  @map("additional_notes")
+
+  revisedByStaffId String   @map("revised_by_staff_id")
+  revisionReason   String   @map("revision_reason")
+  revisedAt        DateTime @default(now()) @map("revised_at") @db.Timestamptz(3)
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  note           SoapNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  revisedByStaff Staff    @relation("SoapNoteRevisionAuthor", fields: [revisedByStaffId], references: [id], onDelete: Restrict)
+
+  @@unique([noteId, revisionNumber])
+  @@index([tenantId])
+  @@index([noteId, revisedAt])
+  @@map("soap_note_revisions")
+}
+
+// Append-only acknowledgment trail for alert-priority notes. Master spec
+// §5.2.3: every alert ack is logged with who, when, in what context.
+model ClientNoteAcknowledgment {
+  id             String                      @id @default(cuid())
+  tenantId       String                      @map("tenant_id")
+  noteId         String                      @map("note_id")
+  staffId        String                      @map("staff_id")
+  triggerContext ClientNoteAckTriggerContext @map("trigger_context")
+  appointmentId  String?                     @map("appointment_id")
+  acknowledgedAt DateTime                    @default(now()) @map("acknowledged_at") @db.Timestamptz(3)
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  note        ClientNote   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  staff       Staff        @relation("ClientNoteAckStaff", fields: [staffId], references: [id], onDelete: Restrict)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([noteId, acknowledgedAt])
+  @@index([staffId, acknowledgedAt])
+  @@map("client_note_acknowledgments")
+}
+
+// Per-service triage question template. Per 05-booking-enhancements.md §2.
+// is_gating + gating_rule support medspa contraindication blocking.
+model ServiceBookingQuestion {
+  id            String                     @id @default(cuid())
+  tenantId      String                     @map("tenant_id")
+  serviceId     String                     @map("service_id")
+
+  questionKey   String                     @map("question_key")
+  questionLabel String                     @map("question_label")
+  helperText    String?                    @map("helper_text")
+
+  questionType  ServiceBookingQuestionType @map("question_type")
+
+  // For chips_*: array of { value, label }. For slider: { min, max, step }.
+  // For photo_upload: { maxCount }. JSONB.
+  options       Json                       @default("[]")
+
+  isRequired    Boolean                    @default(false) @map("is_required")
+  isGating      Boolean                    @default(false) @map("is_gating")
+
+  // { if_value, block_with, block_action } JSONB. Null when isGating = false.
+  gatingRule    Json?                      @map("gating_rule")
+
+  displayOrder  Int                        @default(0) @map("display_order")
+
+  createdAt     DateTime                   @default(now()) @map("created_at")
+  updatedAt     DateTime                   @updatedAt      @map("updated_at")
+  deletedAt     DateTime?                  @map("deleted_at")
+
+  tenant  Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  service Service                    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  answers AppointmentBookingAnswer[]
+
+  @@unique([serviceId, questionKey])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([serviceId, displayOrder])
+  @@map("service_booking_questions")
+}
+
+// Per-appointment triage answers with denormalized question snapshot so
+// answers survive question edits/deletes.
+model AppointmentBookingAnswer {
+  id                    String                     @id @default(cuid())
+  tenantId              String                     @map("tenant_id")
+  appointmentId         String                     @map("appointment_id")
+  questionId            String                     @map("question_id")
+
+  questionKeySnapshot   String                     @map("question_key_snapshot")
+  questionLabelSnapshot String                     @map("question_label_snapshot")
+  questionTypeSnapshot  ServiceBookingQuestionType @map("question_type_snapshot")
+
+  // String, array, number, or { urls } for photo_upload. JSONB.
+  answerValue           Json                       @map("answer_value")
+
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt      @map("updated_at")
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  appointment Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  question    ServiceBookingQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([appointmentId, questionId])
+  @@index([tenantId])
+  @@index([appointmentId])
+  @@map("appointment_booking_answers")
+}
+
+// Per-service prep / aftercare scheduled delivery rules.
+// Per 05-booking-enhancements.md §4. scheduleOffsetMinutes is negative for
+// before-appointment, positive for after. Bounds enforced via Zod at the
+// API edge (Q7), not at DB level.
+model ServiceContentDelivery {
+  id                       String                        @id @default(cuid())
+  tenantId                 String                        @map("tenant_id")
+  serviceId                String                        @map("service_id")
+
+  deliveryType             ServiceContentDeliveryType    @map("delivery_type")
+  channel                  ServiceContentDeliveryChannel
+
+  scheduleOffsetMinutes    Int                           @map("schedule_offset_minutes")
+
+  isEnabled                Boolean                       @default(true) @map("is_enabled")
+
+  // Null falls back to the service's R2 markdown docs (services/{id}/docs/
+  // prep.md or aftercare.md). Override is a per-delivery template that
+  // takes precedence over the default service doc.
+  templateOverrideMarkdown String?                       @map("template_override_markdown")
+
+  createdAt                DateTime                      @default(now()) @map("created_at")
+  updatedAt                DateTime                      @updatedAt      @map("updated_at")
+  deletedAt                DateTime?                     @map("deleted_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, deliveryType, channel])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@map("service_content_deliveries")
 }

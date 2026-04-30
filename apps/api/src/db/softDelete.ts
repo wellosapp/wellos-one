@@ -27,6 +27,15 @@ const SOFT_DELETE_MODELS = new Set<string>([
   'Service',
   'ClientTag',
   'Appointment',
+  // Tier A — client memory + triage system
+  'ClientNote',
+  'MediaAsset',
+  'SoapNote',
+  'ServiceBookingQuestion',
+  'ServiceContentDelivery',
+  // SoapNoteRevision, ClientNoteAcknowledgment, AppointmentBookingAnswer:
+  // append-only / immutable; do NOT add.
+  // TenantMediaRoot, MediaFolderTemplate: lifecycle / config seed; do NOT add.
 ]);
 
 const READ_OPS = new Set<string>([

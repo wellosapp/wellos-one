@@ -43,6 +43,8 @@ const APPOINTMENT_SAFE_FIELDS = {
   scheduledStartAt: true,
   scheduledEndAt: true,
   state: true,
+  // Tier A — booking source for reporting + abuse detection.
+  source: true,
   notes: true,
   createdByUserId: true,
   cancelledAt: true,
