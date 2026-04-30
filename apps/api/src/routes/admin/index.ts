@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 
+import clientTagsRoutes from './client-tags.js';
 import clientsRoutes from './clients.js';
 import servicesRoutes from './services.js';
 import staffRoutes from './staff.js';
@@ -11,6 +12,7 @@ import whoamiRoutes from './whoami.js';
 export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(whoamiRoutes, { prefix: '/admin' });
   await app.register(clientsRoutes, { prefix: '/admin' });
+  await app.register(clientTagsRoutes, { prefix: '/admin' });
   await app.register(servicesRoutes, { prefix: '/admin' });
   await app.register(staffRoutes, { prefix: '/admin' });
 }

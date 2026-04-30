@@ -39,6 +39,11 @@ export const ClientIntakeStatusSchema = z.enum([
 ]);
 export type ClientIntakeStatusInput = z.infer<typeof ClientIntakeStatusSchema>;
 
+// Tag IDs to assign to this client (ClientTagAssignment M2M). Inline on
+// create/update so the assignment is atomic with the client write. Cap at
+// 50 — far above any plausible tag count per client.
+const TAG_IDS = z.array(z.string().min(1)).max(50).optional();
+
 export const CreateClientBodySchema = z.object({
   firstName: TRIM_NONEMPTY.max(80),
   lastName: z.string().trim().max(80).optional()
@@ -61,6 +66,7 @@ export const CreateClientBodySchema = z.object({
   intakeStatus: ClientIntakeStatusSchema.optional(),
   notes: z.string().max(4000).optional()
     .or(z.literal('').transform(() => undefined)),
+  tagIds: TAG_IDS,
 });
 export type CreateClientBody = z.infer<typeof CreateClientBodySchema>;
 
