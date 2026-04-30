@@ -36,6 +36,7 @@ const SERVICE_SAFE_FIELDS = {
   description: true,
   durationMinutes: true,
   basePriceCents: true,
+  bufferAfterMinutes: true,
   color: true,
   active: true,
   createdAt: true,

@@ -42,6 +42,19 @@ enum ClientIntakeStatus {
   expired
 }
 
+// Booking engine state machine (Epic 3). Defer `requested` and `declined`
+// until REQUEST_APPROVAL booking policy lands. Allowed transitions live
+// in apps/api/src/services/appointmentStateMachine.ts.
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  checked_in   @map("checked_in")
+  in_progress  @map("in_progress")
+  completed
+  cancelled
+  no_show      @map("no_show")
+}
+
 // ---------- Tenancy & users ----------
 
 model Tenant {
@@ -62,6 +75,7 @@ model Tenant {
   staff              Staff[]
   services           Service[]
   clientTags         ClientTag[]
+  appointments       Appointment[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -76,7 +90,8 @@ model Location {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  appointments Appointment[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -260,6 +275,7 @@ model Client {
 
   tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   tagAssignments ClientTagAssignment[]
+  appointments   Appointment[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -291,8 +307,9 @@ model Staff {
   updatedAt         DateTime  @updatedAt @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  services StaffService[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services     StaffService[]
+  appointments Appointment[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -302,23 +319,27 @@ model Staff {
 }
 
 model Service {
-  id              String    @id @default(cuid())
-  tenantId        String    @map("tenant_id")
-  name            String
-  description     String?
+  id                 String    @id @default(cuid())
+  tenantId           String    @map("tenant_id")
+  name               String
+  description        String?
   // Service duration in minutes. The booking engine snaps to this grid.
-  durationMinutes Int       @map("duration_minutes")
+  durationMinutes    Int       @map("duration_minutes")
   // Base price in cents.
-  basePriceCents  Int       @map("base_price_cents")
+  basePriceCents     Int       @map("base_price_cents")
+  // Buffer applied AFTER each appointment of this service for the same staff
+  // member, in minutes. Per-staff and per-service-pair buffers are Phase 2.
+  bufferAfterMinutes Int       @default(0) @map("buffer_after_minutes")
   // Hex color for calendar rendering (e.g. "#7B9E89"). UI maps to design tokens.
-  color           String?
-  active          Boolean   @default(true)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
+  color              String?
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
 
-  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  staff  StaffService[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff        StaffService[]
+  appointments Appointment[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -371,4 +392,57 @@ model ClientTagAssignment {
   @@id([clientId, tagId])
   @@index([tagId])
   @@map("client_tag_assignments")
+}
+
+// ---------- Epic 3: Booking engine ----------
+//
+// Per docs/09-dev-handoff.md "Epic 3":
+//   - All times in UTC (timestamptz). Local rendering uses Location.timezone.
+//   - Availability is COMPUTED, not stored (no materialized slot table).
+//   - Postgres EXCLUDE constraint on (staff_id, tstzrange) prevents
+//     double-booking at the DB level. Added by hand in the migration.sql
+//     because Prisma 5 cannot express EXCLUDE; constraint name is
+//     `appointments_no_overlap_per_staff` and lives below.
+//   - Default state on admin-created appointments is `confirmed`.
+//   - The EXCLUDE filter ignores soft-deleted, cancelled, and no_show rows.
+//
+// scheduledEndAt is denormalized from `scheduledStartAt + Service.durationMinutes`
+// so the EXCLUDE constraint can index it. Service-layer create computes endAt;
+// PATCH does not allow editing the time/duration triple (cancel + recreate).
+
+model Appointment {
+  id                String            @id @default(cuid())
+  tenantId          String            @map("tenant_id")
+  locationId        String            @map("location_id")
+  clientId          String            @map("client_id")
+  staffId           String            @map("staff_id")
+  serviceId         String            @map("service_id")
+
+  scheduledStartAt  DateTime          @map("scheduled_start_at") @db.Timestamptz(3)
+  scheduledEndAt    DateTime          @map("scheduled_end_at")   @db.Timestamptz(3)
+
+  state             AppointmentStatus @default(confirmed)
+
+  notes             String?
+  createdByUserId   String?           @map("created_by_user_id")
+  cancelledAt       DateTime?         @map("cancelled_at")       @db.Timestamptz(3)
+  cancelledByUserId String?           @map("cancelled_by_user_id")
+  cancelReason      String?           @map("cancel_reason")
+
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt      @map("updated_at")
+  deletedAt         DateTime?         @map("deleted_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  client   Client   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, scheduledStartAt])
+  @@index([staffId, scheduledStartAt])
+  @@index([clientId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, state, scheduledStartAt])
+  @@map("appointments")
 }

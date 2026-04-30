@@ -26,6 +26,7 @@ const SOFT_DELETE_MODELS = new Set<string>([
   'Staff',
   'Service',
   'ClientTag',
+  'Appointment',
 ]);
 
 const READ_OPS = new Set<string>([
