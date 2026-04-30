@@ -1,8 +1,11 @@
 import Link from 'next/link';
 
+import { DeleteConfirmButton } from '@/components/admin/DeleteConfirmButton';
 import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
 import { listStaff } from '@/lib/api/staff';
 import { ApiError } from '@/lib/api/client';
+
+import { deleteStaffAction } from './_actions';
 
 const PAGE_SIZE = 25;
 
@@ -146,46 +149,66 @@ export default async function StaffListPage({
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Hourly</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Commission</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Status</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-right text-ink-soft">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.staff.map((s) => (
-                    <tr
-                      key={s.id}
-                      className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
-                    >
-                      <td className="px-s4 py-s3 t-body-md">
-                        <Link
-                          href={`/admin/staff/${s.id}`}
-                          className="text-accent no-underline hover:underline"
-                        >
-                          {s.firstName}
-                          {s.lastName ? ` ${s.lastName}` : ''}
-                        </Link>
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {s.jobTitle ?? '—'}
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {s.email ?? '—'}
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {formatHourly(s.hourlyRateCents)}
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">
-                        {formatPct(s.commissionRatePct)}
-                      </td>
-                      <td className="px-s4 py-s3">
-                        {s.deletedAt ? (
-                          <Badge tone="red">Soft-deleted</Badge>
-                        ) : s.active ? (
-                          <Badge tone="green">Active</Badge>
-                        ) : (
-                          <Badge tone="neutral">Inactive</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {data.staff.map((s) => {
+                    const deleteAction = deleteStaffAction.bind(null, s.id);
+                    const fullName = `${s.firstName}${s.lastName ? ' ' + s.lastName : ''}`;
+                    return (
+                      <tr
+                        key={s.id}
+                        className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
+                      >
+                        <td className="px-s4 py-s3 t-body-md">
+                          <Link
+                            href={`/admin/staff/${s.id}`}
+                            className="text-accent no-underline hover:underline"
+                          >
+                            {fullName}
+                          </Link>
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {s.jobTitle ?? '—'}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {s.email ?? '—'}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatHourly(s.hourlyRateCents)}
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {formatPct(s.commissionRatePct)}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          {s.deletedAt ? (
+                            <Badge tone="red">Soft-deleted</Badge>
+                          ) : s.active ? (
+                            <Badge tone="green">Active</Badge>
+                          ) : (
+                            <Badge tone="neutral">Inactive</Badge>
+                          )}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          <div className="flex items-center justify-end gap-s3">
+                            <Link
+                              href={`/admin/staff/${s.id}`}
+                              className="t-body-sm text-accent no-underline hover:underline"
+                            >
+                              Edit
+                            </Link>
+                            {!s.deletedAt && (
+                              <DeleteConfirmButton
+                                action={deleteAction}
+                                confirmMessage={`Soft-delete ${fullName}? Hides from booking and lists; preserves service assignments for audit. Reversible by an admin via DB.`}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Card>

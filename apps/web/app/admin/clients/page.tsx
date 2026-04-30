@@ -1,8 +1,11 @@
 import Link from 'next/link';
 
+import { DeleteConfirmButton } from '@/components/admin/DeleteConfirmButton';
 import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
 import { listClients, type ClientIntakeStatus } from '@/lib/api/clients';
 import { ApiError } from '@/lib/api/client';
+
+import { deleteClientAction } from './_actions';
 
 const PAGE_SIZE = 25;
 
@@ -160,35 +163,55 @@ export default async function ClientsListPage({
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Phone</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Intake</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Created</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-right text-ink-soft">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.clients.map((c) => (
-                    <tr
-                      key={c.id}
-                      className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
-                    >
-                      <td className="px-s4 py-s3 t-body-md">
-                        <Link
-                          href={`/admin/clients/${c.id}`}
-                          className="text-accent no-underline hover:underline"
-                        >
-                          {c.firstName}
-                          {c.lastName ? ` ${c.lastName}` : ''}
-                        </Link>
-                      </td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.email ?? '—'}</td>
-                      <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.phone ?? '—'}</td>
-                      <td className="px-s4 py-s3">
-                        <Badge tone={INTAKE_STATUS_TONE[c.intakeStatus]}>
-                          {INTAKE_STATUS_LABELS[c.intakeStatus]}
-                        </Badge>
-                      </td>
-                      <td className="px-s4 py-s3 t-body-sm text-ink-soft">
-                        {formatDate(c.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
+                  {data.clients.map((c) => {
+                    const deleteAction = deleteClientAction.bind(null, c.id);
+                    return (
+                      <tr
+                        key={c.id}
+                        className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
+                      >
+                        <td className="px-s4 py-s3 t-body-md">
+                          <Link
+                            href={`/admin/clients/${c.id}`}
+                            className="text-accent no-underline hover:underline"
+                          >
+                            {c.firstName}
+                            {c.lastName ? ` ${c.lastName}` : ''}
+                          </Link>
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.email ?? '—'}</td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.phone ?? '—'}</td>
+                        <td className="px-s4 py-s3">
+                          <Badge tone={INTAKE_STATUS_TONE[c.intakeStatus]}>
+                            {INTAKE_STATUS_LABELS[c.intakeStatus]}
+                          </Badge>
+                        </td>
+                        <td className="px-s4 py-s3 t-body-sm text-ink-soft">
+                          {formatDate(c.createdAt)}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          <div className="flex items-center justify-end gap-s3">
+                            <Link
+                              href={`/admin/clients/${c.id}`}
+                              className="t-body-sm text-accent no-underline hover:underline"
+                            >
+                              Edit
+                            </Link>
+                            {!c.deletedAt && (
+                              <DeleteConfirmButton
+                                action={deleteAction}
+                                confirmMessage={`Soft-delete ${c.firstName}${c.lastName ? ' ' + c.lastName : ''}? Hides from lists; reversible by an admin via DB.`}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Card>
