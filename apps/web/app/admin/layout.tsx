@@ -23,6 +23,12 @@ export default function AdminLayout({
             Clients
           </Link>
           <Link
+            href="/admin/client-tags"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Tags
+          </Link>
+          <Link
             href="/admin/services"
             className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
           >

@@ -1,41 +1,21 @@
 import Link from 'next/link';
 
 import { DeleteConfirmButton } from '@/components/admin/DeleteConfirmButton';
-import { Alert, Badge, Button, Card, Input, Select } from '@/components/ui';
-import { listClients, type ClientIntakeStatus } from '@/lib/api/clients';
+import { Alert, Badge, Button, Card, Input } from '@/components/ui';
+import { listClientTags } from '@/lib/api/client-tags';
 import { ApiError } from '@/lib/api/client';
 
-import { deleteClientAction } from './_actions';
+import { deleteClientTagAction } from './_actions';
 
 const PAGE_SIZE = 25;
 
-const INTAKE_STATUS_LABELS: Record<ClientIntakeStatus, string> = {
-  pending: 'Pending',
-  sent: 'Sent',
-  completed: 'Completed',
-  expired: 'Expired',
-};
-
-const INTAKE_STATUS_TONE: Record<ClientIntakeStatus, 'neutral' | 'amber' | 'green' | 'red'> = {
-  pending: 'neutral',
-  sent: 'amber',
-  completed: 'green',
-  expired: 'red',
-};
-
 type SearchParams = {
   q?: string;
-  intakeStatus?: string;
   page?: string;
   includeDeleted?: string;
 };
 
-function isValidIntakeStatus(v: unknown): v is ClientIntakeStatus {
-  return v === 'pending' || v === 'sent' || v === 'completed' || v === 'expired';
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
+function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -43,25 +23,23 @@ function formatDate(iso: string | null): string {
   });
 }
 
-export default async function ClientsListPage({
+export default async function ClientTagsListPage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
   const q = sp.q?.trim() || undefined;
-  const intakeStatus = isValidIntakeStatus(sp.intakeStatus) ? sp.intakeStatus : undefined;
   const page = Math.max(1, Number(sp.page) || 1);
   const skip = (page - 1) * PAGE_SIZE;
   const includeDeleted =
     sp.includeDeleted === 'true' || sp.includeDeleted === '1';
 
-  let data: Awaited<ReturnType<typeof listClients>> | null = null;
+  let data: Awaited<ReturnType<typeof listClientTags>> | null = null;
   let errorMessage: string | null = null;
   try {
-    data = await listClients({
+    data = await listClientTags({
       q,
-      intakeStatus,
       take: PAGE_SIZE,
       skip,
       includeDeleted,
@@ -81,7 +59,6 @@ export default async function ClientsListPage({
 
   const baseQuery: Record<string, string> = {
     ...(q ? { q } : {}),
-    ...(intakeStatus ? { intakeStatus } : {}),
     ...(includeDeleted ? { includeDeleted: 'true' } : {}),
   };
 
@@ -89,12 +66,12 @@ export default async function ClientsListPage({
     <div className="flex flex-col gap-s6">
       <header className="flex items-center justify-between gap-s4">
         <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Clients</span>
-          <h1 className="t-display-lg">All clients</h1>
+          <span className="t-eyebrow text-accent">Tags</span>
+          <h1 className="t-display-lg">Client tags</h1>
         </div>
-        <Link href="/admin/clients/new" className="no-underline">
+        <Link href="/admin/client-tags/new" className="no-underline">
           <Button variant="accent" size="md">
-            New client
+            New tag
           </Button>
         </Link>
       </header>
@@ -105,21 +82,9 @@ export default async function ClientsListPage({
             type="text"
             name="q"
             defaultValue={q ?? ''}
-            placeholder="Search name, email, or phone"
+            placeholder="Search tag name"
             className="min-w-[220px] flex-1"
           />
-          <Select
-            name="intakeStatus"
-            defaultValue={intakeStatus ?? ''}
-            className="min-w-[180px] flex-none"
-          >
-            <option value="">All intake statuses</option>
-            {(Object.keys(INTAKE_STATUS_LABELS) as ClientIntakeStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {INTAKE_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </Select>
           <Button variant="primary" size="md" type="submit">
             Search
           </Button>
@@ -132,11 +97,11 @@ export default async function ClientsListPage({
         <Alert tone="warning">
           <span className="flex flex-wrap items-center justify-between gap-s3">
             <span>
-              Including soft-deleted clients. Soft-deleted rows show in the list but their
-              detail page warns they are deleted.
+              Including soft-deleted tags. Soft-deleted rows show in the list
+              but are hidden from pickers and badge rendering.
             </span>
             <Link
-              href="/admin/clients"
+              href="/admin/client-tags"
               className="t-body-sm text-amber underline-offset-2 hover:underline"
             >
               Hide soft-deleted
@@ -149,94 +114,74 @@ export default async function ClientsListPage({
         <>
           <p className="t-body-sm text-ink-soft">
             {total === 0
-              ? 'No clients yet.'
-              : `${total} client${total === 1 ? '' : 's'} total · page ${page} of ${totalPages}`}
+              ? 'No client tags yet.'
+              : `${total} tag${total === 1 ? '' : 's'} total · page ${page} of ${totalPages}`}
           </p>
 
-          {data.clients.length > 0 && (
+          {data.tags.length > 0 && (
             <Card padding="sm" className="overflow-hidden p-0">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-surface-3 bg-surface-2 text-left">
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Name</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Email</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Phone</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Tags</th>
-                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Intake</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Color</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Status</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Created</th>
                     <th className="t-eyebrow px-s4 py-s3 text-right text-ink-soft">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.clients.map((c) => {
-                    const deleteAction = deleteClientAction.bind(null, c.id);
-                    const visibleTags = c.tags.slice(0, 3);
-                    const overflowCount = Math.max(0, c.tags.length - visibleTags.length);
+                  {data.tags.map((t) => {
+                    const deleteAction = deleteClientTagAction.bind(null, t.id);
                     return (
                       <tr
-                        key={c.id}
+                        key={t.id}
                         className="border-b border-surface-3 last:border-b-0 transition-colors duration-fast hover:bg-surface-2"
                       >
                         <td className="px-s4 py-s3 t-body-md">
                           <Link
-                            href={`/admin/clients/${c.id}`}
+                            href={`/admin/client-tags/${t.id}`}
                             className="text-accent no-underline hover:underline"
                           >
-                            {c.firstName}
-                            {c.lastName ? ` ${c.lastName}` : ''}
+                            {t.name}
                           </Link>
                         </td>
-                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.email ?? '—'}</td>
-                        <td className="px-s4 py-s3 t-body-md text-ink-soft">{c.phone ?? '—'}</td>
                         <td className="px-s4 py-s3">
-                          {c.tags.length === 0 ? (
-                            <span className="t-body-sm text-ink-soft">—</span>
+                          {t.color ? (
+                            <span className="inline-flex items-center gap-s2">
+                              <span
+                                aria-hidden="true"
+                                className="inline-block h-[14px] w-[14px] rounded-sm border border-surface-3"
+                                style={{ backgroundColor: t.color }}
+                              />
+                              <code className="t-body-sm text-ink-soft">{t.color}</code>
+                            </span>
                           ) : (
-                            <div className="flex flex-wrap items-center gap-s2">
-                              {visibleTags.map((t) => (
-                                <span
-                                  key={t.id}
-                                  className="inline-flex items-center gap-s1 rounded-full border border-surface-3 bg-surface-2 px-s2 py-[2px] t-caption text-ink"
-                                  title={t.name}
-                                >
-                                  {t.color && (
-                                    <span
-                                      aria-hidden="true"
-                                      className="inline-block h-[8px] w-[8px] rounded-full"
-                                      style={{ backgroundColor: t.color }}
-                                    />
-                                  )}
-                                  <span className="font-sans">{t.name}</span>
-                                </span>
-                              ))}
-                              {overflowCount > 0 && (
-                                <span className="t-caption text-ink-soft font-sans">
-                                  +{overflowCount} more
-                                </span>
-                              )}
-                            </div>
+                            <span className="t-body-sm text-ink-soft">—</span>
                           )}
                         </td>
                         <td className="px-s4 py-s3">
-                          <Badge tone={INTAKE_STATUS_TONE[c.intakeStatus]}>
-                            {INTAKE_STATUS_LABELS[c.intakeStatus]}
-                          </Badge>
+                          {t.deletedAt ? (
+                            <Badge tone="red">Soft-deleted</Badge>
+                          ) : (
+                            <Badge tone="green">Active</Badge>
+                          )}
                         </td>
                         <td className="px-s4 py-s3 t-body-sm text-ink-soft">
-                          {formatDate(c.createdAt)}
+                          {formatDate(t.createdAt)}
                         </td>
                         <td className="px-s4 py-s3">
                           <div className="flex items-center justify-end gap-s3">
                             <Link
-                              href={`/admin/clients/${c.id}`}
+                              href={`/admin/client-tags/${t.id}`}
                               className="t-body-sm text-accent no-underline hover:underline"
                             >
                               Edit
                             </Link>
-                            {!c.deletedAt && (
+                            {!t.deletedAt && (
                               <DeleteConfirmButton
                                 action={deleteAction}
-                                confirmMessage={`Soft-delete ${c.firstName}${c.lastName ? ' ' + c.lastName : ''}? Hides from lists; reversible by an admin via DB.`}
+                                confirmMessage={`Soft-delete "${t.name}"? Hides from pickers and badges; existing assignments preserved for audit.`}
                               />
                             )}
                           </div>
@@ -254,7 +199,7 @@ export default async function ClientsListPage({
               {page > 1 && (
                 <Link
                   href={{
-                    pathname: '/admin/clients',
+                    pathname: '/admin/client-tags',
                     query: { ...baseQuery, page: page - 1 },
                   }}
                   className="t-body-sm text-accent no-underline hover:underline"
@@ -265,7 +210,7 @@ export default async function ClientsListPage({
               {page < totalPages && (
                 <Link
                   href={{
-                    pathname: '/admin/clients',
+                    pathname: '/admin/client-tags',
                     query: { ...baseQuery, page: page + 1 },
                   }}
                   className="t-body-sm text-accent no-underline hover:underline"

@@ -1,11 +1,17 @@
 import Link from 'next/link';
 
 import { Card } from '@/components/ui';
+import { listClientTags } from '@/lib/api/client-tags';
 
 import { ClientForm } from '../ClientForm';
 import { createClientAction } from '../_actions';
 
-export default function NewClientPage() {
+export default async function NewClientPage() {
+  // Fetch a generous page of active tags for the picker. Tag count per
+  // tenant is small (< 50 in practice); take=200 covers any realistic
+  // case with a single round-trip.
+  const { tags } = await listClientTags({ take: 200 });
+
   return (
     <div className="flex flex-col gap-s6">
       <div>
@@ -21,7 +27,11 @@ export default function NewClientPage() {
         <h1 className="t-display-lg">New client</h1>
       </header>
       <Card padding="lg">
-        <ClientForm action={createClientAction} submitLabel="Create client" />
+        <ClientForm
+          action={createClientAction}
+          tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+          submitLabel="Create client"
+        />
       </Card>
     </div>
   );
