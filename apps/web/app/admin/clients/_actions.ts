@@ -53,6 +53,9 @@ function buildBodyFromForm(formData: FormData): ClientWriteBody {
     intakeRaw && (VALID_INTAKE_STATUSES as string[]).includes(intakeRaw)
       ? (intakeRaw as ClientIntakeStatus)
       : undefined;
+  const tagIds = formData
+    .getAll('tagIds')
+    .filter((v): v is string => typeof v === 'string');
   return {
     firstName: pick(formData, 'firstName') ?? '',
     lastName: pick(formData, 'lastName'),
@@ -69,6 +72,7 @@ function buildBodyFromForm(formData: FormData): ClientWriteBody {
     emergencyContactPhone: pick(formData, 'emergencyContactPhone'),
     intakeStatus,
     notes: pick(formData, 'notes'),
+    tagIds,
   };
 }
 

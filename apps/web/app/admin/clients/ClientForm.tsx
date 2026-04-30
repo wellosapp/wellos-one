@@ -27,9 +27,16 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
+type TagOption = {
+  id: string;
+  name: string;
+  color: string | null;
+};
+
 type Props = {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   initial?: Partial<ClientWriteBody>;
+  tags: TagOption[];
   submitLabel?: string;
   successMessage?: string;
 };
@@ -37,6 +44,7 @@ type Props = {
 export function ClientForm({
   action,
   initial,
+  tags,
   submitLabel = 'Save',
   successMessage = 'Saved.',
 }: Props) {
@@ -48,6 +56,7 @@ export function ClientForm({
   const values = state.values ?? initial ?? {};
   const fieldErrors = state.fieldErrors ?? {};
   const showAcknowledge = Boolean(state.duplicateWarning);
+  const initialTagIds = new Set(values.tagIds ?? []);
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
@@ -215,6 +224,52 @@ export function ClientForm({
           error={Boolean(fieldErrors.notes)}
         />
       </FormField>
+
+      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+        <legend className="t-eyebrow px-s2 text-ink-soft">Tags</legend>
+        {tags.length === 0 ? (
+          <p className="t-body-sm text-ink-soft">
+            No tags exist yet.{' '}
+            <a
+              href="/admin/client-tags/new"
+              className="text-accent no-underline hover:underline"
+            >
+              Create one
+            </a>{' '}
+            to start labeling clients.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-s2 md:grid-cols-2">
+            {tags.map((t) => (
+              <label
+                key={t.id}
+                className="flex cursor-pointer items-center gap-s2 rounded-sm px-s2 py-s1 transition-colors duration-fast hover:bg-surface-2"
+              >
+                <input
+                  type="checkbox"
+                  name="tagIds"
+                  value={t.id}
+                  defaultChecked={initialTagIds.has(t.id)}
+                  className="h-[18px] w-[18px] cursor-pointer accent-accent"
+                />
+                <span className="inline-flex items-center gap-s2">
+                  {t.color && (
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-[12px] w-[12px] rounded-sm border border-surface-3"
+                      style={{ backgroundColor: t.color }}
+                    />
+                  )}
+                  <span className="t-body-md text-ink">{t.name}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        {fieldErrors.tagIds && (
+          <span className="t-caption text-red font-sans">{fieldErrors.tagIds}</span>
+        )}
+      </fieldset>
 
       <div className="flex gap-s3">
         <SubmitButton label={submitLabel} />

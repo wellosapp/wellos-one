@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { Badge, Button, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
+import { listClientTags } from '@/lib/api/client-tags';
 import { getClient, type ClientWriteBody } from '@/lib/api/clients';
 
 import { ClientForm } from '../ClientForm';
@@ -26,6 +27,7 @@ function clientToFormDefaults(c: Awaited<ReturnType<typeof getClient>>['client']
     emergencyContactPhone: c.emergencyContactPhone ?? undefined,
     intakeStatus: c.intakeStatus,
     notes: c.notes ?? undefined,
+    tagIds: c.tagIds,
   };
 }
 
@@ -46,6 +48,8 @@ export default async function ClientDetailPage({
     }
     throw err;
   }
+
+  const { tags } = await listClientTags({ take: 200 });
 
   const updateAction = updateClientAction.bind(null, id);
   const deleteAction = deleteClientAction.bind(null, id);
@@ -80,6 +84,7 @@ export default async function ClientDetailPage({
         <ClientForm
           action={updateAction}
           initial={clientToFormDefaults(client)}
+          tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
           submitLabel="Save changes"
           successMessage="Client updated."
         />

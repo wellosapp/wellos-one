@@ -6,6 +6,15 @@ import { apiFetch } from './client';
 
 export type ClientIntakeStatus = 'pending' | 'sent' | 'completed' | 'expired';
 
+// Compact tag projection returned alongside Client rows for badge rendering.
+// Soft-deleted tags are filtered out server-side; matches the shape sent
+// by clientService.loadTagsForClients.
+export type ClientTagSummary = {
+  id: string;
+  name: string;
+  color: string | null;
+};
+
 export type Client = {
   id: string;
   tenantId: string;
@@ -27,7 +36,14 @@ export type Client = {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  // List + detail responses both include the tag projection.
+  tags: ClientTagSummary[];
 };
+
+// Detail endpoint augments Client with tagIds (a derived projection of
+// client_tag_assignments rows). List rows OMIT this — they only carry
+// the display projection in `tags`.
+export type ClientWithTags = Client & { tagIds: string[] };
 
 export type DuplicateWarning = {
   matchedByEmail: number;
@@ -51,6 +67,7 @@ export type ClientWriteBody = {
   emergencyContactPhone?: string;
   intakeStatus?: ClientIntakeStatus;
   notes?: string;
+  tagIds?: string[];
 };
 
 export type ListClientsResponse = {
@@ -80,20 +97,20 @@ export async function listClients(
   });
 }
 
-export async function getClient(id: string): Promise<{ client: Client }> {
-  return apiFetch<{ client: Client }>(`/admin/clients/${id}`);
+export async function getClient(id: string): Promise<{ client: ClientWithTags }> {
+  return apiFetch<{ client: ClientWithTags }>(`/admin/clients/${id}`);
 }
 
 export async function createClient(
   body: ClientWriteBody,
-): Promise<{ client: Client; duplicateWarning: DuplicateWarning | null }> {
+): Promise<{ client: ClientWithTags; duplicateWarning: DuplicateWarning | null }> {
   return apiFetch('/admin/clients', { method: 'POST', body });
 }
 
 export async function updateClient(
   id: string,
   body: Partial<ClientWriteBody>,
-): Promise<{ client: Client; duplicateWarning: DuplicateWarning | null }> {
+): Promise<{ client: ClientWithTags; duplicateWarning: DuplicateWarning | null }> {
   return apiFetch(`/admin/clients/${id}`, { method: 'PATCH', body });
 }
 
