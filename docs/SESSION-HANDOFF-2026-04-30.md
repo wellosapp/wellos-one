@@ -18,10 +18,11 @@ Per `docs/000-CLAUDE-session-start-snippet.md`:
 6. Read `CLAUDE.md` — agent conventions, skill routing, hard rules
 7. Memory files load automatically. Especially relevant entering Epic 3:
    - `MEMORY.md` (index, always loaded)
-   - `deployed_surface.md` — refreshed with `/admin/client-tags` endpoints, tags column on `/admin/clients`, Epic 2 marked closed
+   - `deployed_surface.md` — refreshed with `/admin/client-tags` endpoints, tags column on `/admin/clients`, Epic 2 marked closed, Railway project renamed to `wellos-prod`
    - `feedback_session_workflow.md` — fixed 8-phase session flow with self-verification + user-smoke + spec-audit checkpoints
    - `feedback_admin_lists_need_row_actions.md` — every admin list ships with row actions from PR 1
-   - `project_pre_launch_sweep.md` — color-picker entry was extended to cover ClientTag form too
+   - **NEW** `feedback_daily_sweep_review.md` — at session start, scan `project_pre_launch_sweep.md` end-to-end; surface cheap knock-offs related to current work as "while we're here..." offers. Daily review, not Epic 11 single sweep.
+   - `project_pre_launch_sweep.md` — Railway rename struck through as DONE; cadence updated to daily review
 
 **Local path:** `H:\Projects\wellos-one`. Repo: `wellosapp/wellos-one`. Main at `0bb8cd0` after PR #43 (this doc itself ships in PR #44).
 
@@ -114,7 +115,15 @@ Per `docs/09-dev-handoff.md` Epic 3 "Done looks like" (lines 315-321):
 
 **Why it's hard:** time math (DST, timezones, working hours intersected with existing appointments), concurrency (slot-locking in a multi-tenant Postgres without N+1 issues), and a public booking surface that doesn't authenticate.
 
-**Suggested first sub-step (E3-S1):** Schema additions for `Appointment` + `AppointmentSlot` (or whatever shape the spec wants). Read Epic 3 of `09-dev-handoff.md` cover-to-cover before writing code; this is the module where premature schema choices are the most expensive.
+**Required reading before any code (4 specs, dispatch parallel Explore agents):**
+- `docs/04-booking-flow.md` — base spec (legacy "Velura" naming; mentally substitute Wellos)
+- `docs/04-booking-flow-context.md` — context / decisions log
+- `docs/05-booking-enhancements.md` — additions to the base spec
+- `docs/006-booking-design-refresh.md` — design refresh (legacy "Velura" naming; warm-professional design tokens already shipped, so this is direction not implementation)
+
+**Recommended Phase 1 of next session:** dispatch 3-4 Explore subagents in parallel — one per doc — to extract: data shape, API surface, race-condition strategy, DST handling, public-vs-admin split. Plus one Plan agent on top to reconcile the four into a single E3-S1 schema-and-route plan. **Do NOT start writing code until that plan is approved.** This is the module where premature schema choices are the most expensive.
+
+**Suggested first sub-step (E3-S1):** Schema additions for `Appointment` + `AppointmentSlot` (or whatever shape the synthesis lands on). Migration via `prisma migrate dev` per the standing rule.
 
 ### Tweaks tracked in `project_pre_launch_sweep.md`
 
@@ -139,7 +148,7 @@ Carried over from late-night handoff plus this session's smoke artifacts:
    - Disable Apple/Facebook/Google + phone sign-in
    - Decide on the two-Clerk-apps drift (consolidate or update INFRASTRUCTURE.md §3.6)
 5. **Cosmetic, no rush:**
-   - Rename Railway project `diligent-achievement` → `wellos-prod`
+   - ~~Rename Railway project `diligent-achievement` → `wellos-prod`~~ — **DONE 2026-04-30** (project ID `f1a3acd7-b916-44cd-93ec-f54ecf369e0b`; recorded in `INFRASTRUCTURE.md` §3.2 + `memory/deployed_surface.md`)
    - Delete old OneDrive copy of the repo when comfortable
 
 ---
