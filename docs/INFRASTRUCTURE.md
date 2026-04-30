@@ -91,7 +91,7 @@ All accounts live under email `luexwellness@gmail.com` unless otherwise noted. 2
 
 - **Account:** `wellosapp` (signed in via GitHub OAuth)
 - **Plan:** Free trial credit (~$5 / 30 days), then Hobby $5/mo + usage at MVP
-- **Project:** `diligent-achievement` (Railway-auto-named — pending rename to `wellos-prod`)
+- **Project:** `wellos-prod` (Railway project ID `f1a3acd7-b916-44cd-93ec-f54ecf369e0b`, environment ID `ea049f25-3f82-40cd-b35d-3f3b84d58460`). Renamed from the Railway-auto-generated `diligent-achievement` on 2026-04-30. **If this name ever changes, update INFRASTRUCTURE.md and `memory/deployed_surface.md` in the same change.**
 - **Service:** `@wellos/api`
   - Source: GitHub `wellosapp/wellos-one` `main` branch, auto-deploy on push
   - Region: `us-east4` (Virginia)
