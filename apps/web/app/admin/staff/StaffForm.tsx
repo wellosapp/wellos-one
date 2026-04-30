@@ -212,8 +212,29 @@ type DayRowProps = {
   error: string | undefined;
 };
 
+// Mon-Fri default to working (Closed unchecked); Sat-Sun default to closed.
+// Most wellness/salon staff work a 5-day week, so this matches the common
+// case and lets the admin click "Closed" only for off-pattern schedules.
+const DEFAULT_CLOSED_BY_DAY: Record<DayKey, boolean> = {
+  mon: false,
+  tue: false,
+  wed: false,
+  thu: false,
+  fri: false,
+  sat: true,
+  sun: true,
+};
+const DEFAULT_START = '09:00';
+const DEFAULT_END = '17:00';
+
 function DayRow({ day, row, error }: DayRowProps) {
-  const closed = row?.closed ?? true;
+  // If `row` is supplied (edit form populated from existing data), trust
+  // its closed flag. Otherwise fall back to the day-default above.
+  const closed = row?.closed ?? DEFAULT_CLOSED_BY_DAY[day];
+  // Pre-populate empty inputs with 09:00 / 17:00 so a new staff form works
+  // out of the box without the admin having to type times for every day.
+  const startDefault = row?.start ?? (closed ? '' : DEFAULT_START);
+  const endDefault = row?.end ?? (closed ? '' : DEFAULT_END);
   return (
     <div className="flex flex-col gap-s1">
       <div className="grid grid-cols-1 items-center gap-s2 md:grid-cols-[120px_auto_1fr_1fr]">
@@ -231,14 +252,14 @@ function DayRow({ day, row, error }: DayRowProps) {
         <Input
           type="time"
           name={`workingHours_${day}_start`}
-          defaultValue={row?.start ?? ''}
+          defaultValue={startDefault}
           error={Boolean(error)}
           aria-label={`${DAY_LABELS[day]} start time`}
         />
         <Input
           type="time"
           name={`workingHours_${day}_end`}
-          defaultValue={row?.end ?? ''}
+          defaultValue={endDefault}
           error={Boolean(error)}
           aria-label={`${DAY_LABELS[day]} end time`}
         />
