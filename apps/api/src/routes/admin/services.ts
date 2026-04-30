@@ -30,6 +30,16 @@ function zodErrorBody(err: ZodError) {
   };
 }
 
+// Service layer throws this when staffIds reference unknown rows.
+// Surfaced as 400 with field-style error so the UI can render it on the
+// staff multi-select.
+function isInvalidStaffIdsError(err: unknown): err is Error & { code: string } {
+  return (
+    err instanceof Error &&
+    (err as Error & { code?: string }).code === 'INVALID_STAFF_IDS'
+  );
+}
+
 export default async function servicesRoutes(app: FastifyInstance): Promise<void> {
   // POST /admin/services — create
   app.post('/services', { preHandler: requireRole.admin }, async (request, reply) => {
@@ -41,13 +51,23 @@ export default async function servicesRoutes(app: FastifyInstance): Promise<void
       return reply.code(400).send(zodErrorBody(parsed.error));
     }
 
-    const result = await createService(app.prisma, {
-      tenantId,
-      actorUserId: user.id,
-      body: parsed.data,
-    });
-
-    return reply.code(201).send(result);
+    try {
+      const result = await createService(app.prisma, {
+        tenantId,
+        actorUserId: user.id,
+        body: parsed.data,
+      });
+      return reply.code(201).send(result);
+    } catch (err) {
+      if (isInvalidStaffIdsError(err)) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Validation failed.',
+          issues: [{ path: 'staffIds', message: err.message }],
+        });
+      }
+      throw err;
+    }
   });
 
   // GET /admin/services — list with optional filters + pagination
@@ -104,19 +124,30 @@ export default async function servicesRoutes(app: FastifyInstance): Promise<void
       return reply.code(400).send(zodErrorBody(body.error));
     }
 
-    const result = await updateService(app.prisma, {
-      tenantId,
-      actorUserId: user.id,
-      id: params.data.id,
-      body: body.data,
-    });
-    if (!result) {
-      return reply.code(404).send({
-        error: 'Not Found',
-        message: 'Service not found.',
+    try {
+      const result = await updateService(app.prisma, {
+        tenantId,
+        actorUserId: user.id,
+        id: params.data.id,
+        body: body.data,
       });
+      if (!result) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Service not found.',
+        });
+      }
+      return reply.send(result);
+    } catch (err) {
+      if (isInvalidStaffIdsError(err)) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Validation failed.',
+          issues: [{ path: 'staffIds', message: err.message }],
+        });
+      }
+      throw err;
     }
-    return reply.send(result);
   });
 
   // DELETE /admin/services/:id — soft delete

@@ -23,6 +23,9 @@ export type ServiceFormValues = {
   basePriceDollars?: string;
   color?: string;
   active?: boolean;
+  // Staff IDs assigned to perform this service (StaffService M2M, inverse
+  // of Staff.serviceIds).
+  staffIds?: string[];
 };
 
 export type ActionState = {
@@ -47,6 +50,9 @@ function valuesFromForm(formData: FormData): ServiceFormValues {
     basePriceDollars: pick(formData, 'basePriceDollars'),
     color: pick(formData, 'color'),
     active: formData.get('active') === '1',
+    staffIds: formData.getAll('staffIds').filter(
+      (v): v is string => typeof v === 'string',
+    ),
   };
 }
 
@@ -96,6 +102,7 @@ function parseBody(values: ServiceFormValues): {
       basePriceCents: basePriceCents!,
       color: values.color,
       active: values.active,
+      staffIds: values.staffIds ?? [],
     },
   };
 }

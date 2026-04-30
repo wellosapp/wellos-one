@@ -32,6 +32,11 @@ const HEX_COLOR = z
 const DURATION_MINUTES = z.number().int().min(1).max(1440);
 const BASE_PRICE_CENTS = z.number().int().min(0).max(10_000_000);
 
+// Staff IDs eligible to perform this service (StaffService M2M, inverse
+// of Staff.serviceIds). Inline on create/update so the assignment is
+// atomic with the service write. Cap matches the cap on Staff.serviceIds.
+const STAFF_IDS = z.array(z.string().min(1)).max(200).optional();
+
 export const CreateServiceBodySchema = z.object({
   name: TRIM_NONEMPTY.max(200),
   description: z.string().max(4000).optional()
@@ -40,6 +45,7 @@ export const CreateServiceBodySchema = z.object({
   basePriceCents: BASE_PRICE_CENTS,
   color: HEX_COLOR,
   active: z.boolean().optional(),
+  staffIds: STAFF_IDS,
 });
 export type CreateServiceBody = z.infer<typeof CreateServiceBodySchema>;
 

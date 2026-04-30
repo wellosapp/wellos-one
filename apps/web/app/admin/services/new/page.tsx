@@ -1,11 +1,18 @@
 import Link from 'next/link';
 
 import { Card } from '@/components/ui';
+import { listStaff } from '@/lib/api/staff';
 
 import { ServiceForm } from '../ServiceForm';
 import { createServiceAction } from '../_actions';
 
-export default function NewServicePage() {
+export default async function NewServicePage() {
+  // Fetch active staff so the form can render the multi-select. Take a
+  // generous page so we never accidentally omit one — Service.staffIds
+  // caps at 200, and a tenant with >200 staff has bigger problems than
+  // a paginated form.
+  const { staff } = await listStaff({ active: true, take: 200 });
+
   return (
     <div className="flex flex-col gap-s6">
       <div>
@@ -21,7 +28,16 @@ export default function NewServicePage() {
         <h1 className="t-display-lg">New service</h1>
       </header>
       <Card padding="lg">
-        <ServiceForm action={createServiceAction} submitLabel="Create service" />
+        <ServiceForm
+          action={createServiceAction}
+          staff={staff.map((s) => ({
+            id: s.id,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            jobTitle: s.jobTitle,
+          }))}
+          submitLabel="Create service"
+        />
       </Card>
     </div>
   );

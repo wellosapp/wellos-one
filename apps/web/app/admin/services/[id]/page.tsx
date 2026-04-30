@@ -3,15 +3,14 @@ import { notFound } from 'next/navigation';
 
 import { Badge, Button, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
-import { getService } from '@/lib/api/services';
+import { getService, type ServiceWithStaff } from '@/lib/api/services';
+import { listStaff } from '@/lib/api/staff';
 
 import { ServiceForm } from '../ServiceForm';
 import type { ServiceFormValues } from '../_actions';
 import { deleteServiceAction, updateServiceAction } from '../_actions';
 
-function serviceToFormDefaults(
-  s: Awaited<ReturnType<typeof getService>>['service'],
-): ServiceFormValues {
+function serviceToFormDefaults(s: ServiceWithStaff): ServiceFormValues {
   return {
     name: s.name,
     description: s.description ?? undefined,
@@ -19,6 +18,7 @@ function serviceToFormDefaults(
     basePriceDollars: (s.basePriceCents / 100).toFixed(2),
     color: s.color ?? undefined,
     active: s.active,
+    staffIds: s.staffIds,
   };
 }
 
@@ -29,7 +29,7 @@ export default async function ServiceDetailPage({
 }) {
   const { id } = await params;
 
-  let service;
+  let service: ServiceWithStaff;
   try {
     const result = await getService(id);
     service = result.service;
@@ -39,6 +39,8 @@ export default async function ServiceDetailPage({
     }
     throw err;
   }
+
+  const { staff } = await listStaff({ active: true, take: 200 });
 
   const updateAction = updateServiceAction.bind(null, id);
   const deleteAction = deleteServiceAction.bind(null, id);
@@ -74,6 +76,12 @@ export default async function ServiceDetailPage({
         <ServiceForm
           action={updateAction}
           initial={serviceToFormDefaults(service)}
+          staff={staff.map((s) => ({
+            id: s.id,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            jobTitle: s.jobTitle,
+          }))}
           submitLabel="Save changes"
           successMessage="Service updated."
         />
@@ -85,7 +93,8 @@ export default async function ServiceDetailPage({
             <div className="flex flex-col gap-s1">
               <h2 className="t-display-sm">Soft-delete service</h2>
               <p className="t-body-sm text-ink-soft">
-                Hides from booking and lists but keeps history. Reversible by an admin via DB.
+                Hides from booking and lists; preserves staff assignments for the
+                audit trail. Reversible by an admin via DB.
               </p>
             </div>
             <form action={deleteAction}>
