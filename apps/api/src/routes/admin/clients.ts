@@ -28,9 +28,9 @@ import {
 // tenant access is impossible by construction — clients in another tenant
 // return 404, not 403, to avoid leaking existence.
 //
-// Idempotency-Key support is NOT wired in this PR. The IdempotencyKey table
-// exists but the matching middleware doesn't. Tracked for a follow-up PR
-// once we have a generic plugin (CLAUDE.md hard rule #8).
+// Idempotency-Key support is available via middleware/idempotency.ts (added
+// in E3-S4a) but isn't wired into these endpoints yet. Wrap the POST/PATCH
+// handlers in withIdempotency() in a follow-up PR.
 function zodErrorBody(err: ZodError) {
   return {
     error: 'Bad Request',
