@@ -73,11 +73,18 @@ export default async function ClientDetailPage({
             {client.lastName ? ` ${client.lastName}` : ''}
           </h1>
         </div>
-        {client.deletedAt && (
-          <Badge tone="red">
-            Soft-deleted {new Date(client.deletedAt).toLocaleString()}
-          </Badge>
-        )}
+        <div className="flex flex-wrap items-center gap-s2">
+          {client.deletedAt && (
+            <Badge tone="red">
+              Soft-deleted {new Date(client.deletedAt).toLocaleString()}
+            </Badge>
+          )}
+          <Link href={`/admin/clients/${id}/timeline`} className="no-underline">
+            <Button variant="ghost" size="sm">
+              View visit timeline →
+            </Button>
+          </Link>
+        </div>
       </header>
 
       <Card padding="lg">
