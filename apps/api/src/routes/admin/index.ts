@@ -8,6 +8,7 @@ import clientsRoutes from './clients.js';
 import linkedRecordsRoutes from './linked-records.js';
 import servicesRoutes from './services.js';
 import staffRoutes from './staff.js';
+import triageRoutes from './triage.js';
 import whoamiRoutes from './whoami.js';
 
 // Admin-only API surface. All routes registered under /admin/* and behind
@@ -23,4 +24,5 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(appointmentsRoutes, { prefix: '/admin' });
   await app.register(availabilityRoutes, { prefix: '/admin' });
   await app.register(linkedRecordsRoutes, { prefix: '/admin' });
+  await app.register(triageRoutes, { prefix: '/admin' });
 }
