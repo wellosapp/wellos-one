@@ -7,6 +7,7 @@ import clientTagsRoutes from './client-tags.js';
 import clientsRoutes from './clients.js';
 import contentDeliveriesRoutes from './content-deliveries.js';
 import linkedRecordsRoutes from './linked-records.js';
+import mediaRoutes from './media.js';
 import servicesRoutes from './services.js';
 import soapNotesRoutes from './soap-notes.js';
 import staffRoutes from './staff.js';
@@ -29,4 +30,5 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(triageRoutes, { prefix: '/admin' });
   await app.register(contentDeliveriesRoutes, { prefix: '/admin' });
   await app.register(soapNotesRoutes, { prefix: '/admin' });
+  await app.register(mediaRoutes, { prefix: '/admin' });
 }
