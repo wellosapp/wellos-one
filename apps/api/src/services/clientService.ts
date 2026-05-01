@@ -50,6 +50,13 @@ const CLIENT_SAFE_FIELDS = {
   emergencyContactPhone: true,
   intakeStatus: true,
   notes: true,
+  // Tier A — communication preferences + banned flag.
+  smsOptedOut: true,
+  emailOptedOut: true,
+  preferredChannel: true,
+  banned: true,
+  bannedReason: true,
+  bannedAt: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
