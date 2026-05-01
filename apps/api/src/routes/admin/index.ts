@@ -5,6 +5,7 @@ import availabilityRoutes from './availability.js';
 import clientNotesRoutes from './client-notes.js';
 import clientTagsRoutes from './client-tags.js';
 import clientsRoutes from './clients.js';
+import linkedRecordsRoutes from './linked-records.js';
 import servicesRoutes from './services.js';
 import staffRoutes from './staff.js';
 import whoamiRoutes from './whoami.js';
@@ -21,4 +22,5 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(staffRoutes, { prefix: '/admin' });
   await app.register(appointmentsRoutes, { prefix: '/admin' });
   await app.register(availabilityRoutes, { prefix: '/admin' });
+  await app.register(linkedRecordsRoutes, { prefix: '/admin' });
 }
