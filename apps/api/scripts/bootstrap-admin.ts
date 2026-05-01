@@ -26,6 +26,11 @@ import { parseArgs } from 'node:util';
 
 import { Prisma, PrismaClient } from '@prisma/client';
 
+import {
+  MediaRootEnvError,
+  provisionTenantMediaRoot,
+} from '../src/services/tenantMediaRootService.js';
+
 type Args = {
   email: string;
   tenantName: string;
@@ -230,6 +235,26 @@ async function main(): Promise<void> {
       };
     });
 
+    // Provision the tenant's R2 media root (E3-S4g). Idempotent — safe
+    // to call on re-runs. Done OUTSIDE the main transaction to avoid
+    // blocking the bootstrap on R2 env config; if R2 isn't set up yet,
+    // we log a warning and continue. The tenant + admin user are already
+    // bootstrapped at this point.
+    let mediaRootStatus: 'created' | 'existing' | 'skipped' = 'skipped';
+    let mediaRootSkipReason: string | null = null;
+    try {
+      const provision = await provisionTenantMediaRoot(prisma, {
+        tenantId: result.tenant.id,
+      });
+      mediaRootStatus = provision.status;
+    } catch (err) {
+      if (err instanceof MediaRootEnvError) {
+        mediaRootSkipReason = `R2 env not configured (${err.missing.join(', ')})`;
+      } else {
+        throw err;
+      }
+    }
+
     console.log('\n=== Bootstrap admin complete ===');
     console.log(
       `Tenant:           ${result.tenant.name} (${result.tenant.slug}) — id=${result.tenant.id}${
@@ -249,6 +274,15 @@ async function main(): Promise<void> {
     console.log(
       `Role assignment:  admin — id=${result.assignment?.id}${
         result.roleAssigned ? ' [CREATED]' : ' [existing]'
+      }`,
+    );
+    console.log(
+      `Media root:       ${
+        mediaRootStatus === 'skipped'
+          ? `[skipped — ${mediaRootSkipReason ?? 'unknown'}]`
+          : mediaRootStatus === 'created'
+            ? '[CREATED]'
+            : '[existing]'
       }`,
     );
     console.log('================================\n');
