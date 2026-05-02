@@ -9,6 +9,7 @@ import { Alert, Badge, Button, Card } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
+import type { AppointmentMediaResponse } from '@/lib/api/media';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import type { WhoamiLocation } from '@/lib/api/whoami';
@@ -36,6 +37,7 @@ interface CalendarDayViewProps {
     client: ClientWithTags;
     notes: ClientNoteSummary[];
     bookingAnswers: BookingAnswer[];
+    media: AppointmentMediaResponse;
   } | null;
   selectedError: string | null;
   activeTab: string;
@@ -244,6 +246,7 @@ export function CalendarDayView({
           client={selected.client}
           notes={selected.notes}
           bookingAnswers={selected.bookingAnswers}
+          media={selected.media}
           staff={staffById.get(selected.appointment.staffId) ?? null}
           service={serviceById.get(selected.appointment.serviceId) ?? null}
           activeTab={activeTab}

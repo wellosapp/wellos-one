@@ -608,3 +608,84 @@ export async function getDisplayUrl(asset: MediaAsset): Promise<string> {
   const signed = await presignGet({ objectKey: asset.objectKey });
   return signed.url;
 }
+
+// ---------- appointment-scoped media list (E3-S6) ----------
+
+// Categorizes a MediaAsset into one of the 5 buckets the staff calendar
+// drawer's Files tab expects. Folder-prefix-based with a generated fallback
+// — matches what UploadPanel naturally writes (folder="consent" /
+// "intake-forms" / "receipts" / "before-after" / etc.) without forcing a
+// rigid taxonomy.
+//
+// Per docs/04-booking UI UX Update/wellos_booking_r2_uiux_package
+// /wellos_calendar_booking_r2_uiux_buildout.md §6.3 (lines 572-588).
+export type AppointmentMediaCategory =
+  | 'referencePhotos'
+  | 'intakeDocs'
+  | 'consentDocs'
+  | 'receipts'
+  | 'generated';
+
+function categorizeAppointmentMedia(
+  asset: MediaAsset,
+): AppointmentMediaCategory {
+  if (asset.accessClass === 'generated') return 'generated';
+  const folder = asset.folder.toLowerCase();
+  if (folder.startsWith('intake')) return 'intakeDocs';
+  if (folder.startsWith('consent')) return 'consentDocs';
+  if (folder.startsWith('receipt')) return 'receipts';
+  // Everything else (gallery, reference-uploads, before-after, etc.) is
+  // treated as a reference photo for the operator's purposes.
+  return 'referencePhotos';
+}
+
+export type AppointmentMediaResponse = {
+  referencePhotos: MediaAsset[];
+  intakeDocs: MediaAsset[];
+  consentDocs: MediaAsset[];
+  receipts: MediaAsset[];
+  generated: MediaAsset[];
+};
+
+// Returns the asset list grouped by category, or null if the appointment
+// doesn't exist in this tenant (route maps to 404).
+//
+// Filters out archived + soft-deleted rows; sorted newest-first within
+// each bucket. Note: only walks `appointmentOwnerId` direct matches —
+// note-attached media surfaces via the Notes tab, not Files.
+export async function listMediaForAppointment(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; appointmentId: string },
+): Promise<AppointmentMediaResponse | null> {
+  const { tenantId, appointmentId } = args;
+
+  // Tenant-scoped existence check before the read so cross-tenant attempts
+  // return 404 instead of an empty list (matches triageService pattern).
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId },
+    select: { id: true },
+  });
+  if (!appt) return null;
+
+  const assets = await prisma.mediaAsset.findMany({
+    where: {
+      tenantId,
+      appointmentOwnerId: appointmentId,
+      archivedAt: null,
+    },
+    select: MEDIA_FIELDS,
+    orderBy: [{ uploadedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  const grouped: AppointmentMediaResponse = {
+    referencePhotos: [],
+    intakeDocs: [],
+    consentDocs: [],
+    receipts: [],
+    generated: [],
+  };
+  for (const asset of assets) {
+    grouped[categorizeAppointmentMedia(asset)].push(asset);
+  }
+  return grouped;
+}

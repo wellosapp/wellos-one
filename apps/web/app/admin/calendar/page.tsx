@@ -7,6 +7,7 @@ import {
 } from '@/lib/api/appointments';
 import { listClientNotes } from '@/lib/api/client-notes';
 import { getClient } from '@/lib/api/clients';
+import { getAppointmentMedia } from '@/lib/api/media';
 import { listServices } from '@/lib/api/services';
 import { listStaff } from '@/lib/api/staff';
 import { getWhoami } from '@/lib/api/whoami';
@@ -79,6 +80,7 @@ export default async function CalendarPage({
         client: Awaited<ReturnType<typeof getClient>>['client'];
         notes: Awaited<ReturnType<typeof listClientNotes>>['notes'];
         bookingAnswers: Awaited<ReturnType<typeof listBookingAnswers>>['answers'];
+        media: Awaited<ReturnType<typeof getAppointmentMedia>>;
       }
     | null = null;
   let selectedError: string | null = null;
@@ -86,19 +88,22 @@ export default async function CalendarPage({
     try {
       const apptResp = await getAppointment(sp.selected);
       const appt = apptResp.appointment;
-      const [clientResp, notesResp, answersResp] = await Promise.all([
-        getClient(appt.clientId),
-        listClientNotes(appt.clientId, {
-          appointmentId: appt.id,
-          take: 50,
-        }),
-        listBookingAnswers(appt.id),
-      ]);
+      const [clientResp, notesResp, answersResp, mediaResp] =
+        await Promise.all([
+          getClient(appt.clientId),
+          listClientNotes(appt.clientId, {
+            appointmentId: appt.id,
+            take: 50,
+          }),
+          listBookingAnswers(appt.id),
+          getAppointmentMedia(appt.id),
+        ]);
       selectedBundle = {
         appointment: appt,
         client: clientResp.client,
         notes: notesResp.notes,
         bookingAnswers: answersResp.answers,
+        media: mediaResp,
       };
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {

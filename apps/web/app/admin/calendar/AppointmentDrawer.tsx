@@ -6,6 +6,7 @@ import { Badge, Drawer, Tabs, type TabItem } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
+import type { AppointmentMediaResponse } from '@/lib/api/media';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import { formatDateTimeLocal, formatTimeLocal } from '@/lib/calendar';
@@ -38,6 +39,7 @@ interface AppointmentDrawerProps {
   client: ClientWithTags;
   notes: ClientNoteSummary[];
   bookingAnswers: BookingAnswer[];
+  media: AppointmentMediaResponse;
   staff: Staff | null;
   service: Service | null;
   activeTab: string;
@@ -50,6 +52,7 @@ export function AppointmentDrawer({
   client,
   notes,
   bookingAnswers,
+  media,
   staff,
   service,
   activeTab,
@@ -81,7 +84,19 @@ export function AppointmentDrawer({
           <Badge tone="accent">{bookingAnswers.length}</Badge>
         ) : null,
     },
-    { key: 'files', label: 'Files' },
+    {
+      key: 'files',
+      label: 'Files',
+      trailing: (() => {
+        const total =
+          media.referencePhotos.length +
+          media.intakeDocs.length +
+          media.consentDocs.length +
+          media.receipts.length +
+          media.generated.length;
+        return total > 0 ? <Badge tone="accent">{total}</Badge> : null;
+      })(),
+    },
     {
       key: 'notes',
       label: 'Notes',
@@ -130,7 +145,9 @@ export function AppointmentDrawer({
           {tab === 'client' && <ClientTab client={client} />}
           {tab === 'payment' && <PaymentTab />}
           {tab === 'intake' && <IntakeTab answers={bookingAnswers} />}
-          {tab === 'files' && <FilesTab />}
+          {tab === 'files' && (
+            <FilesTab media={media} appointmentId={appointment.id} />
+          )}
           {tab === 'notes' && (
             <NotesTab
               clientId={client.id}

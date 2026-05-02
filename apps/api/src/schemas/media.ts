@@ -168,3 +168,14 @@ export const MediaAssetIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 export type MediaAssetIdParams = z.infer<typeof MediaAssetIdParamsSchema>;
+
+// URL params for the appointment-scoped media list (E3-S6).
+// URL: /admin/appointments/:appointmentId/media — Fastify needs the param
+// name in the schema to match the path placeholder. Separate from
+// MediaAssetIdParamsSchema to avoid conflating the two id sources.
+export const AppointmentIdParamsForMediaSchema = z.object({
+  appointmentId: z.string().min(1),
+});
+export type AppointmentIdParamsForMedia = z.infer<
+  typeof AppointmentIdParamsForMediaSchema
+>;

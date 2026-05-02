@@ -5,6 +5,7 @@ import { withIdempotency } from '../../middleware/idempotency.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import { R2NotConfiguredError } from '../../integrations/r2.js';
 import {
+  AppointmentIdParamsForMediaSchema,
   CompleteUploadBodySchema,
   ListMediaAssetsQuerySchema,
   MediaAssetIdParamsSchema,
@@ -18,6 +19,7 @@ import {
   getDisplayUrl,
   getMediaAssetById,
   listMediaAssets,
+  listMediaForAppointment,
   presignMediaUpload,
   setMediaAssetArchived,
   softDeleteMediaAsset,
@@ -306,6 +308,39 @@ export default async function mediaRoutes(
         id: params.data.id,
       });
       return reply.code(204).send();
+    },
+  );
+
+  // GET /admin/appointments/:appointmentId/media — appointment-scoped
+  // media list, grouped by category for the staff calendar drawer's
+  // Files tab (E3-S6). Per buildout §6.3.
+  //
+  // Pure-DB read; works whether or not R2 is configured. The detail
+  // endpoint (/admin/media/:id) is what resolves the displayUrl
+  // per-asset, called when the operator opens a specific file.
+  app.get(
+    '/appointments/:appointmentId/media',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsForMediaSchema.safeParse(
+        request.params,
+      );
+      if (!params.success)
+        return reply.code(400).send(zodErrorBody(params.error));
+
+      const result = await listMediaForAppointment(app.prisma, {
+        tenantId,
+        appointmentId: params.data.appointmentId,
+      });
+      if (!result)
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      return reply.send(result);
     },
   );
 }

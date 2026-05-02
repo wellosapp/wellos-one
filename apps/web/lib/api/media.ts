@@ -154,6 +154,28 @@ export async function deleteMediaAsset(id: string): Promise<void> {
   await apiFetch(`/admin/media/${id}`, { method: 'DELETE' });
 }
 
+// ---- Appointment-scoped list (E3-S6) ----
+// Groups media linked to an appointment into the 5 buckets the calendar
+// drawer's Files tab renders. Categorization rules live server-side
+// (see mediaService.categorizeAppointmentMedia) — folder-prefix-based
+// with `accessClass=generated` taking precedence.
+
+export type AppointmentMediaResponse = {
+  referencePhotos: MediaAsset[];
+  intakeDocs: MediaAsset[];
+  consentDocs: MediaAsset[];
+  receipts: MediaAsset[];
+  generated: MediaAsset[];
+};
+
+export async function getAppointmentMedia(
+  appointmentId: string,
+): Promise<AppointmentMediaResponse> {
+  return apiFetch<AppointmentMediaResponse>(
+    `/admin/appointments/${appointmentId}/media`,
+  );
+}
+
 // ---- Presign + complete (upload flow) ----
 
 export type PresignUploadBody = {
