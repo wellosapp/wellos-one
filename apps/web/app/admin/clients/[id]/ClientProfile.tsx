@@ -103,6 +103,21 @@ export function ClientProfile({
     return `/admin/clients/${client.id}?${params.toString()}`;
   }, [client.id, tab]);
 
+  // "Add note" focuses the Notes tab; the composer is already there.
+  // No separate modal — keeps the IA simple.
+  const hrefAddNote = useMemo(
+    () => `/admin/clients/${client.id}?tab=notes`,
+    [client.id],
+  );
+
+  // Quick Book deep-links to the calendar's Quick Book panel with the
+  // client pre-selected. The persistent right-sidebar Quick Book on the
+  // client profile itself is a follow-up ticket (PR #64+).
+  const hrefQuickBook = useMemo(
+    () => `/admin/calendar?quickbook=1&clientId=${client.id}`,
+    [client.id],
+  );
+
   const hrefEditClose = useMemo(() => {
     const params = new URLSearchParams();
     if (tab !== 'overview') params.set('tab', tab);
@@ -174,6 +189,8 @@ export function ClientProfile({
         client={client}
         stats={stats}
         editHref={hrefEditOpen}
+        addNoteHref={hrefAddNote}
+        quickBookHref={hrefQuickBook}
       />
 
       <div className="rounded-md border border-surface-3 bg-white shadow-sm">

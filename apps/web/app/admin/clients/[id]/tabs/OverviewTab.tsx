@@ -34,22 +34,28 @@ function formatTime(iso: string): string {
   });
 }
 
-function StatTile({
-  label,
-  value,
-  hint,
+// Summary card with title, body, and optional CTA at bottom-right.
+// Mirrors the "Upcoming appointment / Notes / Files / Intake" row in the
+// wireframe — each card is a glance + one action.
+function SummaryCard({
+  icon,
+  title,
+  children,
+  cta,
 }: {
-  label: string;
-  value: string | number;
-  hint?: string;
+  icon: string;
+  title: string;
+  children: React.ReactNode;
+  cta?: React.ReactNode;
 }) {
   return (
-    <Card padding="md" className="border border-surface-3">
-      <div className="flex flex-col gap-s1">
-        <span className="t-eyebrow text-ink-soft">{label}</span>
-        <span className="t-display-md font-display text-ink">{value}</span>
-        {hint && <span className="t-caption text-ink-soft">{hint}</span>}
-      </div>
+    <Card padding="md" className="border border-surface-3 flex flex-col gap-s3">
+      <header className="flex items-center gap-s2">
+        <span aria-hidden="true">{icon}</span>
+        <span className="t-eyebrow text-ink-soft">{title}</span>
+      </header>
+      <div className="flex flex-1 flex-col gap-s2">{children}</div>
+      {cta && <div className="flex justify-end">{cta}</div>}
     </Card>
   );
 }
@@ -69,35 +75,166 @@ export function OverviewTab({
   allNotes,
   editHref,
 }: OverviewTabProps) {
-  const recentVisits = timeline.visits.slice(0, 3);
+  const recentVisits = timeline.visits.slice(0, 4);
   const alerts = allNotes.filter((n) => n.priority === 'alert');
+  const upcoming = stats.upcomingAppointment;
+  const notesHref = `/admin/clients/${client.id}?tab=notes` as Route;
+  const filesHref = `/admin/clients/${client.id}?tab=files` as Route;
+  const intakeHref = `/admin/clients/${client.id}?tab=intake` as Route;
+  const uploadFileHref =
+    `/admin/media?upload=1&ownerType=client&ownerId=${client.id}` as Route;
 
   return (
     <div className="flex flex-col gap-s6">
-      {/* Quick stats — 4-up grid */}
-      <section className="grid grid-cols-2 gap-s3 sm:grid-cols-4">
-        <StatTile
-          label="Total visits"
-          value={stats.totalVisits}
-          hint={
-            stats.totalCompletedVisits > 0
-              ? `${stats.totalCompletedVisits} completed`
-              : undefined
+      {/* Top row: 4 glance-and-act summary cards */}
+      <section className="grid grid-cols-1 gap-s3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          icon="📅"
+          title="Upcoming appointment"
+          cta={
+            upcoming ? (
+              <Link
+                href={`/admin/calendar?date=${upcoming.scheduledStartAt.slice(0, 10)}&selected=${upcoming.appointmentId}` as Route}
+                className="no-underline"
+              >
+                <Button variant="ghost" size="sm">
+                  View →
+                </Button>
+              </Link>
+            ) : (
+              <Link
+                href={`/admin/calendar?quickbook=1&clientId=${client.id}` as Route}
+                className="no-underline"
+              >
+                <Button variant="accent" size="sm">
+                  Quick Book
+                </Button>
+              </Link>
+            )
           }
-        />
-        <StatTile
-          label="Last visit"
-          value={stats.lastVisit ? formatDate(stats.lastVisit.scheduledStartAt) : '—'}
-          hint={stats.lastVisit?.staffName ?? undefined}
-        />
-        <StatTile label="Notes" value={stats.totalNotes} hint={stats.totalAlertNotes > 0 ? `${stats.totalAlertNotes} alert` : undefined} />
-        <StatTile label="Files" value={stats.totalFiles} />
+        >
+          {upcoming ? (
+            <div className="flex flex-col gap-s1">
+              <span className="t-body-md font-medium text-ink">
+                {formatDate(upcoming.scheduledStartAt)} ·{' '}
+                {formatTime(upcoming.scheduledStartAt)}
+              </span>
+              <span className="t-body-sm text-ink-soft">
+                {upcoming.serviceName ?? 'Service'} with{' '}
+                {upcoming.staffName ?? 'staff'}
+              </span>
+              <Badge tone={upcoming.state === 'confirmed' ? 'green' : 'accent'}>
+                {upcoming.state.replace('_', ' ')}
+              </Badge>
+            </div>
+          ) : (
+            <p className="t-body-sm text-ink-soft italic">
+              No upcoming appointment.
+            </p>
+          )}
+        </SummaryCard>
+
+        <SummaryCard
+          icon="💬"
+          title="Notes"
+          cta={
+            <Link
+              href={notesHref}
+              className="no-underline"
+            >
+              <Button variant="ghost" size="sm">
+                {stats.totalNotes === 0 ? 'Add note' : 'View all'}
+              </Button>
+            </Link>
+          }
+        >
+          <div className="flex flex-col gap-s1">
+            <span className="t-display-md font-display text-ink">
+              {stats.totalNotes}
+            </span>
+            <span className="t-body-sm text-ink-soft">
+              {stats.totalNotes === 0
+                ? 'No notes yet'
+                : stats.totalAlertNotes > 0
+                  ? `${stats.totalAlertNotes} alert${stats.totalAlertNotes === 1 ? '' : 's'}`
+                  : 'All clear'}
+            </span>
+          </div>
+        </SummaryCard>
+
+        <SummaryCard
+          icon="📎"
+          title="Files"
+          cta={
+            <Link
+              href={stats.totalFiles === 0 ? uploadFileHref : filesHref}
+              className="no-underline"
+            >
+              <Button variant="ghost" size="sm">
+                {stats.totalFiles === 0 ? 'Upload file' : 'View all'}
+              </Button>
+            </Link>
+          }
+        >
+          <div className="flex flex-col gap-s1">
+            <span className="t-display-md font-display text-ink">
+              {stats.totalFiles}
+            </span>
+            <span className="t-body-sm text-ink-soft">
+              {stats.totalFiles === 0 ? 'No files uploaded' : 'across visits + profile'}
+            </span>
+          </div>
+        </SummaryCard>
+
+        <SummaryCard
+          icon="📋"
+          title="Intake"
+          cta={
+            <Link href={intakeHref} className="no-underline">
+              <Button variant="ghost" size="sm">
+                {client.intakeStatus === 'pending'
+                  ? 'Send intake'
+                  : 'View answers'}
+              </Button>
+            </Link>
+          }
+        >
+          <div className="flex flex-col gap-s1">
+            <span
+              className={
+                client.intakeStatus === 'completed'
+                  ? 't-body-md font-medium text-green'
+                  : client.intakeStatus === 'pending'
+                    ? 't-body-md font-medium text-amber'
+                    : 't-body-md font-medium text-ink'
+              }
+            >
+              {client.intakeStatus === 'completed'
+                ? 'Complete'
+                : client.intakeStatus === 'pending'
+                  ? 'Pending'
+                  : client.intakeStatus === 'sent'
+                    ? 'Sent'
+                    : 'Expired'}
+            </span>
+            <span className="t-body-sm text-ink-soft">
+              {client.intakeStatus === 'completed'
+                ? 'All forms submitted'
+                : client.intakeStatus === 'pending'
+                  ? 'Intake not yet completed'
+                  : client.intakeStatus === 'sent'
+                    ? 'Awaiting client response'
+                    : 'Intake link expired'}
+            </span>
+          </div>
+        </SummaryCard>
       </section>
 
       {/* Alerts — if any */}
       {alerts.length > 0 && <ClientAlertStack alerts={alerts} />}
 
-      {/* Recent visits preview */}
+      {/* Recent visits — clickable rows that deep-link into the calendar
+          drawer for that appointment. Same UX as the wireframe. */}
       <section className="flex flex-col gap-s3">
         <div className="flex items-center justify-between gap-s3">
           <h2 className="t-display-sm text-ink">Recent visits</h2>
@@ -105,7 +242,7 @@ export function OverviewTab({
             href={`/admin/clients/${client.id}?tab=visits` as Route}
             className="t-body-sm text-accent no-underline hover:underline"
           >
-            See all visits →
+            View all visits →
           </Link>
         </div>
 
@@ -113,32 +250,57 @@ export function OverviewTab({
           <p className="t-body-sm italic text-ink-soft">No visits yet.</p>
         ) : (
           <ul role="list" className="flex flex-col gap-s2">
-            {recentVisits.map((v) => (
-              <li
-                key={v.appointment.id}
-                className="flex flex-wrap items-center justify-between gap-s3 rounded-sm border border-surface-3 bg-white p-s3"
-              >
-                <div className="flex flex-col gap-s1">
-                  <div className="flex flex-wrap items-center gap-s2">
-                    <span className="t-body-md font-medium text-ink">
-                      {v.service.name}
-                    </span>
-                    <Badge tone="neutral">{v.appointment.state}</Badge>
-                  </div>
-                  <span className="t-body-sm text-ink-soft">
-                    {formatDate(v.appointment.scheduledStartAt)} ·{' '}
-                    {formatTime(v.appointment.scheduledStartAt)} · with{' '}
-                    {v.staff.firstName}
-                    {v.staff.lastName ? ' ' + v.staff.lastName : ''}
-                  </span>
-                </div>
-                {v.notes.length > 0 && (
-                  <Badge tone="neutral">
-                    {v.notes.length} note{v.notes.length === 1 ? '' : 's'}
-                  </Badge>
-                )}
-              </li>
-            ))}
+            {recentVisits.map((v) => {
+              const visitHref =
+                `/admin/calendar?date=${v.appointment.scheduledStartAt.slice(0, 10)}&selected=${v.appointment.id}` as Route;
+              return (
+                <li key={v.appointment.id}>
+                  <Link
+                    href={visitHref}
+                    className={cn(
+                      'flex flex-wrap items-center justify-between gap-s3 rounded-sm border border-surface-3 bg-white p-s3 no-underline',
+                      'transition-shadow duration-fast hover:shadow-md',
+                    )}
+                  >
+                    <div className="flex flex-col gap-s1">
+                      <div className="flex flex-wrap items-center gap-s2">
+                        <span className="t-body-md font-medium text-ink">
+                          {v.service.name}
+                        </span>
+                        <Badge
+                          tone={
+                            v.appointment.state === 'completed'
+                              ? 'green'
+                              : v.appointment.state === 'cancelled' ||
+                                  v.appointment.state === 'no_show'
+                                ? 'red'
+                                : 'accent'
+                          }
+                        >
+                          {v.appointment.state.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                      <span className="t-body-sm text-ink-soft">
+                        {formatDate(v.appointment.scheduledStartAt)} ·{' '}
+                        {formatTime(v.appointment.scheduledStartAt)} · with{' '}
+                        {v.staff.firstName}
+                        {v.staff.lastName ? ' ' + v.staff.lastName : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-s2">
+                      {v.notes.length > 0 && (
+                        <Badge tone="neutral">
+                          {v.notes.length} note{v.notes.length === 1 ? '' : 's'}
+                        </Badge>
+                      )}
+                      <span aria-hidden="true" className="text-ink-soft">
+                        →
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -219,6 +381,38 @@ export function OverviewTab({
           </Card>
         </section>
       )}
+
+      {/* "Attach files or notes" sticky bottom card — quick access to the
+          two most-used compose actions without leaving the Overview. */}
+      <section className="rounded-md border border-dashed border-surface-3 bg-surface-2/40 p-s4">
+        <div className="flex flex-wrap items-center justify-between gap-s4">
+          <div className="flex flex-col gap-s1">
+            <h2 className="t-body-md font-medium text-ink flex items-center gap-s2">
+              <span aria-hidden="true">📎</span>
+              Attach files or notes to this client
+            </h2>
+            <p className="t-body-sm text-ink-soft">
+              Files and notes added here are visible across all appointments
+              and staff.
+            </p>
+          </div>
+          <div className="flex items-center gap-s2">
+            <Link href={uploadFileHref} className="no-underline">
+              <Button variant="ghost" size="md">
+                Upload file
+              </Button>
+            </Link>
+            <Link
+              href={`/admin/clients/${client.id}?tab=notes` as Route}
+              className="no-underline"
+            >
+              <Button variant="ghost" size="md">
+                Add note
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* Danger zone — soft-delete */}
       {!client.deletedAt && (

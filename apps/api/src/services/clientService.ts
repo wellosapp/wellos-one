@@ -569,6 +569,17 @@ export async function softDeleteClient(
 // to assemble the same payload. Tenant-scoped existence check first
 // so cross-tenant lookups return null (route maps to 404).
 
+type AppointmentSummary = {
+  appointmentId: string;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  state: string;
+  staffId: string;
+  staffName: string | null;
+  serviceId: string;
+  serviceName: string | null;
+};
+
 export type ClientStatsResponse = {
   // True if a client row exists for the tenant; null otherwise (404).
   totalVisits: number;
@@ -577,16 +588,11 @@ export type ClientStatsResponse = {
   totalNoShowVisits: number;
   // Most recent appointment by scheduled_start_at, regardless of state.
   // Null if the client has no appointments yet.
-  lastVisit: {
-    appointmentId: string;
-    scheduledStartAt: string;
-    scheduledEndAt: string;
-    state: string;
-    staffId: string;
-    staffName: string | null;
-    serviceId: string;
-    serviceName: string | null;
-  } | null;
+  lastVisit: AppointmentSummary | null;
+  // Soonest future appointment (scheduledStartAt > now AND state in
+  // scheduled / confirmed). Null if nothing on the books. Used by the
+  // profile Overview's "Upcoming appointment" summary card.
+  upcomingAppointment: AppointmentSummary | null;
   totalNotes: number;
   totalAlertNotes: number;
   totalFiles: number;
@@ -618,6 +624,7 @@ export async function getClientStats(
     totalAlertNotes,
     totalFiles,
     lastVisitRow,
+    upcomingRow,
   ] = await Promise.all([
     prisma.appointment.count({
       where: { tenantId, clientId, deletedAt: null },
@@ -680,7 +687,50 @@ export async function getClientStats(
       },
       orderBy: { scheduledStartAt: 'desc' },
     }),
+    // Upcoming = nearest future appointment that's still on the books.
+    // Excludes cancelled / no_show / completed since those don't represent
+    // an actionable upcoming visit.
+    prisma.appointment.findFirst({
+      where: {
+        tenantId,
+        clientId,
+        deletedAt: null,
+        scheduledStartAt: { gt: new Date() },
+        state: { in: ['scheduled', 'confirmed', 'checked_in'] },
+      },
+      select: {
+        id: true,
+        scheduledStartAt: true,
+        scheduledEndAt: true,
+        state: true,
+        staffId: true,
+        serviceId: true,
+        staff: { select: { firstName: true, lastName: true } },
+        service: { select: { name: true } },
+      },
+      orderBy: { scheduledStartAt: 'asc' },
+    }),
   ]);
+
+  function summarize(
+    row:
+      | (NonNullable<typeof lastVisitRow>)
+      | null,
+  ): AppointmentSummary | null {
+    if (!row) return null;
+    return {
+      appointmentId: row.id,
+      scheduledStartAt: row.scheduledStartAt.toISOString(),
+      scheduledEndAt: row.scheduledEndAt.toISOString(),
+      state: row.state,
+      staffId: row.staffId,
+      staffName: row.staff
+        ? `${row.staff.firstName}${row.staff.lastName ? ' ' + row.staff.lastName : ''}`
+        : null,
+      serviceId: row.serviceId,
+      serviceName: row.service?.name ?? null,
+    };
+  }
 
   return {
     totalVisits,
@@ -691,20 +741,8 @@ export async function getClientStats(
     totalAlertNotes,
     totalFiles,
     memberSince: client.createdAt.toISOString(),
-    lastVisit: lastVisitRow
-      ? {
-          appointmentId: lastVisitRow.id,
-          scheduledStartAt: lastVisitRow.scheduledStartAt.toISOString(),
-          scheduledEndAt: lastVisitRow.scheduledEndAt.toISOString(),
-          state: lastVisitRow.state,
-          staffId: lastVisitRow.staffId,
-          staffName: lastVisitRow.staff
-            ? `${lastVisitRow.staff.firstName}${lastVisitRow.staff.lastName ? ' ' + lastVisitRow.staff.lastName : ''}`
-            : null,
-          serviceId: lastVisitRow.serviceId,
-          serviceName: lastVisitRow.service?.name ?? null,
-        }
-      : null,
+    lastVisit: summarize(lastVisitRow),
+    upcomingAppointment: summarize(upcomingRow),
   };
 }
 

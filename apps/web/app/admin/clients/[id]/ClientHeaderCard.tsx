@@ -6,19 +6,24 @@ import type { Route } from 'next';
 import { Badge, Button, Card } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import {
+  CLIENT_TIER_LABELS,
+  CLIENT_TIER_TONES,
+  deriveClientTier,
   formatClientNumber,
   type ClientStats,
   type ClientWithTags,
 } from '@/lib/client-shared';
 
-// Header card for the client profile — mirrors the ClarityLabs reference
-// layout the user shared. Avatar / name / member ID / contact on the left,
-// stat strip (visits / last visit / member since) on the right.
+// Header card for the client profile — mirrors the wireframe layout.
+// Avatar + identity on the left, stat strip in the middle, 3-button
+// action row (Quick Book / Edit profile / Add note) below stats.
 
 interface ClientHeaderCardProps {
   client: ClientWithTags;
   stats: ClientStats;
   editHref: string;
+  addNoteHref: string;
+  quickBookHref: string;
 }
 
 function initials(client: ClientWithTags): string {
@@ -49,9 +54,12 @@ export function ClientHeaderCard({
   client,
   stats,
   editHref,
+  addNoteHref,
+  quickBookHref,
 }: ClientHeaderCardProps) {
   const fullName = `${client.firstName}${client.lastName ? ' ' + client.lastName : ''}`;
   const memberId = formatClientNumber(client.clientNumber);
+  const tier = deriveClientTier(stats);
 
   return (
     <Card padding="lg" className="border border-surface-3">
@@ -61,8 +69,8 @@ export function ClientHeaderCard({
           <div
             aria-hidden="true"
             className={cn(
-              'flex h-16 w-16 shrink-0 items-center justify-center rounded-md',
-              'bg-accent-pale text-accent t-display-md font-display',
+              'flex h-20 w-20 shrink-0 items-center justify-center rounded-md',
+              'bg-accent-pale text-accent t-display-lg font-display',
             )}
           >
             {initials(client)}
@@ -71,7 +79,9 @@ export function ClientHeaderCard({
           <div className="flex min-w-0 flex-1 flex-col gap-s2">
             <div className="flex flex-wrap items-center gap-s2">
               <h1 className="t-display-lg text-ink truncate">{fullName}</h1>
-              <Badge tone="neutral">{memberId}</Badge>
+              <Badge tone={CLIENT_TIER_TONES[tier]}>
+                {CLIENT_TIER_LABELS[tier]}
+              </Badge>
               {client.banned && (
                 <Badge tone="red">
                   Banned{client.bannedReason ? ` — ${client.bannedReason}` : ''}
@@ -83,15 +93,14 @@ export function ClientHeaderCard({
               )}
             </div>
 
-            {client.tags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-s1">
-                {client.tags.map((t) => (
-                  <Badge key={t.id} tone="accent">
-                    {t.name}
-                  </Badge>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-s2">
+              <Badge tone="neutral">{memberId}</Badge>
+              {client.tags.map((t) => (
+                <Badge key={t.id} tone="accent">
+                  {t.name}
+                </Badge>
+              ))}
+            </div>
 
             <div className="flex flex-wrap items-center gap-x-s4 gap-y-s1 t-body-sm text-ink-soft">
               {client.email && (
@@ -100,15 +109,7 @@ export function ClientHeaderCard({
                 </span>
               )}
               {client.phone && <span>☎ {client.phone}</span>}
-              <span>Member since {formatDate(stats.memberSince)}</span>
-            </div>
-
-            <div>
-              <Link href={editHref as Route} className="no-underline">
-                <Button variant="ghost" size="sm">
-                  Edit profile
-                </Button>
-              </Link>
+              <span>📅 Member since {formatDate(stats.memberSince)}</span>
             </div>
           </div>
         </div>
@@ -119,7 +120,7 @@ export function ClientHeaderCard({
             <span className="t-display-md font-display text-ink">
               {stats.totalVisits}
             </span>
-            <span className="t-eyebrow text-ink-soft">Visits</span>
+            <span className="t-eyebrow text-ink-soft">Total visits</span>
           </div>
           <div className="flex flex-col gap-s1">
             <span className="t-display-md font-display text-ink">
@@ -139,6 +140,25 @@ export function ClientHeaderCard({
             )}
           </div>
         </div>
+      </div>
+
+      {/* 3-button action row — Quick Book / Edit profile / Add note */}
+      <div className="mt-s5 flex flex-wrap items-center gap-s2 border-t border-surface-3 pt-s4">
+        <Link href={quickBookHref as Route} className="no-underline">
+          <Button variant="accent" size="md" icon={<span aria-hidden="true">📅</span>}>
+            Quick Book
+          </Button>
+        </Link>
+        <Link href={editHref as Route} className="no-underline">
+          <Button variant="ghost" size="md" icon={<span aria-hidden="true">✎</span>}>
+            Edit profile
+          </Button>
+        </Link>
+        <Link href={addNoteHref as Route} className="no-underline">
+          <Button variant="ghost" size="md" icon={<span aria-hidden="true">💬</span>}>
+            Add note
+          </Button>
+        </Link>
       </div>
     </Card>
   );

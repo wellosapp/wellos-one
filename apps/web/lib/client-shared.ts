@@ -88,25 +88,75 @@ export type ClientWriteBody = {
 
 // ---- Stats response (E3-S7) ----
 
+export type AppointmentSummaryStat = {
+  appointmentId: string;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  state: string;
+  staffId: string;
+  staffName: string | null;
+  serviceId: string;
+  serviceName: string | null;
+};
+
 export type ClientStats = {
   totalVisits: number;
   totalCompletedVisits: number;
   totalCancelledVisits: number;
   totalNoShowVisits: number;
-  lastVisit: {
-    appointmentId: string;
-    scheduledStartAt: string;
-    scheduledEndAt: string;
-    state: string;
-    staffId: string;
-    staffName: string | null;
-    serviceId: string;
-    serviceName: string | null;
-  } | null;
+  lastVisit: AppointmentSummaryStat | null;
+  upcomingAppointment: AppointmentSummaryStat | null;
   totalNotes: number;
   totalAlertNotes: number;
   totalFiles: number;
   memberSince: string;
+};
+
+// ---- Client tier — derived from stats (E3-S7) ----
+//
+// Single source of truth for the "what kind of client are they" badge
+// that appears next to the name in both admin and staff profile views.
+// Threshold values are intentional and not yet tenant-configurable:
+//   - First-time   = no completed visits yet
+//   - Lapsed       = haven't visited in 90+ days
+//   - Regular      = 5+ visits and active (visited within 90 days)
+//   - Active       = visited within 90 days but fewer than 5 lifetime
+//   - VIP threshold tracked in pre-launch sweep for tenant configurability
+export type ClientTier =
+  | 'first_time'
+  | 'active'
+  | 'regular'
+  | 'lapsed';
+
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+const REGULAR_THRESHOLD = 5;
+
+export function deriveClientTier(stats: ClientStats): ClientTier {
+  if (stats.totalCompletedVisits === 0 && stats.totalVisits === 0) {
+    return 'first_time';
+  }
+  const last = stats.lastVisit?.scheduledStartAt;
+  if (!last) return 'first_time';
+  const daysSinceLast = Date.now() - new Date(last).getTime();
+  if (daysSinceLast > NINETY_DAYS_MS) return 'lapsed';
+  return stats.totalVisits >= REGULAR_THRESHOLD ? 'regular' : 'active';
+}
+
+export const CLIENT_TIER_LABELS: Record<ClientTier, string> = {
+  first_time: 'First-time',
+  active: 'Active',
+  regular: 'Regular Client',
+  lapsed: 'Lapsed',
+};
+
+export const CLIENT_TIER_TONES: Record<
+  ClientTier,
+  'neutral' | 'accent' | 'amber' | 'green'
+> = {
+  first_time: 'accent',
+  active: 'green',
+  regular: 'green',
+  lapsed: 'amber',
 };
 
 // ---- Media response (E3-S7) ----
