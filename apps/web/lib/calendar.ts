@@ -169,6 +169,60 @@ export function nowLinePx(date: Date): number | null {
   return offset * GRID_PX_PER_MIN;
 }
 
+/** Open intervals between consecutive appointments (same column), in grid coordinates. */
+export type CalendarGap = {
+  topPx: number;
+  heightPx: number;
+  /** Minutes from grid start (8:00) */
+  gapStartMin: number;
+  gapEndMin: number;
+};
+
+const MIN_GAP_MINUTES = 12;
+
+/**
+ * Computes whitespace gaps between sorted same-day appointments for one staff member.
+ * Ignores pairs where the gap is smaller than MIN_GAP_MINUTES.
+ */
+export function gapsBetweenAppointments(
+  appointments: { scheduledStartAt: string; scheduledEndAt: string }[],
+): CalendarGap[] {
+  if (appointments.length < 2) return [];
+  const sorted = [...appointments].sort(
+    (a, b) =>
+      new Date(a.scheduledStartAt).getTime() -
+      new Date(b.scheduledStartAt).getTime(),
+  );
+  const gaps: CalendarGap[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    if (!a || !b) continue;
+    const endA = offsetFromGridStart(a.scheduledEndAt);
+    const startB = offsetFromGridStart(b.scheduledStartAt);
+    const gapStart = Math.max(0, endA);
+    const gapEnd = Math.min(GRID_TOTAL_MINUTES, startB);
+    if (gapEnd - gapStart < MIN_GAP_MINUTES) continue;
+    const topPx = gapStart * GRID_PX_PER_MIN;
+    const heightPx = Math.max(
+      GRID_ROW_MINUTES * GRID_PX_PER_MIN * 0.5,
+      (gapEnd - gapStart) * GRID_PX_PER_MIN,
+    );
+    gaps.push({
+      topPx,
+      heightPx,
+      gapStartMin: gapStart,
+      gapEndMin: gapEnd,
+    });
+  }
+  return gaps;
+}
+
+/** Minutes duration of a gap for display (rounded). */
+export function gapDurationMinutes(gap: CalendarGap): number {
+  return Math.round(gap.gapEndMin - gap.gapStartMin);
+}
+
 // Re-export some date-fns primitives used by callers so the rest of the app
 // has one import surface.
 export { addDays, parseISO, startOfDay };

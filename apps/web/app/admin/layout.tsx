@@ -80,7 +80,7 @@ export default async function AdminLayout({
         </nav>
         <UserButton afterSignOutUrl="/" />
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-s8 py-s8">
+      <main className="mx-auto w-full max-w-[1320px] flex-1 px-s8 py-s8">
         {children}
       </main>
     </div>
