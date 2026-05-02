@@ -33,6 +33,13 @@ export type Client = {
   emergencyContactPhone: string | null;
   intakeStatus: ClientIntakeStatus;
   notes: string | null;
+  // Tier A — communication preferences + banned flag.
+  smsOptedOut: boolean;
+  emailOptedOut: boolean;
+  preferredChannel: string;
+  banned: boolean;
+  bannedReason: string | null;
+  bannedAt: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
