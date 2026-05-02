@@ -46,6 +46,12 @@ export default function AdminLayout({
           >
             Staff
           </Link>
+          <Link
+            href="/admin/media"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Media
+          </Link>
         </nav>
         <UserButton afterSignOutUrl="/" />
       </header>
