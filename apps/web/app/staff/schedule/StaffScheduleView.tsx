@@ -5,7 +5,13 @@ import type { Route } from 'next';
 import { useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { Alert, Badge, Button, Card } from '@/components/ui';
+import { AppointmentDrawer } from '@/app/admin/calendar/AppointmentDrawer';
+import { CalendarGrid } from '@/app/admin/calendar/CalendarGrid';
+import { CalendarMonthView } from '@/app/admin/calendar/CalendarMonthView';
+import { CalendarViewToggle } from '@/app/admin/calendar/CalendarViewToggle';
+import { CalendarWeekView } from '@/app/admin/calendar/CalendarWeekView';
+import { QuickBookPanel } from '@/app/admin/calendar/QuickBookPanel';
+import { Alert, Badge, Button } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
@@ -16,6 +22,8 @@ import {
   addDays,
   formatDateLong,
   formatDateShort,
+  formatTimeLocal,
+  gapsBetweenAppointments,
   isToday,
   toDateParam,
 } from '@/lib/calendar';
@@ -26,24 +34,18 @@ import {
   weekDayDates,
 } from '@/lib/calendar-view';
 
-import { AdminCalendarInsights } from './AdminCalendarInsights';
-import { AppointmentDrawer } from './AppointmentDrawer';
-import { CalendarGrid } from './CalendarGrid';
-import { CalendarMonthView } from './CalendarMonthView';
-import { CalendarViewToggle } from './CalendarViewToggle';
-import { CalendarWeekView } from './CalendarWeekView';
-import { QuickBookPanel } from './QuickBookPanel';
+import { StaffScheduleInsights } from './StaffScheduleInsights';
 
-const ADMIN_CAL = '/admin/calendar';
+const STAFF_SCHED = '/staff/schedule';
 
-interface CalendarDayViewProps {
+interface StaffScheduleViewProps {
   date: Date;
   dateParam: string;
   view: CalendarViewMode;
-  staff: Staff[];
+  me: Staff;
   services: Service[];
   appointments: Appointment[];
-  clientDisplayNames?: Record<string, string>;
+  clientDisplayNames: Record<string, string>;
   locations: WhoamiLocation[];
   selected: {
     appointment: Appointment;
@@ -56,11 +58,17 @@ interface CalendarDayViewProps {
   quickBookOpen: boolean;
 }
 
-export function CalendarDayView({
+function initials(staff: Staff): string {
+  const a = staff.firstName?.[0] ?? '';
+  const b = staff.lastName?.[0] ?? '';
+  return (a + b).toUpperCase() || '?';
+}
+
+export function StaffScheduleView({
   date,
   dateParam,
   view,
-  staff,
+  me,
   services,
   appointments,
   clientDisplayNames,
@@ -69,13 +77,13 @@ export function CalendarDayView({
   selectedError,
   activeTab,
   quickBookOpen,
-}: CalendarDayViewProps) {
+}: StaffScheduleViewProps) {
   const router = useRouter();
   const qb = quickBookOpen ? '1' : undefined;
 
   const hrefSelected = useCallback(
     (appointmentId: string, tab?: string) => {
-      return buildCalendarUrl(ADMIN_CAL, {
+      return buildCalendarUrl(STAFF_SCHED, {
         date: dateParam,
         view,
         selected: appointmentId,
@@ -86,13 +94,15 @@ export function CalendarDayView({
     [dateParam, view, qb],
   );
 
-  const hrefCloseDrawer = useCallback((): string => {
-    return buildCalendarUrl(ADMIN_CAL, { date: dateParam, view, quickbook: qb });
-  }, [dateParam, view, qb]);
+  const hrefCloseDrawer = useCallback(
+    () =>
+      buildCalendarUrl(STAFF_SCHED, { date: dateParam, view, quickbook: qb }),
+    [dateParam, view, qb],
+  );
 
   const hrefQuickBook = useMemo(
     () =>
-      buildCalendarUrl(ADMIN_CAL, {
+      buildCalendarUrl(STAFF_SCHED, {
         date: dateParam,
         view,
         quickbook: '1',
@@ -101,7 +111,7 @@ export function CalendarDayView({
   );
 
   const hrefCloseQuickBook = useMemo(
-    () => buildCalendarUrl(ADMIN_CAL, { date: dateParam, view }),
+    () => buildCalendarUrl(STAFF_SCHED, { date: dateParam, view }),
     [dateParam, view],
   );
 
@@ -116,19 +126,53 @@ export function CalendarDayView({
     });
   }, [appointments, date]);
 
-  const insightAppointments =
-    view === 'day' ? visibleDayAppointments : appointments;
+  const myDayAppointments = useMemo(
+    () => visibleDayAppointments.filter((a) => a.staffId === me.id),
+    [visibleDayAppointments, me.id],
+  );
 
-  const staffById = useMemo(() => {
-    const m = new Map<string, Staff>();
-    for (const s of staff) m.set(s.id, s);
-    return m;
-  }, [staff]);
+  const gapCount = useMemo(
+    () => gapsBetweenAppointments(myDayAppointments).length,
+    [myDayAppointments],
+  );
+
+  const nextAppointmentId = useMemo(() => {
+    if (view !== 'day') return null;
+    const nowMs = Date.now();
+    const upcoming = [...myDayAppointments]
+      .filter((a) => new Date(a.scheduledStartAt).getTime() > nowMs)
+      .sort(
+        (a, b) =>
+          new Date(a.scheduledStartAt).getTime() -
+          new Date(b.scheduledStartAt).getTime(),
+      );
+    return upcoming[0]?.id ?? null;
+  }, [myDayAppointments, view]);
+
+  const nextStart = useMemo(() => {
+    const id = nextAppointmentId;
+    if (!id) return null;
+    const appt = myDayAppointments.find((a) => a.id === id);
+    return appt ? appt.scheduledStartAt : null;
+  }, [nextAppointmentId, myDayAppointments]);
+
+  const nextClientLabel = useMemo(() => {
+    if (!nextAppointmentId) return undefined;
+    const appt = myDayAppointments.find((a) => a.id === nextAppointmentId);
+    if (!appt) return undefined;
+    const name = clientDisplayNames[appt.clientId];
+    return name
+      ? `${name} · ${formatTimeLocal(appt.scheduledStartAt)}`
+      : formatTimeLocal(appt.scheduledStartAt);
+  }, [nextAppointmentId, myDayAppointments, clientDisplayNames]);
+
   const serviceById = useMemo(() => {
     const m = new Map<string, Service>();
     for (const s of services) m.set(s.id, s);
     return m;
   }, [services]);
+
+  const staffById = useMemo(() => new Map([[me.id, me]]), [me]);
 
   const weekDays = useMemo(() => weekDayDates(date), [date]);
 
@@ -150,7 +194,7 @@ export function CalendarDayView({
 
   const prevNav = useMemo(() => {
     const d = shiftAnchorDate(date, view, 'prev');
-    return buildCalendarUrl(ADMIN_CAL, {
+    return buildCalendarUrl(STAFF_SCHED, {
       date: toDateParam(d),
       view,
       quickbook: qb,
@@ -159,7 +203,7 @@ export function CalendarDayView({
 
   const nextNav = useMemo(() => {
     const d = shiftAnchorDate(date, view, 'next');
-    return buildCalendarUrl(ADMIN_CAL, {
+    return buildCalendarUrl(STAFF_SCHED, {
       date: toDateParam(d),
       view,
       quickbook: qb,
@@ -168,12 +212,12 @@ export function CalendarDayView({
 
   const jumpTodayNav = useMemo(() => {
     const t = toDateParam(new Date());
-    return buildCalendarUrl(ADMIN_CAL, { date: t, view, quickbook: qb });
+    return buildCalendarUrl(STAFF_SCHED, { date: t, view, quickbook: qb });
   }, [view, qb]);
 
   const dayJumpPrev = useMemo(
     () =>
-      buildCalendarUrl(ADMIN_CAL, {
+      buildCalendarUrl(STAFF_SCHED, {
         date: toDateParam(addDays(date, -1)),
         view: 'day',
         quickbook: qb,
@@ -182,7 +226,7 @@ export function CalendarDayView({
   );
   const dayJumpNext = useMemo(
     () =>
-      buildCalendarUrl(ADMIN_CAL, {
+      buildCalendarUrl(STAFF_SCHED, {
         date: toDateParam(addDays(date, +1)),
         view: 'day',
         quickbook: qb,
@@ -198,11 +242,33 @@ export function CalendarDayView({
     router.push(hrefCloseQuickBook as Route);
   }, [router, hrefCloseQuickBook]);
 
+  const bannerLine = useMemo(() => {
+    if (view === 'day') {
+      return [
+        `${myDayAppointments.length} appointment${myDayAppointments.length === 1 ? '' : 's'}`,
+        `${gapCount} open gap${gapCount === 1 ? '' : 's'}`,
+        nextStart
+          ? `next up at ${formatTimeLocal(nextStart)}`
+          : 'no more visits today',
+      ].join(' · ');
+    }
+    if (view === 'week') {
+      return `${appointments.length} visit${appointments.length === 1 ? '' : 's'} this week`;
+    }
+    return `${appointments.length} visit${appointments.length === 1 ? '' : 's'} this month`;
+  }, [
+    view,
+    myDayAppointments.length,
+    gapCount,
+    nextStart,
+    appointments.length,
+  ]);
+
   const mainCol = (
     <div className="flex min-w-0 flex-col gap-s5">
       <header className="flex flex-col gap-s4 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Calendar</span>
+          <span className="t-eyebrow text-accent">My schedule</span>
           <h1 className="t-display-lg flex flex-wrap items-baseline gap-s3">
             {periodTitle}
             {view === 'day' && isToday(date) && (
@@ -257,16 +323,11 @@ export function CalendarDayView({
 
         <div className="flex flex-wrap items-center gap-s3">
           <CalendarViewToggle
-            surface="admin"
+            surface="staff"
             dateParam={dateParam}
             active={view}
             quickBookOpen={quickBookOpen}
           />
-
-          <span className="rounded-md border border-surface-3 bg-white px-s4 py-s2 t-body-sm font-medium text-ink-soft shadow-sm">
-            All staff
-          </span>
-
           <Link href={hrefQuickBook as Route} className="no-underline">
             <Button variant="accent" size="md">
               + Quick Book
@@ -277,30 +338,30 @@ export function CalendarDayView({
 
       {selectedError && <Alert tone="error">{selectedError}</Alert>}
 
-      {staff.length === 0 ? (
-        <Card padding="lg">
-          <p className="t-body-md text-ink-soft">
-            No active staff yet. Add a staff member to start booking
-            appointments.
-          </p>
-          <div className="mt-s3">
-            <Link href="/admin/staff/new" className="no-underline">
-              <Button variant="primary" size="sm">
-                Add staff
-              </Button>
-            </Link>
-          </div>
-        </Card>
-      ) : view === 'day' ? (
+      <div className="flex flex-wrap items-center gap-s4 rounded-xl border border-surface-3 bg-[#fbfbfa] px-s4 py-s4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-pale t-body-md font-bold text-accent">
+          {initials(me)}
+        </div>
+        <div>
+          <strong className="t-body-lg text-ink">
+            {me.firstName}
+            {me.lastName ? ` ${me.lastName}` : ''}
+          </strong>
+          <span className="mt-s1 block t-caption text-ink-soft">{bannerLine}</span>
+        </div>
+      </div>
+
+      {view === 'day' ? (
         <CalendarGrid
           date={date}
-          staff={staff}
+          staff={[me]}
           serviceById={serviceById}
-          appointments={visibleDayAppointments}
+          appointments={myDayAppointments}
           hrefSelected={hrefSelected}
           selectedAppointmentId={selected?.appointment.id ?? null}
           clientDisplayNames={clientDisplayNames}
           hrefQuickBook={hrefQuickBook}
+          nextAppointmentId={nextAppointmentId}
         />
       ) : view === 'week' ? (
         <CalendarWeekView
@@ -310,40 +371,18 @@ export function CalendarDayView({
           serviceById={serviceById}
           clientDisplayNames={clientDisplayNames}
           hrefSelected={hrefSelected}
-          mode="admin"
+          mode="staff"
         />
       ) : (
         <CalendarMonthView
           anchorMonth={date}
           appointments={appointments}
-          basePath={ADMIN_CAL}
+          basePath={STAFF_SCHED}
           preserveParams={qb ? { quickbook: qb } : undefined}
         />
       )}
 
-      {view === 'day' &&
-        visibleDayAppointments.length === 0 &&
-        staff.length > 0 && (
-          <Card padding="md">
-            <p className="t-body-md text-ink-soft">
-              No appointments on this day yet. Bookings from Quick Book and the
-              public portal appear here once scheduled.
-            </p>
-            <div className="mt-s3">
-              <Link href={hrefQuickBook as Route} className="no-underline">
-                <Button variant="accent" size="sm">
-                  Open Quick Book
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        )}
-
-      <div id="calendar-insights" className="scroll-mt-s8 pt-s2">
-        <span className="t-eyebrow text-accent">Overview</span>
-        <h2 className="sr-only">Calendar insights</h2>
-        <AdminCalendarInsights appointments={insightAppointments} />
-      </div>
+      <StaffScheduleInsights nextClientLabel={nextClientLabel} />
     </div>
   );
 
@@ -351,7 +390,7 @@ export function CalendarDayView({
     <div
       className={
         quickBookOpen
-          ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start'
+          ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_330px] lg:items-start'
           : 'flex flex-col gap-s5'
       }
     >
@@ -359,12 +398,13 @@ export function CalendarDayView({
 
       {quickBookOpen && (
         <QuickBookPanel
-          staff={staff}
+          staff={[me]}
           services={services}
           locations={locations}
           dateParam={dateParam}
           onClose={handleCloseQuickBook}
-          variant="admin"
+          variant="staff"
+          lockedStaffId={me.id}
         />
       )}
 
@@ -379,6 +419,7 @@ export function CalendarDayView({
           activeTab={activeTab}
           dateParam={dateParam}
           onClose={handleCloseDrawer}
+          calendarBasePath="/staff/schedule"
           view={view}
           quickbook={qb}
         />

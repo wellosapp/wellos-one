@@ -1,3 +1,5 @@
+import { currentUser } from '@clerk/nextjs/server';
+
 import { Alert } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
 import {
@@ -17,15 +19,7 @@ import {
   parseViewParam,
 } from '@/lib/calendar-view';
 
-import { CalendarDayView } from './CalendarDayView';
-
-// /admin/calendar — staff/admin daily-driver UI (E3-S5 T5).
-// Server-rendered: parses ?date / ?selected / ?tab / ?quickbook from the
-// URL, fetches the day's appointments + the directory data the client
-// components need (staff, services, locations), and the selected
-// appointment's drilldown data when the drawer is open. Per
-// docs/04-booking UI UX Update/wellos_booking_r2_uiux_package
-// /wellos_calendar_booking_r2_uiux_buildout.md §5–§6.
+import { StaffScheduleView } from './StaffScheduleView';
 
 type SearchParams = {
   date?: string;
@@ -35,7 +29,7 @@ type SearchParams = {
   quickbook?: string;
 };
 
-export default async function CalendarPage({
+export default async function StaffSchedulePage({
   searchParams,
 }: {
   searchParams: Promise<SearchParams>;
@@ -45,15 +39,17 @@ export default async function CalendarPage({
   const dateStr = toDateParam(date);
   const view = parseViewParam(sp.view);
 
+  const user = await currentUser();
+  const email = user?.primaryEmailAddress?.emailAddress?.toLowerCase() ?? null;
+
   const { fromIso, toIso } = appointmentFetchBounds(date, view);
   const take = appointmentFetchTake(view);
 
-  // Fetch the directory data + appointments + whoami in parallel. If any
-  // fail with a 403 we surface a single error UI instead of cascading.
   let directoryError: string | null = null;
   let staffData: Awaited<ReturnType<typeof listStaff>> | null = null;
   let servicesData: Awaited<ReturnType<typeof listServices>> | null = null;
-  let appointmentsData: Awaited<ReturnType<typeof listAppointments>> | null = null;
+  let appointmentsData: Awaited<ReturnType<typeof listAppointments>> | null =
+    null;
   let whoami: Awaited<ReturnType<typeof getWhoami>> | null = null;
 
   try {
@@ -65,7 +61,7 @@ export default async function CalendarPage({
     ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
-      directoryError = 'You do not have admin access to this tenant.';
+      directoryError = 'You do not have access to this tenant.';
     } else if (err instanceof ApiError) {
       directoryError = err.message;
     } else {
@@ -73,8 +69,37 @@ export default async function CalendarPage({
     }
   }
 
-  // Drawer drilldown — only fetch when ?selected is set so the default page
-  // load stays as light as the rest of /admin/*.
+  if (directoryError) {
+    return (
+      <div className="flex flex-col gap-s4">
+        <h1 className="t-display-lg">My schedule</h1>
+        <Alert tone="error">{directoryError}</Alert>
+      </div>
+    );
+  }
+
+  const staffList = staffData?.staff ?? [];
+  const me =
+    email === null
+      ? null
+      : staffList.find((s) => s.email?.toLowerCase() === email) ?? null;
+
+  if (!me) {
+    return (
+      <div className="flex flex-col gap-s4">
+        <h1 className="t-display-lg">My schedule</h1>
+        <Alert tone="warning">
+          {email
+            ? 'No staff profile matches your Work email yet. Ask an admin to add your email on your staff profile.'
+            : 'Sign in to view your schedule.'}
+        </Alert>
+      </div>
+    );
+  }
+
+  const myAppointments =
+    appointmentsData?.appointments.filter((a) => a.staffId === me.id) ?? [];
+
   let selectedBundle:
     | {
         appointment: Awaited<ReturnType<typeof getAppointment>>['appointment'];
@@ -84,24 +109,28 @@ export default async function CalendarPage({
       }
     | null = null;
   let selectedError: string | null = null;
-  if (sp.selected && !directoryError) {
+  if (sp.selected) {
     try {
       const apptResp = await getAppointment(sp.selected);
       const appt = apptResp.appointment;
-      const [clientResp, notesResp, answersResp] = await Promise.all([
-        getClient(appt.clientId),
-        listClientNotes(appt.clientId, {
-          appointmentId: appt.id,
-          take: 50,
-        }),
-        listBookingAnswers(appt.id),
-      ]);
-      selectedBundle = {
-        appointment: appt,
-        client: clientResp.client,
-        notes: notesResp.notes,
-        bookingAnswers: answersResp.answers,
-      };
+      if (appt.staffId !== me.id) {
+        selectedError = 'That appointment is not on your schedule.';
+      } else {
+        const [clientResp, notesResp, answersResp] = await Promise.all([
+          getClient(appt.clientId),
+          listClientNotes(appt.clientId, {
+            appointmentId: appt.id,
+            take: 50,
+          }),
+          listBookingAnswers(appt.id),
+        ]);
+        selectedBundle = {
+          appointment: appt,
+          client: clientResp.client,
+          notes: notesResp.notes,
+          bookingAnswers: answersResp.answers,
+        };
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         selectedError = 'Appointment not found.';
@@ -113,17 +142,7 @@ export default async function CalendarPage({
     }
   }
 
-  if (directoryError) {
-    return (
-      <div className="flex flex-col gap-s4">
-        <h1 className="t-display-lg">Calendar</h1>
-        <Alert tone="error">{directoryError}</Alert>
-      </div>
-    );
-  }
-
-  const appts = appointmentsData?.appointments ?? [];
-  const clientIds = [...new Set(appts.map((a) => a.clientId))];
+  const clientIds = [...new Set(myAppointments.map((a) => a.clientId))];
   const clientDisplayNames: Record<string, string> = {};
   await Promise.all(
     clientIds.map(async (id) => {
@@ -138,13 +157,13 @@ export default async function CalendarPage({
   );
 
   return (
-    <CalendarDayView
+    <StaffScheduleView
       date={date}
       dateParam={dateStr}
       view={view}
-      staff={staffData?.staff ?? []}
+      me={me}
       services={servicesData?.services ?? []}
-      appointments={appts}
+      appointments={myAppointments}
       clientDisplayNames={clientDisplayNames}
       locations={whoami?.locations ?? []}
       selected={selectedBundle}

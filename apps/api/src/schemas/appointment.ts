@@ -108,7 +108,8 @@ export const ListAppointmentsQuerySchema = z.object({
   state: AppointmentStatusSchema.optional(),
   from: ISO_DATETIME.optional(),
   to: ISO_DATETIME.optional(),
-  take: z.coerce.number().int().min(1).max(200).default(50),
+  // Calendar week/month views request a wider window (see apps/web/lib/calendar-view.ts).
+  take: z.coerce.number().int().min(1).max(500).default(50),
   skip: z.coerce.number().int().min(0).default(0),
   includeDeleted: QueryBoolFlag,
 });
