@@ -17,6 +17,12 @@ export default function AdminLayout({
             Wellos Admin
           </Link>
           <Link
+            href="/admin/calendar"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Calendar
+          </Link>
+          <Link
             href="/admin/clients"
             className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
           >
