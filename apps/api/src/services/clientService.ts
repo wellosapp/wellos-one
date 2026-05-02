@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { Client } from '@prisma/client';
+import type { Client, MediaAsset } from '@prisma/client';
 
 import type {
   ExtendedPrismaClient,
@@ -32,9 +32,37 @@ import type {
 // client write. Cross-tenant tag IDs raise INVALID_TAG_IDS (mirrors
 // serviceService.validateStaffIds).
 
+// Compute the next per-tenant clientNumber for a new client. Reads
+// MAX(clientNumber) inside the active transaction and adds 1; the
+// @@unique([tenantId, clientNumber]) constraint catches the rare race
+// where two parallel creates land on the same MAX value (one will
+// P2002, the route layer can retry — but at MVP volume this is
+// effectively impossible). Starts at 1 for a tenant with no clients.
+async function getNextClientNumber(
+  tx: ExtendedTransactionClient,
+  tenantId: string,
+): Promise<number> {
+  const top = await tx.client.findFirst({
+    where: { tenantId },
+    select: { clientNumber: true },
+    orderBy: { clientNumber: 'desc' },
+  });
+  return (top?.clientNumber ?? 0) + 1;
+}
+
+// Format a clientNumber as the operator-facing display string.
+// `42` → "CL-000042". Used by the API response shape; the frontend
+// can still re-format if it wants, but having a canonical render here
+// keeps formatting consistent across surfaces (admin list, drawer,
+// receipts, etc.).
+export function formatClientNumber(n: number): string {
+  return `CL-${String(n).padStart(6, '0')}`;
+}
+
 const CLIENT_SAFE_FIELDS = {
   id: true,
   tenantId: true,
+  clientNumber: true,
   firstName: true,
   lastName: true,
   email: true,
@@ -266,9 +294,16 @@ export async function createClient(
       phone: body.phone,
     });
 
+    // Compute the next clientNumber inside the transaction. The
+    // @@unique([tenantId, clientNumber]) constraint guarantees
+    // correctness even if two creates race — the loser gets a
+    // P2002 unique violation, caught and retried with MAX+1 again.
+    const nextClientNumber = await getNextClientNumber(tx, tenantId);
+
     const client = await tx.client.create({
       data: {
         tenantId,
+        clientNumber: nextClientNumber,
         firstName: body.firstName,
         lastName: body.lastName,
         email: body.email,
@@ -525,4 +560,221 @@ export async function softDeleteClient(
 
     return { deleted: true };
   });
+}
+
+// ---------- stats (E3-S7) ----------
+//
+// Aggregated metrics for the client profile header card. Single
+// round-trip — the page would otherwise need 5+ separate queries
+// to assemble the same payload. Tenant-scoped existence check first
+// so cross-tenant lookups return null (route maps to 404).
+
+export type ClientStatsResponse = {
+  // True if a client row exists for the tenant; null otherwise (404).
+  totalVisits: number;
+  totalCompletedVisits: number;
+  totalCancelledVisits: number;
+  totalNoShowVisits: number;
+  // Most recent appointment by scheduled_start_at, regardless of state.
+  // Null if the client has no appointments yet.
+  lastVisit: {
+    appointmentId: string;
+    scheduledStartAt: string;
+    scheduledEndAt: string;
+    state: string;
+    staffId: string;
+    staffName: string | null;
+    serviceId: string;
+    serviceName: string | null;
+  } | null;
+  totalNotes: number;
+  totalAlertNotes: number;
+  totalFiles: number;
+  // Member-since = client.createdAt. Returned as ISO string for the UI.
+  memberSince: string;
+};
+
+export async function getClientStats(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; clientId: string },
+): Promise<ClientStatsResponse | null> {
+  const { tenantId, clientId } = args;
+
+  // Tenant-scoped existence check + memberSince in one query.
+  const client = await prisma.client.findFirst({
+    where: { tenantId, id: clientId },
+    select: { id: true, createdAt: true },
+  });
+  if (!client) return null;
+
+  // All counts in parallel — Postgres handles them concurrently and
+  // each is a quick indexed count.
+  const [
+    totalVisits,
+    totalCompletedVisits,
+    totalCancelledVisits,
+    totalNoShowVisits,
+    totalNotes,
+    totalAlertNotes,
+    totalFiles,
+    lastVisitRow,
+  ] = await Promise.all([
+    prisma.appointment.count({
+      where: { tenantId, clientId, deletedAt: null },
+    }),
+    prisma.appointment.count({
+      where: { tenantId, clientId, deletedAt: null, state: 'completed' },
+    }),
+    prisma.appointment.count({
+      where: { tenantId, clientId, deletedAt: null, state: 'cancelled' },
+    }),
+    prisma.appointment.count({
+      where: { tenantId, clientId, deletedAt: null, state: 'no_show' },
+    }),
+    prisma.clientNote.count({
+      where: { tenantId, clientId, deletedAt: null, archivedAt: null },
+    }),
+    prisma.clientNote.count({
+      where: {
+        tenantId,
+        clientId,
+        deletedAt: null,
+        archivedAt: null,
+        priority: 'alert',
+      },
+    }),
+    prisma.mediaAsset.count({
+      where: {
+        tenantId,
+        deletedAt: null,
+        archivedAt: null,
+        OR: [
+          { clientOwnerId: clientId },
+          // Files attached to any of this client's appointments are
+          // semantically "this client's files" too.
+          {
+            appointmentOwnerId: {
+              in: await (async () => {
+                const appts = await prisma.appointment.findMany({
+                  where: { tenantId, clientId, deletedAt: null },
+                  select: { id: true },
+                });
+                return appts.map((a) => a.id);
+              })(),
+            },
+          },
+        ],
+      },
+    }),
+    prisma.appointment.findFirst({
+      where: { tenantId, clientId, deletedAt: null },
+      select: {
+        id: true,
+        scheduledStartAt: true,
+        scheduledEndAt: true,
+        state: true,
+        staffId: true,
+        serviceId: true,
+        staff: { select: { firstName: true, lastName: true } },
+        service: { select: { name: true } },
+      },
+      orderBy: { scheduledStartAt: 'desc' },
+    }),
+  ]);
+
+  return {
+    totalVisits,
+    totalCompletedVisits,
+    totalCancelledVisits,
+    totalNoShowVisits,
+    totalNotes,
+    totalAlertNotes,
+    totalFiles,
+    memberSince: client.createdAt.toISOString(),
+    lastVisit: lastVisitRow
+      ? {
+          appointmentId: lastVisitRow.id,
+          scheduledStartAt: lastVisitRow.scheduledStartAt.toISOString(),
+          scheduledEndAt: lastVisitRow.scheduledEndAt.toISOString(),
+          state: lastVisitRow.state,
+          staffId: lastVisitRow.staffId,
+          staffName: lastVisitRow.staff
+            ? `${lastVisitRow.staff.firstName}${lastVisitRow.staff.lastName ? ' ' + lastVisitRow.staff.lastName : ''}`
+            : null,
+          serviceId: lastVisitRow.serviceId,
+          serviceName: lastVisitRow.service?.name ?? null,
+        }
+      : null,
+  };
+}
+
+// ---------- client-scoped media (E3-S7) ----------
+//
+// All media linked to this client — direct (clientOwnerId) plus media
+// attached to any of this client's appointments. Categorized by the
+// same folder-prefix rules as appointment-scoped media (E3-S6) so the
+// frontend can use a single AppointmentMediaResponse-shaped renderer.
+
+export type ClientMediaResponse = {
+  referencePhotos: MediaAsset[];
+  intakeDocs: MediaAsset[];
+  consentDocs: MediaAsset[];
+  receipts: MediaAsset[];
+  generated: MediaAsset[];
+};
+
+function categorizeForClient(asset: MediaAsset): keyof ClientMediaResponse {
+  if (asset.accessClass === 'generated') return 'generated';
+  const folder = asset.folder.toLowerCase();
+  if (folder.startsWith('intake')) return 'intakeDocs';
+  if (folder.startsWith('consent')) return 'consentDocs';
+  if (folder.startsWith('receipt')) return 'receipts';
+  return 'referencePhotos';
+}
+
+export async function listMediaForClient(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; clientId: string },
+): Promise<ClientMediaResponse | null> {
+  const { tenantId, clientId } = args;
+
+  const client = await prisma.client.findFirst({
+    where: { tenantId, id: clientId },
+    select: { id: true },
+  });
+  if (!client) return null;
+
+  // Pre-fetch this client's appointment IDs so the second query can
+  // pull appointment-attached media in a single trip.
+  const appts = await prisma.appointment.findMany({
+    where: { tenantId, clientId, deletedAt: null },
+    select: { id: true },
+  });
+  const appointmentIds = appts.map((a) => a.id);
+
+  const assets = await prisma.mediaAsset.findMany({
+    where: {
+      tenantId,
+      archivedAt: null,
+      OR: [
+        { clientOwnerId: clientId },
+        ...(appointmentIds.length > 0
+          ? [{ appointmentOwnerId: { in: appointmentIds } }]
+          : []),
+      ],
+    },
+    orderBy: [{ uploadedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  const grouped: ClientMediaResponse = {
+    referencePhotos: [],
+    intakeDocs: [],
+    consentDocs: [],
+    receipts: [],
+    generated: [],
+  };
+  for (const a of assets) {
+    grouped[categorizeForClient(a)].push(a);
+  }
+  return grouped;
 }

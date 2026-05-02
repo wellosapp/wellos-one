@@ -11,7 +11,9 @@ import {
 import {
   createClient,
   getClientById,
+  getClientStats,
   listClients,
+  listMediaForClient,
   softDeleteClient,
   updateClient,
 } from '../../services/clientService.js';
@@ -184,4 +186,65 @@ export default async function clientsRoutes(app: FastifyInstance): Promise<void>
     }
     return reply.code(204).send();
   });
+
+  // GET /admin/clients/:id/stats — aggregated metrics for the client
+  // profile header card (E3-S7). Visits + notes + files counts +
+  // last-visit details + memberSince. Single round-trip — saves the
+  // page from running 5+ separate queries.
+  app.get(
+    '/clients/:id/stats',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = ClientIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const stats = await getClientStats(app.prisma, {
+        tenantId,
+        clientId: params.data.id,
+      });
+      if (!stats) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Client not found.',
+        });
+      }
+      return reply.send(stats);
+    },
+  );
+
+  // GET /admin/clients/:id/media — all media linked to this client,
+  // grouped by category (E3-S7). UNIONs clientOwnerId direct +
+  // appointmentOwnerId on any of this client's appointments. Mirrors
+  // the AppointmentMediaResponse shape from E3-S6 so the frontend can
+  // reuse the grid renderer.
+  app.get(
+    '/clients/:id/media',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = ClientIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const result = await listMediaForClient(app.prisma, {
+        tenantId,
+        clientId: params.data.id,
+      });
+      if (!result) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Client not found.',
+        });
+      }
+      return reply.send(result);
+    },
+  );
 }
