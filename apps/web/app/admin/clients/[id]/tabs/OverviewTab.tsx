@@ -66,6 +66,9 @@ interface OverviewTabProps {
   timeline: ClientTimelineResponse;
   allNotes: ClientNoteSummary[];
   editHref: string;
+  // Returns the URL that opens the inline VisitQuickViewDrawer for the
+  // given appointmentId (?selected=...). Stays on the profile page.
+  hrefForVisit: (appointmentId: string) => string;
 }
 
 export function OverviewTab({
@@ -74,6 +77,7 @@ export function OverviewTab({
   timeline,
   allNotes,
   editHref,
+  hrefForVisit,
 }: OverviewTabProps) {
   const recentVisits = timeline.visits.slice(0, 4);
   const alerts = allNotes.filter((n) => n.priority === 'alert');
@@ -94,7 +98,7 @@ export function OverviewTab({
           cta={
             upcoming ? (
               <Link
-                href={`/admin/calendar?date=${upcoming.scheduledStartAt.slice(0, 10)}&selected=${upcoming.appointmentId}` as Route}
+                href={hrefForVisit(upcoming.appointmentId) as Route}
                 className="no-underline"
               >
                 <Button variant="ghost" size="sm">
@@ -251,8 +255,7 @@ export function OverviewTab({
         ) : (
           <ul role="list" className="flex flex-col gap-s2">
             {recentVisits.map((v) => {
-              const visitHref =
-                `/admin/calendar?date=${v.appointment.scheduledStartAt.slice(0, 10)}&selected=${v.appointment.id}` as Route;
+              const visitHref = hrefForVisit(v.appointment.id) as Route;
               return (
                 <li key={v.appointment.id}>
                   <Link

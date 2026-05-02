@@ -13,11 +13,15 @@ import type {
   ClientWriteBody,
 } from '@/lib/client-shared';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
-import type { ClientTimelineResponse } from '@/lib/api/timeline';
+import type {
+  ClientTimelineResponse,
+  ClientTimelineVisit,
+} from '@/lib/api/timeline';
 
 import { updateClientAction } from '../_actions';
 import { ClientHeaderCard } from './ClientHeaderCard';
 import { ProfileEditDrawer } from './ProfileEditDrawer';
+import { VisitQuickViewDrawer } from './VisitQuickViewDrawer';
 import { ActivityTab } from './tabs/ActivityTab';
 import { FilesTab } from './tabs/FilesTab';
 import { IntakeTab } from './tabs/IntakeTab';
@@ -48,6 +52,7 @@ interface ClientProfileProps {
   allNotes: ClientNoteSummary[];
   activeTab: string;
   editOpen: boolean;
+  selectedVisit: ClientTimelineVisit | null;
 }
 
 function clientToFormDefaults(c: ClientWithTags): Partial<ClientWriteBody> {
@@ -80,6 +85,7 @@ export function ClientProfile({
   allNotes,
   activeTab,
   editOpen,
+  selectedVisit,
 }: ClientProfileProps) {
   const router = useRouter();
   const tab: TabKey = isTabKey(activeTab) ? activeTab : 'overview';
@@ -130,6 +136,30 @@ export function ClientProfile({
   const handleCloseEdit = useCallback(() => {
     router.push(hrefEditClose as Route);
   }, [router, hrefEditClose]);
+
+  // Visit quick-view drawer — driven by ?selected=<appointmentId>.
+  const hrefForVisit = useCallback(
+    (appointmentId: string): string => {
+      const params = new URLSearchParams();
+      if (tab !== 'overview') params.set('tab', tab);
+      params.set('selected', appointmentId);
+      return `/admin/clients/${client.id}?${params.toString()}`;
+    },
+    [client.id, tab],
+  );
+
+  const hrefCloseVisit = useMemo(() => {
+    const params = new URLSearchParams();
+    if (tab !== 'overview') params.set('tab', tab);
+    const qs = params.toString();
+    return qs
+      ? `/admin/clients/${client.id}?${qs}`
+      : `/admin/clients/${client.id}`;
+  }, [client.id, tab]);
+
+  const handleCloseVisit = useCallback(() => {
+    router.push(hrefCloseVisit as Route);
+  }, [router, hrefCloseVisit]);
 
   const totalFilesCount =
     media.referencePhotos.length +
@@ -204,9 +234,16 @@ export function ClientProfile({
               timeline={timeline}
               allNotes={allNotes}
               editHref={hrefEditOpen}
+              hrefForVisit={hrefForVisit}
             />
           )}
-          {tab === 'visits' && <VisitsTab timeline={timeline} clientId={client.id} />}
+          {tab === 'visits' && (
+            <VisitsTab
+              timeline={timeline}
+              clientId={client.id}
+              hrefForVisit={hrefForVisit}
+            />
+          )}
           {tab === 'notes' && (
             <NotesTab clientId={client.id} notes={allNotes} />
           )}
@@ -229,6 +266,14 @@ export function ClientProfile({
           tags={tags}
           updateAction={updateClientAction.bind(null, client.id)}
           onClose={handleCloseEdit}
+        />
+      )}
+
+      {selectedVisit && (
+        <VisitQuickViewDrawer
+          clientId={client.id}
+          visit={selectedVisit}
+          onClose={handleCloseVisit}
         />
       )}
     </div>

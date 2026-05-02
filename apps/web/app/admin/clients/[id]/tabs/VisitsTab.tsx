@@ -38,9 +38,16 @@ const STATE_TONE: Record<
 interface VisitsTabProps {
   timeline: ClientTimelineResponse;
   clientId: string;
+  // Returns the URL that opens the inline VisitQuickViewDrawer for the
+  // given appointmentId. Same builder used by OverviewTab.
+  hrefForVisit: (appointmentId: string) => string;
 }
 
-export function VisitsTab({ timeline, clientId }: VisitsTabProps) {
+export function VisitsTab({
+  timeline,
+  clientId,
+  hrefForVisit,
+}: VisitsTabProps) {
   if (timeline.visits.length === 0) {
     return (
       <Card padding="lg" className="border border-dashed border-surface-3 bg-surface-2/40">
@@ -78,7 +85,11 @@ export function VisitsTab({ timeline, clientId }: VisitsTabProps) {
       <ul role="list" className="flex flex-col gap-s3">
         {timeline.visits.map((visit) => (
           <li key={visit.appointment.id}>
-            <Card padding="md" className="border border-surface-3">
+            <Link
+              href={hrefForVisit(visit.appointment.id) as Route}
+              className="block no-underline"
+            >
+            <Card padding="md" className="border border-surface-3 transition-shadow duration-fast hover:shadow-md">
               <div className="flex flex-col gap-s3">
                 <div className="flex flex-wrap items-baseline justify-between gap-s3">
                   <div className="flex flex-col gap-s1">
@@ -135,6 +146,7 @@ export function VisitsTab({ timeline, clientId }: VisitsTabProps) {
                 )}
               </div>
             </Card>
+            </Link>
           </li>
         ))}
       </ul>

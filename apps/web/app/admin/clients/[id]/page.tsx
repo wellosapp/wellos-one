@@ -27,6 +27,10 @@ const RECENT_VISITS_TAKE = 10;
 type SearchParams = {
   tab?: string;
   edit?: string;
+  // ?selected=<appointmentId> opens the inline VisitQuickViewDrawer for
+  // the matching visit. Doctor's-office model — handle the visit
+  // drilldown without leaving the profile.
+  selected?: string;
 };
 
 export default async function ClientDetailPage({
@@ -90,6 +94,16 @@ export default async function ClientDetailPage({
     );
   }
 
+  // If ?selected=<appointmentId>, find the matching visit so the
+  // ClientProfile shell can render the inline VisitQuickViewDrawer.
+  // No extra fetch — timeline.visits already carries everything the
+  // drawer needs.
+  const selectedVisit =
+    sp.selected
+      ? (timeline.visits.find((v) => v.appointment.id === sp.selected) ??
+        null)
+      : null;
+
   return (
     <ClientProfile
       client={client}
@@ -100,6 +114,7 @@ export default async function ClientDetailPage({
       allNotes={allNotes.notes}
       activeTab={sp.tab ?? 'overview'}
       editOpen={sp.edit === '1'}
+      selectedVisit={selectedVisit}
     />
   );
 }
