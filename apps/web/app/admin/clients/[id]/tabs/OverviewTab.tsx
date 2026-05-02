@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn';
 import type {
   ClientStats,
   ClientWithTags,
-} from '@/lib/api/clients';
+} from '@/lib/client-shared';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
 import type { ClientTimelineResponse } from '@/lib/api/timeline';
 

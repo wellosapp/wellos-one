@@ -4,7 +4,7 @@ import { Drawer } from '@/components/ui';
 import type {
   ClientTagSummary,
   ClientWriteBody,
-} from '@/lib/api/clients';
+} from '@/lib/client-shared';
 
 import { ClientForm } from '../ClientForm';
 import type { ActionState } from '../_actions';

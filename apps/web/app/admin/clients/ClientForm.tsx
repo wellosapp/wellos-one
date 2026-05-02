@@ -7,7 +7,10 @@
 import { useFormState, useFormStatus } from 'react-dom';
 
 import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/ui';
-import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
+import type {
+  ClientWriteBody,
+  ClientIntakeStatus,
+} from '@/lib/client-shared';
 
 import type { ActionState } from './_actions';
 

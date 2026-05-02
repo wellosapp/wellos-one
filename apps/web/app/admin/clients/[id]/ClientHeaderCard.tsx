@@ -9,7 +9,7 @@ import {
   formatClientNumber,
   type ClientStats,
   type ClientWithTags,
-} from '@/lib/api/clients';
+} from '@/lib/client-shared';
 
 // Header card for the client profile — mirrors the ClarityLabs reference
 // layout the user shared. Avatar / name / member ID / contact on the left,

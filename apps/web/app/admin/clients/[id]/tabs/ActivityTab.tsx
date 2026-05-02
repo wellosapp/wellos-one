@@ -4,7 +4,7 @@ import { Card } from '@/components/ui';
 import type {
   ClientStats,
   ClientWithTags,
-} from '@/lib/api/clients';
+} from '@/lib/client-shared';
 
 // Activity tab — placeholder for v1. Surfaces what we have today
 // (createdAt, updatedAt, deletedAt, intake status) and explains where

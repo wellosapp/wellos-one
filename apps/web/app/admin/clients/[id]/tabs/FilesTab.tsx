@@ -6,7 +6,7 @@ import type { Route } from 'next';
 import { AccessClassBadge } from '@/components/admin/AccessClassBadge';
 import { Badge, Button, Card } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import type { ClientMediaResponse } from '@/lib/api/clients';
+import type { ClientMediaResponse } from '@/lib/client-shared';
 import type { MediaAsset } from '@/lib/api/media';
 
 // Files tab for the client profile (E3-S7). UNIONs media owned directly
