@@ -1,47 +1,55 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { Badge, Button, Card } from '@/components/ui';
+import { Alert } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
+import { listClientNotes } from '@/lib/api/client-notes';
 import { listClientTags } from '@/lib/api/client-tags';
-import { getClient, type ClientWriteBody } from '@/lib/api/clients';
+import {
+  getClient,
+  getClientMedia,
+  getClientStats,
+} from '@/lib/api/clients';
+import { getClientTimeline } from '@/lib/api/timeline';
 
-import { ClientForm } from '../ClientForm';
-import { deleteClientAction, updateClientAction } from '../_actions';
+import { ClientProfile } from './ClientProfile';
 
-function clientToFormDefaults(c: Awaited<ReturnType<typeof getClient>>['client']): Partial<ClientWriteBody> {
-  return {
-    firstName: c.firstName,
-    lastName: c.lastName ?? undefined,
-    email: c.email ?? undefined,
-    phone: c.phone ?? undefined,
-    // c.dateOfBirth is an ISO datetime; the date input wants YYYY-MM-DD.
-    dateOfBirth: c.dateOfBirth ? c.dateOfBirth.slice(0, 10) : undefined,
-    addressLine1: c.addressLine1 ?? undefined,
-    addressLine2: c.addressLine2 ?? undefined,
-    city: c.city ?? undefined,
-    state: c.state ?? undefined,
-    postalCode: c.postalCode ?? undefined,
-    country: c.country ?? undefined,
-    emergencyContactName: c.emergencyContactName ?? undefined,
-    emergencyContactPhone: c.emergencyContactPhone ?? undefined,
-    intakeStatus: c.intakeStatus,
-    notes: c.notes ?? undefined,
-    tagIds: c.tagIds,
-  };
-}
+// /admin/clients/[id] — tenant-wide client profile (E3-S7).
+// Doctor's-office model: one screen for everything about a client —
+// profile, recent visits, all notes, all files, intake answers.
+//
+// Server-rendered: parses ?tab + ?edit from the URL and fires all the
+// drilldown queries in parallel. Drilldown data flows down to a
+// client-component shell (ClientProfile) that renders the header card,
+// tab nav, and tab body.
+
+const RECENT_VISITS_TAKE = 10;
+
+type SearchParams = {
+  tab?: string;
+  edit?: string;
+};
 
 export default async function ClientDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
 
+  // Fetch the client first so a 404 short-circuits the rest of the
+  // parallel work. listClientTags is cheap so we run it in parallel.
   let client;
+  let tags;
   try {
-    const result = await getClient(id);
-    client = result.client;
+    const [clientResp, tagsResp] = await Promise.all([
+      getClient(id),
+      listClientTags({ take: 200 }),
+    ]);
+    client = clientResp.client;
+    tags = tagsResp.tags;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       notFound();
@@ -49,76 +57,49 @@ export default async function ClientDetailPage({
     throw err;
   }
 
-  const { tags } = await listClientTags({ take: 200 });
+  // Pull everything else in parallel — the page is doctor's-office
+  // dense, so all drilldown panels load at once.
+  let stats: Awaited<ReturnType<typeof getClientStats>> | null = null;
+  let media: Awaited<ReturnType<typeof getClientMedia>> | null = null;
+  let timeline: Awaited<ReturnType<typeof getClientTimeline>> | null = null;
+  let allNotes: Awaited<ReturnType<typeof listClientNotes>> | null = null;
+  let drilldownError: string | null = null;
 
-  const updateAction = updateClientAction.bind(null, id);
-  const deleteAction = deleteClientAction.bind(null, id);
+  try {
+    [stats, media, timeline, allNotes] = await Promise.all([
+      getClientStats(id),
+      getClientMedia(id),
+      getClientTimeline(id, { take: RECENT_VISITS_TAKE }),
+      listClientNotes(id, { take: 200 }),
+    ]);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      drilldownError = err.message;
+    } else {
+      throw err;
+    }
+  }
+
+  if (drilldownError || !stats || !media || !timeline || !allNotes) {
+    return (
+      <div className="flex flex-col gap-s4">
+        <Alert tone="error">
+          {drilldownError ?? 'Failed to load client profile.'}
+        </Alert>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-s6">
-      <div>
-        <Link
-          href="/admin/clients"
-          className="t-body-sm text-accent no-underline hover:underline"
-        >
-          ← Back to clients
-        </Link>
-      </div>
-
-      <header className="flex flex-wrap items-baseline justify-between gap-s4">
-        <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Client</span>
-          <h1 className="t-display-lg">
-            {client.firstName}
-            {client.lastName ? ` ${client.lastName}` : ''}
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-s2">
-          {client.deletedAt && (
-            <Badge tone="red">
-              Soft-deleted {new Date(client.deletedAt).toLocaleString()}
-            </Badge>
-          )}
-          <Link href={`/admin/clients/${id}/timeline`} className="no-underline">
-            <Button variant="ghost" size="sm">
-              View visit timeline →
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <Card padding="lg">
-        <ClientForm
-          action={updateAction}
-          initial={clientToFormDefaults(client)}
-          tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
-          submitLabel="Save changes"
-          successMessage="Client updated."
-        />
-      </Card>
-
-      {!client.deletedAt && (
-        <Card padding="md" className="border border-red/20 bg-red-pale/40">
-          <div className="flex flex-wrap items-center justify-between gap-s4">
-            <div className="flex flex-col gap-s1">
-              <h2 className="t-display-sm">Soft-delete client</h2>
-              <p className="t-body-sm text-ink-soft">
-                Hides from lists but keeps history. Reversible by an admin via DB.
-              </p>
-            </div>
-            <form action={deleteAction}>
-              <Button
-                type="submit"
-                variant="ghost"
-                size="md"
-                className="text-red hover:bg-red-pale"
-              >
-                Soft-delete
-              </Button>
-            </form>
-          </div>
-        </Card>
-      )}
-    </div>
+    <ClientProfile
+      client={client}
+      tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+      stats={stats}
+      media={media}
+      timeline={timeline}
+      allNotes={allNotes.notes}
+      activeTab={sp.tab ?? 'overview'}
+      editOpen={sp.edit === '1'}
+    />
   );
 }
