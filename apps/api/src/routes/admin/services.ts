@@ -40,6 +40,13 @@ function isInvalidStaffIdsError(err: unknown): err is Error & { code: string } {
   );
 }
 
+function isInvalidCategoryIdError(err: unknown): err is Error & { code: string } {
+  return (
+    err instanceof Error &&
+    (err as Error & { code?: string }).code === 'INVALID_CATEGORY_ID'
+  );
+}
+
 export default async function servicesRoutes(app: FastifyInstance): Promise<void> {
   // POST /admin/services — create
   app.post('/services', { preHandler: requireRole.admin }, async (request, reply) => {
@@ -66,12 +73,19 @@ export default async function servicesRoutes(app: FastifyInstance): Promise<void
           issues: [{ path: 'staffIds', message: err.message }],
         });
       }
+      if (isInvalidCategoryIdError(err)) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Validation failed.',
+          issues: [{ path: 'categoryId', message: err.message }],
+        });
+      }
       throw err;
     }
   });
 
   // GET /admin/services — list with optional filters + pagination
-  app.get('/services', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/services', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
@@ -88,7 +102,7 @@ export default async function servicesRoutes(app: FastifyInstance): Promise<void
   });
 
   // GET /admin/services/:id — one
-  app.get('/services/:id', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/services/:id', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
@@ -144,6 +158,13 @@ export default async function servicesRoutes(app: FastifyInstance): Promise<void
           error: 'Bad Request',
           message: 'Validation failed.',
           issues: [{ path: 'staffIds', message: err.message }],
+        });
+      }
+      if (isInvalidCategoryIdError(err)) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Validation failed.',
+          issues: [{ path: 'categoryId', message: err.message }],
         });
       }
       throw err;

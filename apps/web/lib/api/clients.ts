@@ -20,6 +20,7 @@ export type Client = {
   tenantId: string;
   firstName: string;
   lastName: string | null;
+  preferredName: string | null;
   email: string | null;
   phone: string | null;
   dateOfBirth: string | null;
@@ -61,6 +62,7 @@ export type DuplicateWarning = {
 export type ClientWriteBody = {
   firstName: string;
   lastName?: string;
+  preferredName?: string;
   email?: string;
   phone?: string;
   dateOfBirth?: string;

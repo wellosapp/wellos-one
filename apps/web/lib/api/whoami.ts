@@ -1,8 +1,9 @@
-// Wrapper for /admin/whoami — proves auth + returns the tenant + active
-// locations. Used by the calendar to resolve the default locationId for
-// Quick Book without forcing the operator to pick on every booking.
+// Wrapper for /admin/whoami — auth + tenant + locations + optional Staff row
+// linked by Work email. Used by calendars for default location and staff
+// schedule identity.
 
 import { apiFetch } from './client';
+import type { Staff } from './staff';
 
 export type WhoamiLocation = {
   id: string;
@@ -27,6 +28,8 @@ export type WhoamiResponse = {
   tenant: WhoamiTenant | null;
   roles: string[];
   locations: WhoamiLocation[];
+  /** Present when the signed-in user's email matches an active Staff row. */
+  staffMember: Staff | null;
 };
 
 export async function getWhoami(): Promise<WhoamiResponse> {

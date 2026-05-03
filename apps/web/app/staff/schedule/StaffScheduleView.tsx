@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { deleteStaffScheduleBlockAction } from '@/app/admin/calendar/_actions';
 import { AppointmentDrawer } from '@/app/admin/calendar/AppointmentDrawer';
 import { CalendarGrid } from '@/app/admin/calendar/CalendarGrid';
 import { CalendarMonthView } from '@/app/admin/calendar/CalendarMonthView';
@@ -15,6 +16,7 @@ import { Alert, Badge, Button } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
+import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import type { WhoamiLocation } from '@/lib/api/whoami';
@@ -45,6 +47,7 @@ interface StaffScheduleViewProps {
   me: Staff;
   services: Service[];
   appointments: Appointment[];
+  scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]>;
   clientDisplayNames: Record<string, string>;
   locations: WhoamiLocation[];
   selected: {
@@ -71,6 +74,7 @@ export function StaffScheduleView({
   me,
   services,
   appointments,
+  scheduleBlocksByStaff,
   clientDisplayNames,
   locations,
   selected,
@@ -79,6 +83,16 @@ export function StaffScheduleView({
   quickBookOpen,
 }: StaffScheduleViewProps) {
   const router = useRouter();
+  const [, startDeleteBlock] = useTransition();
+  const handleDeleteBlock = useCallback(
+    (blockId: string) => {
+      startDeleteBlock(async () => {
+        await deleteStaffScheduleBlockAction(blockId);
+        router.refresh();
+      });
+    },
+    [router],
+  );
   const qb = quickBookOpen ? '1' : undefined;
 
   const hrefSelected = useCallback(
@@ -338,7 +352,7 @@ export function StaffScheduleView({
 
       {selectedError && <Alert tone="error">{selectedError}</Alert>}
 
-      <div className="flex flex-wrap items-center gap-s4 rounded-xl border border-surface-3 bg-[#fbfbfa] px-s4 py-s4">
+      <div className="flex flex-wrap items-center gap-s4 rounded-xl border border-surface-3 bg-surface px-s4 py-s4">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-pale t-body-md font-bold text-accent">
           {initials(me)}
         </div>
@@ -357,11 +371,13 @@ export function StaffScheduleView({
           staff={[me]}
           serviceById={serviceById}
           appointments={myDayAppointments}
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
           hrefSelected={hrefSelected}
           selectedAppointmentId={selected?.appointment.id ?? null}
           clientDisplayNames={clientDisplayNames}
           hrefQuickBook={hrefQuickBook}
           nextAppointmentId={nextAppointmentId}
+          onDeleteScheduleBlock={handleDeleteBlock}
         />
       ) : view === 'week' ? (
         <CalendarWeekView
@@ -372,6 +388,8 @@ export function StaffScheduleView({
           clientDisplayNames={clientDisplayNames}
           hrefSelected={hrefSelected}
           mode="staff"
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
+          onDeleteScheduleBlock={handleDeleteBlock}
         />
       ) : (
         <CalendarMonthView
@@ -379,6 +397,7 @@ export function StaffScheduleView({
           appointments={appointments}
           basePath={STAFF_SCHED}
           preserveParams={qb ? { quickbook: qb } : undefined}
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
         />
       )}
 

@@ -3,6 +3,7 @@ import type {
   ClientNote,
   ClientNoteAcknowledgment,
   ClientNoteAckTriggerContext,
+  ClientNoteSourceSurface,
 } from '@prisma/client';
 
 import type {
@@ -276,7 +277,9 @@ export async function createClientNote(
         // header note. Refines when staff app + Staff.userId land.
         authorType: 'admin',
         authorUserId: actorUserId,
-        sourceSurface: body.sourceSurface,
+        // Zod allows surfaces added after Prisma schema bumps (e.g. quick_book);
+        // regenerate Prisma client locally when node_modules types lag CI/schema.
+        sourceSurface: body.sourceSurface as unknown as ClientNoteSourceSurface,
         visibility: body.visibility,
         customerVisible: false,
         alertTriggers: body.alertTriggers,

@@ -67,6 +67,11 @@ export function AppointmentDrawer({
 }: AppointmentDrawerProps) {
   const tab: TabKey = isTabKey(activeTab) ? activeTab : 'overview';
 
+  const linkedAppointmentNotes = useMemo(
+    () => notes.filter((n) => n.appointmentId === appointment.id),
+    [notes, appointment.id],
+  );
+
   const hrefForTab = useMemo(
     () => (key: string) => {
       const params = new URLSearchParams();
@@ -136,6 +141,7 @@ export function AppointmentDrawer({
               client={client}
               service={service}
               staff={staff}
+              linkedAppointmentNotes={linkedAppointmentNotes}
             />
           )}
           {tab === 'client' && <ClientTab client={client} />}

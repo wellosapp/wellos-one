@@ -4,6 +4,11 @@ import { revalidatePath } from 'next/cache';
 
 import { ApiError } from '@/lib/api/client';
 import {
+  createClient,
+  listClients,
+  type Client,
+} from '@/lib/api/clients';
+import {
   createAppointment,
   transitionAppointment,
   updateAppointment,
@@ -14,11 +19,21 @@ import {
   createClientNote,
   type CreateClientNoteBody,
 } from '@/lib/api/client-notes';
-import { listClients, type Client } from '@/lib/api/clients';
 import {
   getAvailability,
   type AvailableSlot,
 } from '@/lib/api/availability';
+import {
+  createStaffScheduleBlock,
+  deleteStaffScheduleBlock,
+  type CreateStaffScheduleBlockBody,
+} from '@/lib/api/staff-schedule-blocks';
+import { listServices } from '@/lib/api/services';
+import { getStaffBookingClientContext } from '@/lib/api/staff-booking';
+import {
+  staffBookingItemsRequiringAcknowledgment,
+  type StaffBookingClientContextResponse,
+} from '@/lib/staff-booking/client-context-types';
 
 // Server actions for the calendar drawer + Quick Book panel. Called from
 // client components via formData. All errors flatten to an ActionState shape
@@ -59,7 +74,10 @@ function apiErrorToState(err: ApiError): ActionState {
     return { ok: false, error: body.message, conflict: body.conflict };
   }
   if (err.status === 403) {
-    return { ok: false, error: 'You do not have admin access to this tenant.' };
+    return {
+      ok: false,
+      error: 'You do not have permission for this action in this tenant.',
+    };
   }
   if (err.status === 404) {
     return { ok: false, error: 'Not found.' };
@@ -109,6 +127,29 @@ export async function updateAppointmentNotesAction(
   const notes = pick(formData, 'notes') ?? '';
   try {
     await updateAppointment(appointmentId, { notes });
+  } catch (err) {
+    if (err instanceof ApiError) return apiErrorToState(err);
+    throw err;
+  }
+  revalidatePath(PAGE);
+  return { ok: true };
+}
+
+/** Drag-to-reschedule from day calendar grid (sets analytics source via header). */
+export async function rescheduleAppointmentCalendarDragAction(args: {
+  appointmentId: string;
+  scheduledStartAt: string;
+  staffId: string;
+}): Promise<ActionState> {
+  try {
+    await updateAppointment(
+      args.appointmentId,
+      {
+        scheduledStartAt: args.scheduledStartAt,
+        staffId: args.staffId,
+      },
+      { calendarDrag: true },
+    );
   } catch (err) {
     if (err instanceof ApiError) return apiErrorToState(err);
     throw err;
@@ -182,20 +223,188 @@ export async function createAppointmentAction(
   }
 
   try {
-    await createAppointment({
+    const ctx = await getStaffBookingClientContext({
+      clientId: clientId!,
+      serviceId: serviceId!,
+      staffId: staffId!,
+    });
+    const required = staffBookingItemsRequiringAcknowledgment(ctx);
+    if (required.length > 0) {
+      const missingAck: Record<string, string> = {};
+      for (const a of required) {
+        const key = `ack_alert_${a.id}`;
+        const v = formData.get(key);
+        const ok =
+          v === 'on' ||
+          v === 'true' ||
+          v === '1' ||
+          (typeof v === 'string' && v.toLowerCase() === 'on');
+        if (!ok) missingAck[key] = 'Acknowledge this alert to continue.';
+      }
+      if (Object.keys(missingAck).length > 0) {
+        return {
+          ok: false,
+          error:
+            'One or more booking alerts require acknowledgment before booking.',
+          fieldErrors: missingAck,
+        };
+      }
+    }
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return {
+        ok: false,
+        error:
+          err.message ||
+          'Could not verify client booking alerts. Try again.',
+      };
+    }
+    throw err;
+  }
+
+  let appointmentId: string;
+  try {
+    const { appointment } = await createAppointment({
       locationId: locationId!,
       clientId: clientId!,
       staffId: staffId!,
       serviceId: serviceId!,
       scheduledStartAt: scheduledStartAt!,
-      notes,
+      source: 'quick_book',
     });
+    appointmentId = appointment.id;
+
+    const noteTrimmed = notes?.trim();
+    if (noteTrimmed) {
+      try {
+        await createClientNote(clientId!, {
+          category: 'session',
+          body: noteTrimmed,
+          appointmentId,
+          sourceSurface: 'quick_book',
+          visibility: 'location',
+        });
+      } catch (noteErr) {
+        // Fallback: persist on the appointment row so the overview still shows text
+        // if ClientNote creation fails (permissions, validation edge cases).
+        try {
+          await updateAppointment(appointmentId, { notes: noteTrimmed });
+        } catch {
+          if (noteErr instanceof ApiError) return apiErrorToState(noteErr);
+          throw noteErr;
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof ApiError) return apiErrorToState(err);
+    throw err;
+  }
+  revalidatePath(PAGE);
+  // Refresh client profile when booking was created from Quick Book with a known client.
+  revalidatePath(`/admin/clients/${clientId!}`);
+  return { ok: true };
+}
+
+// ---- Quick Book: minimal inline client (staff booking + CRM spec flow B) ----
+
+// ---- Staff schedule blocks (calendar-area-features §9) ----
+
+export async function createStaffScheduleBlockAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const staffId = pick(formData, 'staffId');
+  const dateStr = pick(formData, 'date');
+  const startTime = pick(formData, 'startTime');
+  const endTime = pick(formData, 'endTime');
+  const title = pick(formData, 'title');
+  const category = pick(formData, 'category');
+  const locationId = pick(formData, 'locationId');
+
+  const fieldErrors: Record<string, string> = {};
+  if (!staffId) fieldErrors.staffId = 'Required';
+  if (!dateStr) fieldErrors.date = 'Required';
+  if (!startTime) fieldErrors.startTime = 'Required';
+  if (!endTime) fieldErrors.endTime = 'Required';
+  if (!title) fieldErrors.title = 'Required';
+  if (!category) fieldErrors.category = 'Required';
+  if (Object.keys(fieldErrors).length > 0) {
+    return {
+      ok: false,
+      error: 'Please fill in all required fields.',
+      fieldErrors,
+    };
+  }
+
+  const startsAt = new Date(`${dateStr}T${startTime}:00`).toISOString();
+  const endsAt = new Date(`${dateStr}T${endTime}:00`).toISOString();
+  if (!(new Date(endsAt) > new Date(startsAt))) {
+    return {
+      ok: false,
+      error: 'End time must be after start time.',
+      fieldErrors: { endTime: 'Must be after start' },
+    };
+  }
+
+  const loc =
+    locationId && locationId.length > 0 ? locationId : undefined;
+
+  try {
+    const body: CreateStaffScheduleBlockBody = {
+      staffId: staffId!,
+      locationId: loc ?? null,
+      title: title!.trim(),
+      category: category as CreateStaffScheduleBlockBody['category'],
+      startsAt,
+      endsAt,
+      visibility: 'internal',
+    };
+    await createStaffScheduleBlock(body);
   } catch (err) {
     if (err instanceof ApiError) return apiErrorToState(err);
     throw err;
   }
   revalidatePath(PAGE);
   return { ok: true };
+}
+
+export async function deleteStaffScheduleBlockAction(
+  blockId: string,
+): Promise<ActionState> {
+  try {
+    await deleteStaffScheduleBlock(blockId);
+  } catch (err) {
+    if (err instanceof ApiError) return apiErrorToState(err);
+    throw err;
+  }
+  revalidatePath(PAGE);
+  return { ok: true };
+}
+
+export async function quickBookCreateClientInline(body: {
+  firstName: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+}): Promise<{ ok: true; client: Client } | { ok: false; error: string }> {
+  const firstName = body.firstName.trim();
+  if (firstName.length < 1) {
+    return { ok: false, error: 'First name is required.' };
+  }
+  try {
+    const result = await createClient({
+      firstName,
+      lastName: body.lastName?.trim() || undefined,
+      phone: body.phone?.trim() || undefined,
+      email: body.email?.trim() || undefined,
+    });
+    return { ok: true, client: result.client };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { ok: false, error: err.message };
+    }
+    throw err;
+  }
 }
 
 // ---- Quick Book sub-actions: client typeahead + availability slots ----
@@ -211,6 +420,52 @@ export async function searchClientsAction(
   } catch (err) {
     if (err instanceof ApiError) {
       return { clients: [], error: err.message };
+    }
+    throw err;
+  }
+}
+
+/** Services eligible for Quick Book when a staff member is chosen (StaffService M2M). */
+export async function listServicesForBookingAction(staffId?: string): Promise<{
+  services: Awaited<ReturnType<typeof listServices>>['services'];
+  error?: string;
+}> {
+  try {
+    const result = await listServices({
+      active: true,
+      take: 200,
+      ...(staffId ? { staffId } : {}),
+    });
+    return { services: result.services };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { services: [], error: err.message };
+    }
+    throw err;
+  }
+}
+
+export async function loadStaffBookingClientContextAction(args: {
+  clientId: string;
+  serviceId?: string;
+  staffId?: string;
+}): Promise<{
+  context: StaffBookingClientContextResponse | null;
+  error?: string;
+}> {
+  if (!args.clientId) {
+    return { context: null };
+  }
+  try {
+    const context = await getStaffBookingClientContext({
+      clientId: args.clientId,
+      serviceId: args.serviceId,
+      staffId: args.staffId,
+    });
+    return { context };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { context: null, error: err.message };
     }
     throw err;
   }

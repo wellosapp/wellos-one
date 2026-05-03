@@ -49,7 +49,6 @@ export default async function ClientTimelinePage({
   const hasPrev = skip > 0;
   const hasNext = skip + PAGE_SIZE < total;
 
-  // Preserve filter params across pagination links.
   const filterParams = new URLSearchParams();
   if (sp.serviceId) filterParams.set('serviceId', sp.serviceId);
   if (sp.staffId) filterParams.set('staffId', sp.staffId);
@@ -58,34 +57,17 @@ export default async function ClientTimelinePage({
     const params = new URLSearchParams(filterQs);
     if (nextSkip > 0) params.set('skip', String(nextSkip));
     const qs = params.toString();
-    // Next's typedRoutes can't infer the runtime querystring; cast to Route.
     return (`/admin/clients/${id}/timeline${qs ? `?${qs}` : ''}`) as Route;
   };
 
   return (
     <div className="flex flex-col gap-s6">
-      <div>
-        <Link
-          href={`/admin/clients/${id}`}
-          className="t-body-sm text-accent no-underline hover:underline"
-        >
-          ← Back to client
-        </Link>
-      </div>
-
-      <header className="flex flex-wrap items-baseline justify-between gap-s4">
-        <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Visit timeline</span>
-          <h1 className="t-display-lg">
-            {client.firstName}
-            {client.lastName ? ` ${client.lastName}` : ''}
-          </h1>
-          <p className="t-body-sm text-ink-soft">
-            {total === 0
-              ? 'No visits yet'
-              : `Showing ${showingFrom}–${showingTo} of ${total} visits`}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-s6 gap-y-s3">
+        <p className="t-body-sm text-ink-soft">
+          {total === 0
+            ? 'No visits yet'
+            : `Showing ${showingFrom}–${showingTo} of ${total} visits`}
+        </p>
         <div className="flex flex-wrap items-center gap-s2">
           {client.banned && (
             <Badge tone="red">
@@ -97,7 +79,7 @@ export default async function ClientTimelinePage({
             <Badge tone="amber">Email opted out</Badge>
           )}
         </div>
-      </header>
+      </div>
 
       <ClientVisitTimeline data={timeline} />
 

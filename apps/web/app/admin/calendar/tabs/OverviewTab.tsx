@@ -8,6 +8,7 @@ import type {
   Appointment,
   AppointmentState,
 } from '@/lib/api/appointments';
+import type { ClientNoteSummary } from '@/lib/api/client-notes';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
@@ -15,6 +16,8 @@ import {
   formatDateTimeLocal,
   formatTimeLocal,
 } from '@/lib/calendar';
+
+import { cn } from '@/lib/cn';
 
 import { transitionAppointmentAction } from '../_actions';
 
@@ -69,12 +72,15 @@ interface OverviewTabProps {
   client: ClientWithTags;
   service: Service | null;
   staff: Staff | null;
+  /** CRM notes with `appointmentId` set (e.g. Quick Book visit-linked note). */
+  linkedAppointmentNotes?: ClientNoteSummary[];
 }
 
 export function OverviewTab({
   appointment,
   service,
   staff,
+  linkedAppointmentNotes = [],
 }: OverviewTabProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -143,16 +149,58 @@ export function OverviewTab({
                 {formatTimeLocal(appointment.scheduledEndAt)}
               </dd>
             </div>
+            <div className="flex flex-col gap-s1">
+              <dt className="t-caption text-ink-soft">Booked price</dt>
+              <dd className="t-body-md text-ink">
+                {new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                }).format(appointment.bookedBasePriceCents / 100)}
+                {service && service.basePriceCents !== appointment.bookedBasePriceCents && (
+                  <span className="t-caption text-ink-soft">
+                    {' '}
+                    (catalog now{' '}
+                    {new Intl.NumberFormat('en-US', {
+                      style: 'currency',
+                      currency: 'USD',
+                    }).format(service.basePriceCents / 100)}
+                    )
+                  </span>
+                )}
+              </dd>
+            </div>
           </dl>
         </Card>
 
-        {appointment.notes && (
+        {(appointment.notes ||
+          linkedAppointmentNotes.length > 0) && (
           <Card padding="md" className="border border-surface-3">
-            <div className="flex flex-col gap-s2">
+            <div className="flex flex-col gap-s3">
               <span className="t-caption text-ink-soft">Booking notes</span>
-              <p className="t-body-md whitespace-pre-wrap text-ink">
-                {appointment.notes}
-              </p>
+              {appointment.notes ? (
+                <p className="t-body-md whitespace-pre-wrap text-ink">
+                  {appointment.notes}
+                </p>
+              ) : null}
+              {linkedAppointmentNotes.map((n, i) => (
+                <div
+                  key={n.id}
+                  className={cn(
+                    'flex flex-col gap-s1',
+                    i > 0 || appointment.notes
+                      ? 'border-t border-surface-3 pt-s3'
+                      : '',
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-s2">
+                    <Badge tone="neutral">{n.category}</Badge>
+                    {n.sourceSurface === 'quick_book' ? (
+                      <Badge tone="accent">Quick Book</Badge>
+                    ) : null}
+                  </div>
+                  <p className="t-body-md whitespace-pre-wrap text-ink">{n.body}</p>
+                </div>
+              ))}
             </div>
           </Card>
         )}

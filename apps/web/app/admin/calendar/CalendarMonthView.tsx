@@ -5,8 +5,14 @@ import type { Route } from 'next';
 
 import { cn } from '@/lib/cn';
 import type { Appointment } from '@/lib/api/appointments';
+import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
 import { monthGridCells, type CalendarViewMode } from '@/lib/calendar-view';
-import { formatDateShort, isToday, toDateParam } from '@/lib/calendar';
+import {
+  countStaffScheduleBlocksTouchingLocalDay,
+  formatDateShort,
+  isToday,
+  toDateParam,
+} from '@/lib/calendar';
 
 interface CalendarMonthViewProps {
   anchorMonth: Date;
@@ -15,6 +21,8 @@ interface CalendarMonthViewProps {
   basePath: string;
   /** Extra params e.g. quickbook=1 */
   preserveParams?: Record<string, string>;
+  /** Staff schedule blocks for blocked-time hints per day (calendar-area-features §9). */
+  scheduleBlocksByStaff?: Record<string, StaffScheduleBlock[]>;
 }
 
 function countByDayKey(appointments: Appointment[]): Map<string, number> {
@@ -47,6 +55,7 @@ export function CalendarMonthView({
   appointments,
   basePath,
   preserveParams,
+  scheduleBlocksByStaff = {},
 }: CalendarMonthViewProps) {
   const counts = countByDayKey(appointments);
   const cells = monthGridCells(anchorMonth);
@@ -54,7 +63,7 @@ export function CalendarMonthView({
 
   return (
     <div className="overflow-hidden rounded-xl border border-surface-3 bg-white shadow-sm">
-      <div className="grid grid-cols-7 border-b border-surface-3 bg-[#fbfbfa] py-s2">
+      <div className="grid grid-cols-7 border-b border-surface-3 bg-surface py-s2">
         {weekdayLabels.map((w) => (
           <div
             key={w}
@@ -68,6 +77,10 @@ export function CalendarMonthView({
         {cells.map(({ date, inMonth }, idx) => {
           const dateStr = toDateParam(date);
           const n = counts.get(dateStr) ?? 0;
+          const blockCount = countStaffScheduleBlocksTouchingLocalDay(
+            scheduleBlocksByStaff,
+            date,
+          );
           const today = isToday(date);
           return (
             <Link
@@ -94,13 +107,18 @@ export function CalendarMonthView({
                   {n} appt{n === 1 ? '' : 's'}
                 </span>
               )}
+              {blockCount > 0 && inMonth && (
+                <span className="rounded-full bg-surface-2 px-s2 py-[2px] t-caption font-semibold text-ink-soft">
+                  {blockCount} block{blockCount === 1 ? '' : 's'}
+                </span>
+              )}
             </Link>
           );
         })}
       </div>
-      <p className="border-t border-surface-3 bg-[#fbfbfa] px-s4 py-s3 t-caption text-ink-soft">
-        Click a day to open the day schedule. Counts include appointments
-        starting that calendar day (local time).
+      <p className="border-t border-surface-3 bg-surface px-s4 py-s3 t-caption text-ink-soft">
+        Click a day to open the day schedule. Badges count appointments and staff
+        blocked time starting or crossing that calendar day (local time).
       </p>
     </div>
   );

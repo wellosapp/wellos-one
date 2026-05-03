@@ -169,6 +169,85 @@ export function nowLinePx(date: Date): number | null {
   return offset * GRID_PX_PER_MIN;
 }
 
+/** Snap “minutes since local midnight” to the calendar row step (30 min). */
+export function snapMinutesToGridRow(minutesSinceMidnight: number): number {
+  const step = GRID_ROW_MINUTES;
+  const snapped = Math.round(minutesSinceMidnight / step) * step;
+  const max = 24 * 60 - step;
+  return Math.max(0, Math.min(snapped, max));
+}
+
+/**
+ * Converts a vertical offset within the day grid (px from top of the scroll
+ * body) into snapped local “minutes since midnight” for the viewed day.
+ */
+export function gridTopPxToSnappedLocalMinutesSinceMidnight(topPx: number): number {
+  const clipped = Math.max(
+    0,
+    Math.min(topPx, GRID_TOTAL_MINUTES * GRID_PX_PER_MIN),
+  );
+  const minutesFromGridStart = clipped / GRID_PX_PER_MIN;
+  const raw = GRID_START_HOUR * 60 + minutesFromGridStart;
+  return snapMinutesToGridRow(raw);
+}
+
+/** Builds a UTC ISO timestamp from a calendar anchor day + local wall time. */
+export function localDayAndMinutesToUtcIso(
+  anchorDay: Date,
+  minutesSinceMidnight: number,
+): string {
+  const d = new Date(
+    anchorDay.getFullYear(),
+    anchorDay.getMonth(),
+    anchorDay.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const h = Math.floor(minutesSinceMidnight / 60);
+  const m = minutesSinceMidnight % 60;
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+/** True if a staff schedule block overlaps this calendar day (browser local TZ). */
+export function staffScheduleBlockTouchesLocalDay(
+  block: { startsAt: string; endsAt: string },
+  day: Date,
+): boolean {
+  const startOf = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).getTime();
+  const endOf = startOf + 24 * 60 * 60 * 1000;
+  const s = new Date(block.startsAt).getTime();
+  const e = new Date(block.endsAt).getTime();
+  return s < endOf && e > startOf;
+}
+
+/** Counts blocks (any staff) that touch a local calendar day — month grid summaries. */
+export function countStaffScheduleBlocksTouchingLocalDay(
+  scheduleBlocksByStaff: Record<
+    string,
+    { startsAt: string; endsAt: string }[]
+  >,
+  day: Date,
+): number {
+  let n = 0;
+  for (const blocks of Object.values(scheduleBlocksByStaff)) {
+    for (const b of blocks) {
+      if (staffScheduleBlockTouchesLocalDay(b, day)) n += 1;
+    }
+  }
+  return n;
+}
+
 /** Open intervals between consecutive appointments (same column), in grid coordinates. */
 export type CalendarGap = {
   topPx: number;

@@ -14,6 +14,8 @@ interface CalendarViewToggleProps {
   active: CalendarViewMode;
   /** Preserve quickbook when switching views on admin/staff calendar. */
   quickBookOpen?: boolean;
+  /** Preserve block time panel on admin calendar. */
+  blockTimeOpen?: boolean;
 }
 
 const MODES: CalendarViewMode[] = ['month', 'week', 'day'];
@@ -29,8 +31,10 @@ export function CalendarViewToggle({
   dateParam,
   active,
   quickBookOpen,
+  blockTimeOpen,
 }: CalendarViewToggleProps) {
   const qb = quickBookOpen ? '1' : undefined;
+  const bt = blockTimeOpen ? '1' : undefined;
   const base =
     surface === 'admin'
       ? '/admin/calendar'
@@ -50,6 +54,7 @@ export function CalendarViewToggle({
           date: dateParam,
           view: mode,
           quickbook: qb,
+          blocktime: bt,
         });
         return (
           <Link

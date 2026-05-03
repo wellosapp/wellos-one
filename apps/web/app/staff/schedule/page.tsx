@@ -10,7 +10,10 @@ import {
 import { listClientNotes } from '@/lib/api/client-notes';
 import { getClient } from '@/lib/api/clients';
 import { listServices } from '@/lib/api/services';
-import { listStaff } from '@/lib/api/staff';
+import {
+  listStaffScheduleBlocks,
+  type StaffScheduleBlock,
+} from '@/lib/api/staff-schedule-blocks';
 import { getWhoami } from '@/lib/api/whoami';
 import { parseDateParam, toDateParam } from '@/lib/calendar';
 import {
@@ -46,15 +49,13 @@ export default async function StaffSchedulePage({
   const take = appointmentFetchTake(view);
 
   let directoryError: string | null = null;
-  let staffData: Awaited<ReturnType<typeof listStaff>> | null = null;
   let servicesData: Awaited<ReturnType<typeof listServices>> | null = null;
   let appointmentsData: Awaited<ReturnType<typeof listAppointments>> | null =
     null;
   let whoami: Awaited<ReturnType<typeof getWhoami>> | null = null;
 
   try {
-    [staffData, servicesData, appointmentsData, whoami] = await Promise.all([
-      listStaff({ active: true, take: 100 }),
+    [servicesData, appointmentsData, whoami] = await Promise.all([
       listServices({ active: true, take: 200 }),
       listAppointments({ from: fromIso, to: toIso, take }),
       getWhoami(),
@@ -78,11 +79,7 @@ export default async function StaffSchedulePage({
     );
   }
 
-  const staffList = staffData?.staff ?? [];
-  const me =
-    email === null
-      ? null
-      : staffList.find((s) => s.email?.toLowerCase() === email) ?? null;
+  const me = whoami?.staffMember ?? null;
 
   if (!me) {
     return (
@@ -156,6 +153,21 @@ export default async function StaffSchedulePage({
     }),
   );
 
+  let myBlocks: StaffScheduleBlock[] = [];
+  try {
+    const res = await listStaffScheduleBlocks({
+      staffId: me.id,
+      from: fromIso,
+      to: toIso,
+    });
+    myBlocks = res.blocks;
+  } catch {
+    myBlocks = [];
+  }
+  const scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]> = {
+    [me.id]: myBlocks,
+  };
+
   return (
     <StaffScheduleView
       date={date}
@@ -164,6 +176,7 @@ export default async function StaffSchedulePage({
       me={me}
       services={servicesData?.services ?? []}
       appointments={myAppointments}
+      scheduleBlocksByStaff={scheduleBlocksByStaff}
       clientDisplayNames={clientDisplayNames}
       locations={whoami?.locations ?? []}
       selected={selectedBundle}

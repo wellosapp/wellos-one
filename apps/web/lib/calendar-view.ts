@@ -140,6 +140,8 @@ export function buildCalendarUrl(
     selected?: string;
     tab?: string;
     quickbook?: string;
+    /** Staff schedule block side panel (calendar-area-features §9). */
+    blocktime?: string;
   },
 ): string {
   const params = new URLSearchParams();
@@ -148,5 +150,6 @@ export function buildCalendarUrl(
   if (opts.selected) params.set('selected', opts.selected);
   if (opts.tab) params.set('tab', opts.tab);
   if (opts.quickbook) params.set('quickbook', opts.quickbook);
+  if (opts.blocktime) params.set('blocktime', opts.blocktime);
   return `${basePath}?${params.toString()}`;
 }

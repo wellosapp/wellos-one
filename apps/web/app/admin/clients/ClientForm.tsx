@@ -7,6 +7,7 @@
 import { useFormState, useFormStatus } from 'react-dom';
 
 import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/ui';
+import { cn } from '@/lib/cn';
 import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
 
 import type { ActionState } from './_actions';
@@ -39,6 +40,8 @@ type Props = {
   tags: TagOption[];
   submitLabel?: string;
   successMessage?: string;
+  /** Merged onto the root form element (e.g. drop max-width on wide layouts). */
+  formClassName?: string;
 };
 
 export function ClientForm({
@@ -47,6 +50,7 @@ export function ClientForm({
   tags,
   submitLabel = 'Save',
   successMessage = 'Saved.',
+  formClassName,
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
@@ -59,7 +63,10 @@ export function ClientForm({
   const initialTagIds = new Set(values.tagIds ?? []);
 
   return (
-    <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
+    <form
+      action={formAction}
+      className={cn('flex max-w-3xl flex-col gap-s5', formClassName)}
+    >
       {state.ok && <Alert tone="success">{successMessage}</Alert>}
 
       {state.error && (
@@ -101,6 +108,18 @@ export function ClientForm({
             error={Boolean(fieldErrors.lastName)}
           />
         </FormField>
+        <FormField
+          label="Preferred name"
+          error={fieldErrors.preferredName}
+          hint="How they like to be addressed at check-in and in messages."
+        >
+          <Input
+            type="text"
+            name="preferredName"
+            defaultValue={values.preferredName ?? ''}
+            error={Boolean(fieldErrors.preferredName)}
+          />
+        </FormField>
         <FormField label="Email" error={fieldErrors.email}>
           <Input
             type="email"
@@ -140,7 +159,7 @@ export function ClientForm({
         </FormField>
       </div>
 
-      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+      <fieldset className="flex flex-col gap-s3 rounded-xl border border-surface-3 bg-surface/40 px-s5 pb-s5 pt-s3">
         <legend className="t-eyebrow px-s2 text-ink-soft">Address</legend>
         <FormField label="Line 1" error={fieldErrors.addressLine1}>
           <Input
@@ -194,7 +213,7 @@ export function ClientForm({
         </FormField>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+      <fieldset className="flex flex-col gap-s3 rounded-xl border border-surface-3 bg-surface/40 px-s5 pb-s5 pt-s3">
         <legend className="t-eyebrow px-s2 text-ink-soft">Emergency contact</legend>
         <div className="grid grid-cols-1 gap-s3 md:grid-cols-2">
           <FormField label="Name" error={fieldErrors.emergencyContactName}>
@@ -225,7 +244,7 @@ export function ClientForm({
         />
       </FormField>
 
-      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+      <fieldset className="flex flex-col gap-s3 rounded-xl border border-surface-3 bg-surface/40 px-s5 pb-s5 pt-s3">
         <legend className="t-eyebrow px-s2 text-ink-soft">Tags</legend>
         {tags.length === 0 ? (
           <p className="t-body-sm text-ink-soft">

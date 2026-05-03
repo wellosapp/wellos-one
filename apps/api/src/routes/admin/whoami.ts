@@ -1,19 +1,34 @@
 import type { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 
+import {
+  resolveStaffMemberIdForUser,
+} from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 
-// GET /admin/whoami — admin-only smoke endpoint that proves the
-// loadCurrentUser + requireRole wire end-to-end. Returns the loaded user
-// alongside their tenant and active locations so a curl in production gives
-// us a quick "are role guards working" answer.
-//
-// requireRole.admin already guarantees:
-//   - request.currentUser is populated (loadCurrentUser ran)
-//   - tenantId is non-null (orphan check passed)
-//   - 'admin' is in roles
-// so the non-null assertions below are safe by construction.
+// GET /admin/whoami — tenant + locations + optional linked Staff profile.
+// Auth: staff (admin/manager/staff) so operational calendars can resolve
+// default location and the signed-in provider row without admin-only gates.
+
+const STAFF_WHOAMI_SELECT = {
+  id: true,
+  tenantId: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  jobTitle: true,
+  workingHours: true,
+  hourlyRateCents: true,
+  commissionRatePct: true,
+  active: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} satisfies Prisma.StaffSelect;
+
 export default async function whoamiRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/whoami', { preHandler: requireRole.admin }, async (request) => {
+  app.get('/whoami', { preHandler: requireRole.staff }, async (request) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
@@ -29,6 +44,24 @@ export default async function whoamiRoutes(app: FastifyInstance): Promise<void> 
       }),
     ]);
 
-    return { user, tenant, roles: user.roles, locations };
+    const staffMemberId = await resolveStaffMemberIdForUser(
+      app.prisma,
+      tenantId,
+      user.email,
+    );
+    const staffMember = staffMemberId
+      ? await app.prisma.staff.findFirst({
+          where: { id: staffMemberId, tenantId, deletedAt: null },
+          select: STAFF_WHOAMI_SELECT,
+        })
+      : null;
+
+    return {
+      user,
+      tenant,
+      roles: user.roles,
+      locations,
+      staffMember,
+    };
   });
 }

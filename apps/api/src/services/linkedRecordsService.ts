@@ -43,6 +43,8 @@ const APPOINTMENT_SUMMARY_FIELDS = {
   createdAt: true,
   cancelledAt: true,
   cancelReason: true,
+  /** Locked list price at booking — CRM snapshot / LTV until a Payment ledger exists. */
+  bookedBasePriceCents: true,
 } satisfies Prisma.AppointmentSelect;
 
 const CLIENT_SUMMARY_FIELDS = {
