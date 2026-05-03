@@ -10,6 +10,12 @@ These need to be downloaded from the Claude.ai project's "Project knowledge" pan
 |---|---|---|
 | `09-dev-handoff.md` | 2026-04-26 | Canonical accounts roster, consolidated env var reference, 11-epic index. v1.2 of the doc — matches what `00-V2-per-build-setup.md` was derived from. |
 
+## Stubs / placeholders (replace with full exports)
+
+| Filename | Status | Notes |
+|---|---|---|
+| `onboarding-forms-write-up.md` | **Stub** (2026-05-03) | Placeholder until the full *Wellos — Onboarding & Forms Write-Up* markdown is pasted from project knowledge or chat. Parity tracking lives in [`onboarding-forms-implementation-map.md`](./onboarding-forms-implementation-map.md). |
+
 ## Still pending
 
 | Filename | Why it matters | Blocks |
