@@ -9,6 +9,7 @@ import type { ClientNoteSummary } from '@/lib/api/client-notes';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import { formatDateTimeLocal, formatTimeLocal } from '@/lib/calendar';
+import type { CalendarViewMode } from '@/lib/calendar-view';
 
 import { AuditTab } from './tabs/AuditTab';
 import { ClientTab } from './tabs/ClientTab';
@@ -43,6 +44,11 @@ interface AppointmentDrawerProps {
   activeTab: string;
   dateParam: string;
   onClose: () => void;
+  /** Defaults to admin calendar; staff schedule passes `/staff/schedule`. */
+  calendarBasePath?: string;
+  /** Preserve URL when switching drawer tabs (day/week/month, quick book). */
+  view?: CalendarViewMode;
+  quickbook?: string;
 }
 
 export function AppointmentDrawer({
@@ -55,8 +61,16 @@ export function AppointmentDrawer({
   activeTab,
   dateParam,
   onClose,
+  calendarBasePath = '/admin/calendar',
+  view,
+  quickbook,
 }: AppointmentDrawerProps) {
   const tab: TabKey = isTabKey(activeTab) ? activeTab : 'overview';
+
+  const linkedAppointmentNotes = useMemo(
+    () => notes.filter((n) => n.appointmentId === appointment.id),
+    [notes, appointment.id],
+  );
 
   const hrefForTab = useMemo(
     () => (key: string) => {
@@ -64,9 +78,11 @@ export function AppointmentDrawer({
       params.set('date', dateParam);
       params.set('selected', appointment.id);
       if (key !== 'overview') params.set('tab', key);
-      return `/admin/calendar?${params.toString()}`;
+      if (view && view !== 'day') params.set('view', view);
+      if (quickbook) params.set('quickbook', quickbook);
+      return `${calendarBasePath}?${params.toString()}`;
     },
-    [appointment.id, dateParam],
+    [appointment.id, calendarBasePath, dateParam, quickbook, view],
   );
 
   const items: TabItem[] = [
@@ -125,6 +141,7 @@ export function AppointmentDrawer({
               client={client}
               service={service}
               staff={staff}
+              linkedAppointmentNotes={linkedAppointmentNotes}
             />
           )}
           {tab === 'client' && <ClientTab client={client} />}

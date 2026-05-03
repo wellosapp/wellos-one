@@ -1,21 +1,18 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-
-import { Badge, Button, Card } from '@/components/ui';
-import { ApiError } from '@/lib/api/client';
+import { Button, Card } from '@/components/ui';
 import { listClientTags } from '@/lib/api/client-tags';
-import { getClient, type ClientWriteBody } from '@/lib/api/clients';
+import { type ClientWriteBody, type ClientWithTags } from '@/lib/api/clients';
 
 import { ClientForm } from '../ClientForm';
 import { deleteClientAction, updateClientAction } from '../_actions';
+import { loadClientDetail } from './_data';
 
-function clientToFormDefaults(c: Awaited<ReturnType<typeof getClient>>['client']): Partial<ClientWriteBody> {
+function clientToFormDefaults(c: ClientWithTags): Partial<ClientWriteBody> {
   return {
     firstName: c.firstName,
     lastName: c.lastName ?? undefined,
+    preferredName: c.preferredName ?? undefined,
     email: c.email ?? undefined,
     phone: c.phone ?? undefined,
-    // c.dateOfBirth is an ISO datetime; the date input wants YYYY-MM-DD.
     dateOfBirth: c.dateOfBirth ? c.dateOfBirth.slice(0, 10) : undefined,
     addressLine1: c.addressLine1 ?? undefined,
     addressLine2: c.addressLine2 ?? undefined,
@@ -38,72 +35,49 @@ export default async function ClientDetailPage({
 }) {
   const { id } = await params;
 
-  let client;
-  try {
-    const result = await getClient(id);
-    client = result.client;
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
-    throw err;
-  }
-
+  const client = await loadClientDetail(id);
   const { tags } = await listClientTags({ take: 200 });
 
   const updateAction = updateClientAction.bind(null, id);
   const deleteAction = deleteClientAction.bind(null, id);
 
   return (
-    <div className="flex flex-col gap-s6">
-      <div>
-        <Link
-          href="/admin/clients"
-          className="t-body-sm text-accent no-underline hover:underline"
-        >
-          ← Back to clients
-        </Link>
-      </div>
-
-      <header className="flex flex-wrap items-baseline justify-between gap-s4">
-        <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Client</span>
-          <h1 className="t-display-lg">
-            {client.firstName}
-            {client.lastName ? ` ${client.lastName}` : ''}
-          </h1>
+    <section className="flex flex-col gap-s6">
+      <article className="overflow-hidden rounded-2xl border border-surface-3 bg-white shadow-sm">
+        <header className="border-b border-surface-3 bg-surface/50 px-s6 py-s5 lg:px-s8 lg:py-s6">
+          <h2 className="font-display t-display-sm text-ink">
+            Contact and profile
+          </h2>
+          <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-soft">
+            Keep contact info current for reminders and receipts. Changes save
+            to this client only.
+          </p>
+        </header>
+        <div className="p-s6 lg:p-s8 lg:pt-s7">
+          <ClientForm
+            formClassName="max-w-none gap-s6"
+            action={updateAction}
+            initial={clientToFormDefaults(client)}
+            tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+            submitLabel="Save changes"
+            successMessage="Client updated."
+          />
         </div>
-        <div className="flex flex-wrap items-center gap-s2">
-          {client.deletedAt && (
-            <Badge tone="red">
-              Soft-deleted {new Date(client.deletedAt).toLocaleString()}
-            </Badge>
-          )}
-          <Link href={`/admin/clients/${id}/timeline`} className="no-underline">
-            <Button variant="ghost" size="sm">
-              View visit timeline →
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <Card padding="lg">
-        <ClientForm
-          action={updateAction}
-          initial={clientToFormDefaults(client)}
-          tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
-          submitLabel="Save changes"
-          successMessage="Client updated."
-        />
-      </Card>
+      </article>
 
       {!client.deletedAt && (
-        <Card padding="md" className="border border-red/20 bg-red-pale/40">
+        <Card
+          padding="lg"
+          className="rounded-2xl border border-red/25 bg-red-pale/35 shadow-sm"
+        >
           <div className="flex flex-wrap items-center justify-between gap-s4">
-            <div className="flex flex-col gap-s1">
-              <h2 className="t-display-sm">Soft-delete client</h2>
-              <p className="t-body-sm text-ink-soft">
-                Hides from lists but keeps history. Reversible by an admin via DB.
+            <div className="flex max-w-xl flex-col gap-s1">
+              <h2 className="font-display t-display-sm text-ink">
+                Remove from active lists
+              </h2>
+              <p className="t-body-sm leading-relaxed text-ink-soft">
+                Soft-delete hides this profile from day-to-day workflows while
+                preserving history. Restoration is a database admin task today.
               </p>
             </div>
             <form action={deleteAction}>
@@ -111,14 +85,14 @@ export default async function ClientDetailPage({
                 type="submit"
                 variant="ghost"
                 size="md"
-                className="text-red hover:bg-red-pale"
+                className="whitespace-nowrap text-red hover:bg-red-pale"
               >
-                Soft-delete
+                Soft-delete client
               </Button>
             </form>
           </div>
         </Card>
       )}
-    </div>
+    </section>
   );
 }

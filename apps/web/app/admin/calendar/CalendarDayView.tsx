@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { Alert, Badge, Button, Card } from '@/components/ui';
+import { Alert, Button, Card } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
+import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import type { WhoamiLocation } from '@/lib/api/whoami';
@@ -16,20 +17,38 @@ import {
   addDays,
   formatDateLong,
   formatDateShort,
-  isToday,
   toDateParam,
 } from '@/lib/calendar';
+import {
+  buildCalendarUrl,
+  shiftAnchorDate,
+  type CalendarViewMode,
+  weekDayDates,
+} from '@/lib/calendar-view';
 
+import { AdminCalendarInsights } from './AdminCalendarInsights';
 import { AppointmentDrawer } from './AppointmentDrawer';
+import { BlockTimeSheet } from './BlockTimeSheet';
+import { deleteStaffScheduleBlockAction } from './_actions';
+import { selectNextUpAppointmentId } from './calendar-selection';
 import { CalendarGrid } from './CalendarGrid';
+import { CalendarMonthView } from './CalendarMonthView';
+import { CalendarToolbar } from './CalendarToolbar';
+import { CalendarWeekView } from './CalendarWeekView';
 import { QuickBookPanel } from './QuickBookPanel';
+
+const ADMIN_CAL = '/admin/calendar';
 
 interface CalendarDayViewProps {
   date: Date;
   dateParam: string;
+  view: CalendarViewMode;
   staff: Staff[];
   services: Service[];
   appointments: Appointment[];
+  /** Staff id → blocks overlapping the appointment fetch window (day grid filters locally). */
+  scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]>;
+  clientDisplayNames?: Record<string, string>;
   locations: WhoamiLocation[];
   selected: {
     appointment: Appointment;
@@ -40,68 +59,95 @@ interface CalendarDayViewProps {
   selectedError: string | null;
   activeTab: string;
   quickBookOpen: boolean;
+  blockTimeOpen: boolean;
 }
 
 export function CalendarDayView({
   date,
   dateParam,
+  view,
   staff,
   services,
   appointments,
+  scheduleBlocksByStaff,
+  clientDisplayNames,
   locations,
   selected,
   selectedError,
   activeTab,
   quickBookOpen,
+  blockTimeOpen,
 }: CalendarDayViewProps) {
   const router = useRouter();
-
-  // Build hrefs that preserve unrelated params. We're a single-tab page so
-  // the only state worth preserving is `date` itself; selected / tab /
-  // quickbook are all drawer/panel concerns that close together.
-  const hrefForDate = useCallback(
-    (newDateParam: string): string => {
-      const params = new URLSearchParams();
-      params.set('date', newDateParam);
-      return `/admin/calendar?${params.toString()}`;
-    },
-    [],
-  );
+  const qb = quickBookOpen ? '1' : undefined;
+  const bt = blockTimeOpen ? '1' : undefined;
 
   const hrefSelected = useCallback(
-    (appointmentId: string, tab?: string): string => {
-      const params = new URLSearchParams();
-      params.set('date', dateParam);
-      params.set('selected', appointmentId);
-      if (tab) params.set('tab', tab);
-      return `/admin/calendar?${params.toString()}`;
+    (appointmentId: string, tab?: string) => {
+      return buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        selected: appointmentId,
+        tab: tab && tab !== 'overview' ? tab : undefined,
+        quickbook: qb,
+        blocktime: bt,
+      });
     },
-    [dateParam],
+    [dateParam, view, qb, bt],
   );
 
   const hrefCloseDrawer = useCallback((): string => {
-    const params = new URLSearchParams();
-    params.set('date', dateParam);
-    return `/admin/calendar?${params.toString()}`;
-  }, [dateParam]);
+    return buildCalendarUrl(ADMIN_CAL, {
+      date: dateParam,
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+  }, [dateParam, view, qb, bt]);
 
-  const hrefQuickBook = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('date', dateParam);
-    params.set('quickbook', '1');
-    return `/admin/calendar?${params.toString()}`;
-  }, [dateParam]);
+  const hrefQuickBook = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        quickbook: '1',
+        blocktime: bt,
+      }),
+    [dateParam, view, bt],
+  );
 
-  const hrefCloseQuickBook = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('date', dateParam);
-    return `/admin/calendar?${params.toString()}`;
-  }, [dateParam]);
+  const hrefCloseQuickBook = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        blocktime: bt,
+      }),
+    [dateParam, view, bt],
+  );
 
-  // Filter appointments to those falling on the requested calendar day in
-  // BROWSER-local TZ (the date param is the operator's intent). Cancelled
-  // visits still render but get a dimmed treatment in the block.
-  const visibleAppointments = useMemo(() => {
+  const hrefOpenBlockTime = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        quickbook: qb,
+        blocktime: '1',
+      }),
+    [dateParam, view, qb],
+  );
+
+  const hrefCloseBlockTime = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        quickbook: qb,
+      }),
+    [dateParam, view, qb],
+  );
+
+  const visibleDayAppointments = useMemo(() => {
     return appointments.filter((a) => {
       const start = new Date(a.scheduledStartAt);
       return (
@@ -112,7 +158,17 @@ export function CalendarDayView({
     });
   }, [appointments, date]);
 
-  // Map staffId → display name once for the grid columns + drawer.
+  const nextAppointmentId = useMemo(
+    () =>
+      view === 'day'
+        ? selectNextUpAppointmentId(visibleDayAppointments)
+        : null,
+    [view, visibleDayAppointments],
+  );
+
+  const insightAppointments =
+    view === 'day' ? visibleDayAppointments : appointments;
+
   const staffById = useMemo(() => {
     const m = new Map<string, Staff>();
     for (const s of staff) m.set(s.id, s);
@@ -124,6 +180,75 @@ export function CalendarDayView({
     return m;
   }, [services]);
 
+  const weekDays = useMemo(() => weekDayDates(date), [date]);
+
+  const periodTitle = useMemo(() => {
+    if (view === 'month') {
+      return date.toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+    if (view === 'week') {
+      const a = weekDays[0];
+      const b = weekDays[6];
+      if (!a || !b) return formatDateLong(date);
+      return `${formatDateShort(a)} – ${formatDateShort(b)}`;
+    }
+    return formatDateLong(date);
+  }, [date, view, weekDays]);
+
+  const prevNav = useMemo(() => {
+    const d = shiftAnchorDate(date, view, 'prev');
+    return buildCalendarUrl(ADMIN_CAL, {
+      date: toDateParam(d),
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+  }, [date, view, qb, bt]);
+
+  const nextNav = useMemo(() => {
+    const d = shiftAnchorDate(date, view, 'next');
+    return buildCalendarUrl(ADMIN_CAL, {
+      date: toDateParam(d),
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+  }, [date, view, qb, bt]);
+
+  const jumpTodayNav = useMemo(() => {
+    const t = toDateParam(new Date());
+    return buildCalendarUrl(ADMIN_CAL, {
+      date: t,
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+  }, [view, qb, bt]);
+
+  const dayJumpPrev = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: toDateParam(addDays(date, -1)),
+        view: 'day',
+        quickbook: qb,
+        blocktime: bt,
+      }),
+    [date, qb, bt],
+  );
+  const dayJumpNext = useMemo(
+    () =>
+      buildCalendarUrl(ADMIN_CAL, {
+        date: toDateParam(addDays(date, +1)),
+        view: 'day',
+        quickbook: qb,
+        blocktime: bt,
+      }),
+    [date, qb, bt],
+  );
+
   const drawerOpen = Boolean(selected);
   const handleCloseDrawer = useCallback(() => {
     router.push(hrefCloseDrawer() as Route);
@@ -132,84 +257,37 @@ export function CalendarDayView({
     router.push(hrefCloseQuickBook as Route);
   }, [router, hrefCloseQuickBook]);
 
-  const prevHref = hrefForDate(toDateParam(addDays(date, -1)));
-  const nextHref = hrefForDate(toDateParam(addDays(date, +1)));
-  const todayHref = hrefForDate(toDateParam(new Date()));
+  const [, startDeleteBlock] = useTransition();
+  const handleDeleteBlock = useCallback(
+    (blockId: string) => {
+      startDeleteBlock(async () => {
+        await deleteStaffScheduleBlockAction(blockId);
+        router.refresh();
+      });
+    },
+    [router],
+  );
 
-  return (
-    <div className="flex flex-col gap-s4">
-      <header className="flex flex-wrap items-center justify-between gap-s4">
-        <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Calendar</span>
-          <h1 className="t-display-lg flex items-baseline gap-s3">
-            {formatDateLong(date)}
-            {isToday(date) && (
-              <Badge tone="accent" className="self-center">
-                Today
-              </Badge>
-            )}
-          </h1>
-        </div>
+  const sidePanelsOpen = quickBookOpen || blockTimeOpen;
 
-        <div className="flex flex-wrap items-center gap-s3">
-          {/* Day / Week toggle. Week is placeholder per spec L1131. */}
-          <div
-            role="tablist"
-            aria-label="View"
-            className="inline-flex rounded-md border border-surface-3 bg-white p-[2px]"
-          >
-            <button
-              role="tab"
-              aria-selected="true"
-              className="rounded-sm bg-accent px-s3 py-[6px] t-body-sm font-medium text-white"
-              type="button"
-            >
-              Day
-            </button>
-            <button
-              role="tab"
-              aria-selected="false"
-              aria-disabled="true"
-              disabled
-              className="rounded-sm px-s3 py-[6px] t-body-sm font-medium text-ink-soft/60 cursor-not-allowed"
-              type="button"
-              title="Week view coming soon"
-            >
-              Week
-            </button>
-          </div>
-
-          {/* All-staff filter is fixed for now; placeholder UI hints at the
-              filter expansion that lands with the role-aware staff variant. */}
-          <span className="rounded-md border border-surface-3 bg-white px-s3 py-[7px] t-body-sm text-ink-soft">
-            All staff
-          </span>
-
-          <Link href={hrefQuickBook as Route} className="no-underline">
-            <Button variant="accent" size="md">
-              + Quick Book
-            </Button>
-          </Link>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-s2">
-        <Link href={prevHref as Route} className="no-underline">
-          <Button variant="ghost" size="sm">
-            ← {formatDateShort(addDays(date, -1))}
-          </Button>
-        </Link>
-        <Link href={todayHref as Route} className="no-underline">
-          <Button variant="ghost" size="sm">
-            Today
-          </Button>
-        </Link>
-        <Link href={nextHref as Route} className="no-underline">
-          <Button variant="ghost" size="sm">
-            {formatDateShort(addDays(date, +1))} →
-          </Button>
-        </Link>
-      </div>
+  const mainCol = (
+    <div className="flex min-w-0 flex-col gap-s5">
+      <CalendarToolbar
+        date={date}
+        view={view}
+        dateParam={dateParam}
+        periodTitle={periodTitle}
+        prevNav={prevNav}
+        nextNav={nextNav}
+        jumpTodayNav={jumpTodayNav}
+        dayJumpPrev={dayJumpPrev}
+        dayJumpNext={dayJumpNext}
+        hrefQuickBook={hrefQuickBook}
+        quickBookOpen={quickBookOpen}
+        hrefOpenBlockTime={hrefOpenBlockTime}
+        hrefCloseBlockTime={hrefCloseBlockTime}
+        blockTimeOpen={blockTimeOpen}
+      />
 
       {selectedError && <Alert tone="error">{selectedError}</Alert>}
 
@@ -227,15 +305,106 @@ export function CalendarDayView({
             </Link>
           </div>
         </Card>
-      ) : (
+      ) : view === 'day' ? (
         <CalendarGrid
           date={date}
           staff={staff}
           serviceById={serviceById}
-          appointments={visibleAppointments}
+          appointments={visibleDayAppointments}
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
           hrefSelected={hrefSelected}
           selectedAppointmentId={selected?.appointment.id ?? null}
+          clientDisplayNames={clientDisplayNames}
+          hrefQuickBook={hrefQuickBook}
+          nextAppointmentId={nextAppointmentId}
+          onDeleteScheduleBlock={handleDeleteBlock}
         />
+      ) : view === 'week' ? (
+        <CalendarWeekView
+          weekDays={weekDays}
+          appointments={appointments}
+          staffById={staffById}
+          serviceById={serviceById}
+          clientDisplayNames={clientDisplayNames}
+          hrefSelected={hrefSelected}
+          mode="admin"
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
+          onDeleteScheduleBlock={handleDeleteBlock}
+        />
+      ) : (
+        <CalendarMonthView
+          anchorMonth={date}
+          appointments={appointments}
+          basePath={ADMIN_CAL}
+          preserveParams={
+            qb || bt
+              ? {
+                  ...(qb ? { quickbook: qb } : {}),
+                  ...(bt ? { blocktime: bt } : {}),
+                }
+              : undefined
+          }
+          scheduleBlocksByStaff={scheduleBlocksByStaff}
+        />
+      )}
+
+      {view === 'day' &&
+        visibleDayAppointments.length === 0 &&
+        staff.length > 0 && (
+          <Card padding="md">
+            <p className="t-body-md text-ink-soft">
+              No appointments on this day yet. Bookings from Quick Book and the
+              public portal appear here once scheduled.
+            </p>
+            <div className="mt-s3">
+              <Link href={hrefQuickBook as Route} className="no-underline">
+                <Button variant="accent" size="sm">
+                  Open Quick Book
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        )}
+
+      <div id="calendar-insights" className="scroll-mt-s8 pt-s2">
+        <span className="t-eyebrow text-accent">Overview</span>
+        <h2 className="sr-only">Calendar insights</h2>
+        <AdminCalendarInsights appointments={insightAppointments} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className={
+        sidePanelsOpen
+          ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start'
+          : 'flex flex-col gap-s5'
+      }
+    >
+      {mainCol}
+
+      {sidePanelsOpen && (
+        <div className="flex flex-col gap-s5 lg:max-w-[360px]">
+          {quickBookOpen && (
+            <QuickBookPanel
+              staff={staff}
+              services={services}
+              locations={locations}
+              dateParam={dateParam}
+              onClose={handleCloseQuickBook}
+              variant="admin"
+            />
+          )}
+          {blockTimeOpen && (
+            <BlockTimeSheet
+              staff={staff}
+              locations={locations}
+              dateParam={dateParam}
+              hrefClose={hrefCloseBlockTime}
+            />
+          )}
+        </div>
       )}
 
       {drawerOpen && selected && (
@@ -249,16 +418,8 @@ export function CalendarDayView({
           activeTab={activeTab}
           dateParam={dateParam}
           onClose={handleCloseDrawer}
-        />
-      )}
-
-      {quickBookOpen && (
-        <QuickBookPanel
-          staff={staff}
-          services={services}
-          locations={locations}
-          dateParam={dateParam}
-          onClose={handleCloseQuickBook}
+          view={view}
+          quickbook={qb}
         />
       )}
     </div>
