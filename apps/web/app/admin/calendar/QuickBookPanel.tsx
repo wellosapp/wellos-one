@@ -20,10 +20,10 @@ import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
 import type { WhoamiLocation } from '@/lib/api/whoami';
 import {
+  staffBookingFormsRequiringBookingAck,
   staffBookingItemsRequiringAcknowledgment,
   type StaffBookingClientContextResponse,
   type StaffBookingClientStatus,
-  type StaffBookingFormChipStatus,
 } from '@/lib/staff-booking/client-context-types';
 import { formatTimeLocal } from '@/lib/calendar';
 import { formatUsdFromCents } from '@/lib/money';
@@ -39,43 +39,13 @@ import {
   type ActionState,
 } from './_actions';
 import { QuickBookAlertAckSection } from './QuickBookAlertAckSection';
+import {
+  bookingFormBadgeTone,
+  bookingFormStatusLabel,
+} from './booking-form-helpers';
+import { QuickBookFormsAckSection } from './QuickBookFormsAckSection';
 
 const INITIAL: ActionState = { ok: false };
-
-function bookingFormStatusLabel(status: StaffBookingFormChipStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'sent':
-      return 'Sent';
-    case 'completed':
-      return 'Done';
-    case 'expired':
-      return 'Expired';
-    case 'required_before_visit':
-      return 'Before visit';
-    case 'required_before_booking':
-      return 'Before booking';
-  }
-}
-
-function bookingFormBadgeTone(
-  status: StaffBookingFormChipStatus,
-): 'neutral' | 'accent' | 'red' | 'amber' | 'green' {
-  switch (status) {
-    case 'completed':
-      return 'green';
-    case 'expired':
-      return 'red';
-    case 'required_before_visit':
-    case 'required_before_booking':
-      return 'amber';
-    case 'sent':
-      return 'neutral';
-    case 'pending':
-      return 'neutral';
-  }
-}
 
 function clientStatusBadge(status: StaffBookingClientStatus): {
   tone: 'neutral' | 'accent' | 'red' | 'amber' | 'green';
@@ -176,6 +146,7 @@ export function QuickBookPanel({
   const [walkInPending, startWalkInCreate] = useTransition();
 
   const [ackChecked, setAckChecked] = useState<Record<string, boolean>>({});
+  const [formsAckChecked, setFormsAckChecked] = useState(false);
 
   useEffect(() => {
     if (lockedStaffId) setStaffId(lockedStaffId);
@@ -287,6 +258,14 @@ export function QuickBookPanel({
     [clientContext],
   );
 
+  const formsNeedingAck = useMemo(
+    () =>
+      clientContext
+        ? staffBookingFormsRequiringBookingAck(clientContext)
+        : [],
+    [clientContext],
+  );
+
   useEffect(() => {
     setSlot(null);
     setSlotsError(null);
@@ -321,13 +300,17 @@ export function QuickBookPanel({
     alertsNeedingAck.length === 0 ||
     alertsNeedingAck.every((a) => ackChecked[a.id]);
 
+  const formsAckComplete =
+    formsNeedingAck.length === 0 || formsAckChecked;
+
   const canSubmit = Boolean(
     locationId &&
       chosenClient &&
       effectiveStaffId &&
       serviceId &&
       slot &&
-      ackComplete,
+      ackComplete &&
+      formsAckComplete,
   );
 
   const slotsBuckets = useMemo(() => {
@@ -844,6 +827,14 @@ export function QuickBookPanel({
                 onAckChange={(id, checked) =>
                   setAckChecked((prev) => ({ ...prev, [id]: checked }))
                 }
+              />
+            )}
+            {chosenClient && formsNeedingAck.length > 0 && (
+              <QuickBookFormsAckSection
+                items={formsNeedingAck}
+                checked={formsAckChecked}
+                fieldErrors={state.fieldErrors}
+                onChange={setFormsAckChecked}
               />
             )}
           </div>

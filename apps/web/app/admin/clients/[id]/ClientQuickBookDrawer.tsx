@@ -17,6 +17,11 @@ import {
   type ActionState,
 } from '@/app/admin/calendar/_actions';
 import { QuickBookAlertAckSection } from '@/app/admin/calendar/QuickBookAlertAckSection';
+import {
+  bookingFormBadgeTone,
+  bookingFormStatusLabel,
+} from '@/app/admin/calendar/booking-form-helpers';
+import { QuickBookFormsAckSection } from '@/app/admin/calendar/QuickBookFormsAckSection';
 import { Alert, Badge, Button, Drawer, FormField, Input, Select } from '@/components/ui';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
@@ -25,6 +30,7 @@ import type { WhoamiLocation } from '@/lib/api/whoami';
 import { formatTimeLocal, toDateParam } from '@/lib/calendar';
 import { cn } from '@/lib/cn';
 import {
+  staffBookingFormsRequiringBookingAck,
   staffBookingItemsRequiringAcknowledgment,
   type StaffBookingClientContextResponse,
 } from '@/lib/staff-booking/client-context-types';
@@ -179,6 +185,7 @@ export function ClientQuickBookDrawer({
     string | null
   >(null);
   const [ackChecked, setAckChecked] = useState<Record<string, boolean>>({});
+  const [formsAckChecked, setFormsAckChecked] = useState(false);
 
   const name = displayName(client);
   const initials = clientInitials(client);
@@ -247,12 +254,21 @@ export function ClientQuickBookDrawer({
 
   useEffect(() => {
     setAckChecked({});
+    setFormsAckChecked(false);
   }, [client.id, serviceId, staffId]);
 
   const alertsNeedingAck = useMemo(
     () =>
       staffBookingContext
         ? staffBookingItemsRequiringAcknowledgment(staffBookingContext)
+        : [],
+    [staffBookingContext],
+  );
+
+  const formsNeedingAck = useMemo(
+    () =>
+      staffBookingContext
+        ? staffBookingFormsRequiringBookingAck(staffBookingContext)
         : [],
     [staffBookingContext],
   );
@@ -294,13 +310,17 @@ export function ClientQuickBookDrawer({
     alertsNeedingAck.length === 0 ||
     alertsNeedingAck.every((a) => ackChecked[a.id]);
 
+  const formsAckComplete =
+    formsNeedingAck.length === 0 || formsAckChecked;
+
   const canSubmit = Boolean(
     locationId &&
       client.id &&
       staffId &&
       serviceId &&
       slot &&
-      ackComplete,
+      ackComplete &&
+      formsAckComplete,
   );
 
   const directoryEmpty = services.length === 0 || staff.length === 0;
@@ -520,11 +540,37 @@ export function ClientQuickBookDrawer({
         </StepShell>
 
         {staffBookingContextLoading && (
-          <p className="t-caption text-ink-soft">Loading client alerts…</p>
+          <p className="t-caption text-ink-soft">Loading client snapshot…</p>
         )}
         {staffBookingContextError && (
           <Alert tone="error">{staffBookingContextError}</Alert>
         )}
+        {!staffBookingContextLoading &&
+          !staffBookingContextError &&
+          staffBookingContext &&
+          staffBookingContext.forms.length > 0 && (
+            <div className="rounded-xl border border-surface-3 bg-surface px-s3 py-s3">
+              <span className="t-eyebrow text-ink-soft">
+                Forms & questionnaires
+              </span>
+              <div className="mt-s2 flex flex-wrap gap-s1">
+                {staffBookingContext.forms.slice(0, 8).map((f) => (
+                  <Badge
+                    key={f.id}
+                    tone={bookingFormBadgeTone(f.status)}
+                    className="max-w-full truncate"
+                    title={`${f.label} — ${bookingFormStatusLabel(f.status)}`}
+                  >
+                    <span className="font-medium">{f.label}</span>
+                    <span className="text-ink-soft">
+                      {' '}
+                      · {bookingFormStatusLabel(f.status)}
+                    </span>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         {alertsNeedingAck.length > 0 && (
           <QuickBookAlertAckSection
             items={alertsNeedingAck}
@@ -533,6 +579,14 @@ export function ClientQuickBookDrawer({
             onAckChange={(id, checked) =>
               setAckChecked((prev) => ({ ...prev, [id]: checked }))
             }
+          />
+        )}
+        {formsNeedingAck.length > 0 && (
+          <QuickBookFormsAckSection
+            items={formsNeedingAck}
+            checked={formsAckChecked}
+            fieldErrors={state.fieldErrors}
+            onChange={setFormsAckChecked}
           />
         )}
       </div>
