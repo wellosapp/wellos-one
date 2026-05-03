@@ -5,9 +5,10 @@
 // canary at runtime — see hotfix #28 for context.
 import { useFormState, useFormStatus } from 'react-dom';
 
-import { Alert, Button, FormField, Input, Textarea } from '@/components/ui';
+import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/ui';
 
 import type { ActionState, ServiceFormValues } from './_actions';
+import type { ServicePriceDisplayMode } from '@/lib/api/services';
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -25,10 +26,24 @@ type StaffOption = {
   jobTitle: string | null;
 };
 
+type CategoryOption = {
+  id: string;
+  name: string;
+};
+
+const PRICE_MODES: { value: ServicePriceDisplayMode; label: string }[] = [
+  { value: 'fixed', label: 'Fixed price' },
+  { value: 'starting_at', label: 'Starting at' },
+  { value: 'range', label: 'Price range' },
+  { value: 'hidden', label: 'Hidden' },
+  { value: 'consultation', label: 'Consultation' },
+];
+
 type Props = {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   initial?: ServiceFormValues;
   staff: StaffOption[];
+  categories: CategoryOption[];
   submitLabel?: string;
   successMessage?: string;
 };
@@ -37,17 +52,20 @@ export function ServiceForm({
   action,
   initial,
   staff,
+  categories,
   submitLabel = 'Save',
   successMessage = 'Saved.',
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
-  // After validation failure, re-display the values the user submitted.
-  // After success, fall back to the action's echoed values so updated form
-  // reflects what was just saved.
   const values = state.values ?? initial ?? {};
   const fieldErrors = state.fieldErrors ?? {};
   const initialStaffIds = new Set(values.staffIds ?? []);
+
+  const priceMode =
+    values.priceDisplayMode ??
+    initial?.priceDisplayMode ??
+    'fixed';
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
@@ -66,9 +84,83 @@ export function ServiceForm({
       </FormField>
 
       <FormField
+        label="Category"
+        error={fieldErrors.categoryId}
+        hint="Optional. Manage categories on the Service categories page."
+      >
+        <Select
+          name="categoryId"
+          defaultValue={
+            values.categoryId !== undefined && values.categoryId !== ''
+              ? values.categoryId
+              : initial?.categoryId ?? ''
+          }
+          className="w-full max-w-md"
+        >
+          <option value="">No category</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      </FormField>
+
+      <div className="grid grid-cols-1 gap-s4 md:grid-cols-2">
+        <FormField
+          label="Display order"
+          error={fieldErrors.displayOrder}
+          hint="Lower numbers appear first in lists."
+        >
+          <Input
+            type="number"
+            name="displayOrder"
+            inputMode="numeric"
+            min={0}
+            step={1}
+            defaultValue={
+              values.displayOrder ??
+              (initial?.displayOrder !== undefined ? initial.displayOrder : '0')
+            }
+          />
+        </FormField>
+
+        <FormField label="Price display" error={fieldErrors.priceDisplayMode}>
+          <Select
+            name="priceDisplayMode"
+            defaultValue={priceMode}
+            className="w-full"
+          >
+            {PRICE_MODES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+      </div>
+
+      <FormField
+        label="Public catalog"
+        error={fieldErrors.publicVisible}
+        hint="When off, hidden from the public booking catalog (staff tools may still use this service)."
+      >
+        <label className="flex h-[50px] items-center gap-s2">
+          <input
+            type="checkbox"
+            name="publicVisible"
+            value="1"
+            defaultChecked={values.publicVisible ?? initial?.publicVisible ?? true}
+            className="h-[18px] w-[18px] cursor-pointer accent-accent"
+          />
+          <span className="t-body-md text-ink-soft">Visible on public booking</span>
+        </label>
+      </FormField>
+
+      <FormField
         label="Description"
         error={fieldErrors.description}
-        hint="Optional. Shown to clients on the booking page."
+        hint="Optional. Longer description for staff or internal use."
       >
         <Textarea
           name="description"
@@ -76,6 +168,20 @@ export function ServiceForm({
           maxLength={4000}
           defaultValue={values.description ?? ''}
           error={Boolean(fieldErrors.description)}
+        />
+      </FormField>
+
+      <FormField
+        label="Short description"
+        error={fieldErrors.descriptionShort}
+        hint="Optional. Short line for catalog cards (max 500 characters)."
+      >
+        <Textarea
+          name="descriptionShort"
+          rows={2}
+          maxLength={500}
+          defaultValue={values.descriptionShort ?? ''}
+          error={Boolean(fieldErrors.descriptionShort)}
         />
       </FormField>
 
@@ -120,6 +226,50 @@ export function ServiceForm({
 
       <div className="grid grid-cols-1 gap-s4 md:grid-cols-2">
         <FormField
+          label="Buffer before (minutes)"
+          error={fieldErrors.bufferBeforeMinutes}
+          hint="Prep / turnaround before this service starts (availability)."
+        >
+          <Input
+            type="number"
+            name="bufferBeforeMinutes"
+            inputMode="numeric"
+            min={0}
+            max={1440}
+            step={1}
+            defaultValue={
+              values.bufferBeforeMinutes ??
+              (initial?.bufferBeforeMinutes !== undefined
+                ? initial.bufferBeforeMinutes
+                : '0')
+            }
+          />
+        </FormField>
+
+        <FormField
+          label="Buffer after (minutes)"
+          error={fieldErrors.bufferAfterMinutes}
+          hint="Cleanup / spacing after this service ends (availability)."
+        >
+          <Input
+            type="number"
+            name="bufferAfterMinutes"
+            inputMode="numeric"
+            min={0}
+            max={1440}
+            step={1}
+            defaultValue={
+              values.bufferAfterMinutes ??
+              (initial?.bufferAfterMinutes !== undefined
+                ? initial.bufferAfterMinutes
+                : '0')
+            }
+          />
+        </FormField>
+      </div>
+
+      <div className="grid grid-cols-1 gap-s4 md:grid-cols-2">
+        <FormField
           label="Color"
           error={fieldErrors.color}
           hint="6-digit hex like #3D7A5E. Used on the calendar."
@@ -134,7 +284,7 @@ export function ServiceForm({
           />
         </FormField>
 
-        <FormField label="Active" error={fieldErrors.active}>
+        <FormField label="Active (bookable)" error={fieldErrors.active}>
           <label className="flex h-[50px] items-center gap-s2">
             <input
               type="checkbox"

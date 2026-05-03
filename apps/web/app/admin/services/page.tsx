@@ -76,16 +76,24 @@ export default async function ServicesListPage({
 
   return (
     <div className="flex flex-col gap-s6">
-      <header className="flex items-center justify-between gap-s4">
+      <header className="flex flex-wrap items-end justify-between gap-s4">
         <div className="flex flex-col gap-s1">
           <span className="t-eyebrow text-accent">Services</span>
           <h1 className="t-display-lg">All services</h1>
         </div>
-        <Link href="/admin/services/new" className="no-underline">
-          <Button variant="accent" size="md">
-            New service
-          </Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-s3">
+          <Link
+            href="/admin/service-categories"
+            className="t-body-sm text-ink-soft no-underline underline-offset-2 transition-colors duration-fast hover:text-ink hover:underline"
+          >
+            Service categories
+          </Link>
+          <Link href="/admin/services/new" className="no-underline">
+            <Button variant="accent" size="md">
+              New service
+            </Button>
+          </Link>
+        </div>
       </header>
 
       <Card padding="sm">
@@ -145,6 +153,8 @@ export default async function ServicesListPage({
                 <thead>
                   <tr className="border-b border-surface-3 bg-surface-2 text-left">
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Name</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Category</th>
+                    <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Public</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Duration</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Price</th>
                     <th className="t-eyebrow px-s4 py-s3 text-ink-soft">Color</th>
@@ -167,6 +177,16 @@ export default async function ServicesListPage({
                           >
                             {s.name}
                           </Link>
+                        </td>
+                        <td className="px-s4 py-s3 t-body-md text-ink-soft">
+                          {s.category?.name ?? '—'}
+                        </td>
+                        <td className="px-s4 py-s3">
+                          {s.publicVisible ? (
+                            <Badge tone="green">Yes</Badge>
+                          ) : (
+                            <Badge tone="neutral">No</Badge>
+                          )}
                         </td>
                         <td className="px-s4 py-s3 t-body-md text-ink-soft">
                           {formatDuration(s.durationMinutes)}

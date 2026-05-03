@@ -30,6 +30,8 @@ type ApiFetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   searchParams?: Record<string, string | number | boolean | undefined>;
+  /** Extra headers (e.g. x-wellos-calendar-drag for reschedule analytics). */
+  headers?: Record<string, string>;
   // Cache strategy. Default 'no-store' for admin reads (always fresh) — admin
   // surfaces shouldn't show stale data. Pass 'force-cache' or a revalidate
   // tag if a specific call is OK with caching.
@@ -42,7 +44,14 @@ export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, searchParams, cache = 'no-store', next } = options;
+  const {
+    method = 'GET',
+    body,
+    searchParams,
+    cache = 'no-store',
+    next,
+    headers: extraHeaders,
+  } = options;
   const { getToken } = await auth();
   const token = await getToken();
 
@@ -57,6 +66,7 @@ export async function apiFetch<T>(
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
+    ...extraHeaders,
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';

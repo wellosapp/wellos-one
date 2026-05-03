@@ -6,6 +6,10 @@
 
 **Related:** Dashboard Quick Book, calendar Quick Book, drag-to-create, walk-ins, public booking — shared booking engine and idempotency expectations.
 
+**Staff booking + CRM (broader product):** [staff-booking-client-crm.md](./staff-booking-client-crm.md) and [staff-booking-implementation-map.md](./staff-booking-implementation-map.md) (gap analysis vs repo, build order, API notes).
+
+**Calendar Area (operational command center):** [calendar-area-features.md](./calendar-area-features.md) — feature matrix, booking engine rules, acceptance criteria, MVP vs growth.
+
 ---
 
 ## Build goal

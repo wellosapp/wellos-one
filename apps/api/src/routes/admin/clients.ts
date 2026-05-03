@@ -16,10 +16,11 @@ import {
   updateClient,
 } from '../../services/clientService.js';
 
-// /admin/clients — admin CRUD for tenant-scoped client records.
+// /admin/clients — CRUD for tenant-scoped client records.
+// GET uses requireRole.staff (booking/search); mutating routes stay admin-only.
 //
-// Auth: requireRole.admin (chained loadCurrentUser + admin-only guard).
-//   request.currentUser is non-null and tenantId is non-null after the guard.
+// Auth: POST/PATCH/DELETE requireRole.admin. GET chains loadCurrentUser via
+// requireRole.staff.
 //
 // Validation: Zod parsing of body / query / params at the route layer. On
 // validation failure, returns 400 with { error, message, issues }.
@@ -82,7 +83,7 @@ export default async function clientsRoutes(app: FastifyInstance): Promise<void>
   });
 
   // GET /admin/clients — list with optional filters + pagination
-  app.get('/clients', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/clients', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
@@ -99,7 +100,7 @@ export default async function clientsRoutes(app: FastifyInstance): Promise<void>
   });
 
   // GET /admin/clients/:id — one
-  app.get('/clients/:id', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/clients/:id', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 

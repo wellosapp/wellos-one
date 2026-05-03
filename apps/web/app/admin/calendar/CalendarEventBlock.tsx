@@ -8,6 +8,7 @@ import type {
   AppointmentState,
 } from '@/lib/api/appointments';
 import type { Service } from '@/lib/api/services';
+import { intakeStatusCalendarChip } from './intake-status-label';
 
 // One appointment block. Positioned absolutely within its staff column by
 // start/end. Tone tracks status. Past visits dim.
@@ -74,6 +75,11 @@ interface CalendarEventBlockProps {
   alertStyle?: boolean;
   /** Replaces status badge label when set (e.g. &quot;next up&quot;). */
   statusOverride?: string;
+  /**
+   * When true, parent supplies positioning (e.g. drag handle + link wrapper).
+   * Inner card fills height (`h-full`).
+   */
+  omitOuterPosition?: boolean;
 }
 
 export function CalendarEventBlock({
@@ -83,6 +89,7 @@ export function CalendarEventBlock({
   clientDisplayName,
   alertStyle,
   statusOverride,
+  omitOuterPosition,
 }: CalendarEventBlockProps) {
   const tone = STATUS_TONE[appointment.state];
   const pos = blockPosition(
@@ -90,33 +97,45 @@ export function CalendarEventBlock({
     appointment.scheduledEndAt,
   );
   const isPast = new Date(appointment.scheduledEndAt) < new Date();
-  if (pos.heightPx <= 0) return null;
+  if (!omitOuterPosition && pos.heightPx <= 0) return null;
 
   const badgeLabel = statusOverride ?? tone.label;
+  const intakeChip = intakeStatusCalendarChip(
+    appointment.clientIntakeStatus,
+  );
 
-  return (
-    <div
-      className={cn(
-        'absolute left-s2 right-s2 flex flex-col gap-s1 overflow-hidden rounded-[14px] border px-s3 py-s3 shadow-sm',
-        'transition-shadow duration-fast hover:shadow-md',
-        tone.gradient,
-        tone.border,
-        alertStyle && 'border-amber/40 bg-gradient-to-b from-amber-pale to-white',
-        isPast && appointment.state !== 'completed' && 'opacity-60',
-        isSelected && 'ring-2 ring-accent shadow-md',
-      )}
-      style={{
+  const shellClass = cn(
+    'flex flex-col gap-s1 overflow-hidden rounded-[14px] border px-s3 py-s3 shadow-sm',
+    'transition-shadow duration-fast hover:shadow-md',
+    omitOuterPosition ? 'h-full min-h-0' : 'absolute left-s2 right-s2',
+    tone.gradient,
+    tone.border,
+    alertStyle && 'border-amber/40 bg-gradient-to-b from-amber-pale to-white',
+    isPast && appointment.state !== 'completed' && 'opacity-60',
+    isSelected && 'ring-2 ring-accent shadow-md',
+  );
+
+  const shellStyle = omitOuterPosition
+    ? undefined
+    : {
         top: pos.topPx,
         height: pos.heightPx,
-      }}
-    >
+      };
+
+  return (
+    <div className={shellClass} style={shellStyle}>
       <div className="flex items-start justify-between gap-s2">
         <strong className="min-w-0 flex-1 truncate t-body-sm font-semibold text-ink">
           {service?.name ?? 'Service'}
         </strong>
-        <Badge tone={tone.badgeTone} className="shrink-0">
-          {badgeLabel}
-        </Badge>
+        <div className="flex shrink-0 flex-col items-end gap-s1">
+          <Badge tone={tone.badgeTone}>{badgeLabel}</Badge>
+          {intakeChip ? (
+            <Badge tone={intakeChip.tone} className="max-w-[9rem] truncate">
+              {intakeChip.label}
+            </Badge>
+          ) : null}
+        </div>
       </div>
       <p className="t-caption text-ink-soft">
         {formatTimeLocal(appointment.scheduledStartAt)}

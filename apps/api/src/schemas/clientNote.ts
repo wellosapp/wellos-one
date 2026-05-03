@@ -44,6 +44,7 @@ export const ClientNoteSourceSurfaceSchema = z.enum([
   'magic_link_manage',
   'appointment_detail',
   'calendar_drawer',
+  'quick_book',
   'client_profile',
   'intake_form',
   'system_transition',
