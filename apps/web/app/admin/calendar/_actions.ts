@@ -31,6 +31,7 @@ import {
 import { listServices } from '@/lib/api/services';
 import { getStaffBookingClientContext } from '@/lib/api/staff-booking';
 import {
+  staffBookingFormsRequiringBookingAck,
   staffBookingItemsRequiringAcknowledgment,
   type StaffBookingClientContextResponse,
 } from '@/lib/staff-booking/client-context-types';
@@ -247,6 +248,27 @@ export async function createAppointmentAction(
           error:
             'One or more booking alerts require acknowledgment before booking.',
           fieldErrors: missingAck,
+        };
+      }
+    }
+
+    const formsNeedingAck = staffBookingFormsRequiringBookingAck(ctx);
+    if (formsNeedingAck.length > 0) {
+      const v = formData.get('ack_required_forms');
+      const formsAckOk =
+        v === 'on' ||
+        v === 'true' ||
+        v === '1' ||
+        (typeof v === 'string' && v.toLowerCase() === 'on');
+      if (!formsAckOk) {
+        return {
+          ok: false,
+          error:
+            'One or more forms require acknowledgment before booking (see checklist in the booking panel).',
+          fieldErrors: {
+            ack_required_forms:
+              'Confirm you have reviewed required forms to continue.',
+          },
         };
       }
     }

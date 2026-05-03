@@ -107,6 +107,20 @@ export type StaffBookingClientContextResponse = {
   customRows: StaffBookingCustomRow[];
 };
 
+/**
+ * Forms whose status requires an explicit operator acknowledgment in the
+ * booking path (soft gate — does not replace Epic 5 submission capture).
+ */
+export function staffBookingFormsRequiringBookingAck(
+  context: StaffBookingClientContextResponse,
+): StaffBookingFormSummary[] {
+  return context.forms.filter(
+    (f) =>
+      f.status === 'required_before_booking' ||
+      f.status === 'required_before_visit',
+  );
+}
+
 /** Alerts and pinned notes that must be explicitly acknowledged before booking (deduped by id). */
 export function staffBookingItemsRequiringAcknowledgment(
   context: StaffBookingClientContextResponse,
