@@ -618,12 +618,18 @@ export async function acknowledgeClientNote(
     if (body.appointmentId) {
       const appt = await tx.appointment.findFirst({
         where: { id: body.appointmentId, tenantId },
-        select: { id: true },
+        select: { id: true, clientId: true },
       });
       if (!appt) {
         throw new InvalidClientNoteReferenceError(
           'appointmentId',
           'Unknown appointment for this tenant.',
+        );
+      }
+      if (appt.clientId !== clientId) {
+        throw new InvalidClientNoteReferenceError(
+          'appointmentId',
+          'Appointment belongs to a different client than this note.',
         );
       }
     }

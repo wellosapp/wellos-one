@@ -13,6 +13,7 @@ import {
   isToday,
   toDateParam,
 } from '@/lib/calendar';
+import { countIntakeAttentionOnDay } from './intake-status-label';
 
 interface CalendarMonthViewProps {
   anchorMonth: Date;
@@ -81,6 +82,7 @@ export function CalendarMonthView({
             scheduleBlocksByStaff,
             date,
           );
+          const intakeAttention = countIntakeAttentionOnDay(appointments, dateStr);
           const today = isToday(date);
           return (
             <Link
@@ -112,13 +114,19 @@ export function CalendarMonthView({
                   {blockCount} block{blockCount === 1 ? '' : 's'}
                 </span>
               )}
+              {intakeAttention > 0 && inMonth && (
+                <span className="rounded-full bg-amber-pale px-s2 py-[2px] t-caption font-semibold text-amber-900">
+                  {intakeAttention} intake
+                </span>
+              )}
             </Link>
           );
         })}
       </div>
       <p className="border-t border-surface-3 bg-surface px-s4 py-s3 t-caption text-ink-soft">
-        Click a day to open the day schedule. Badges count appointments and staff
-        blocked time starting or crossing that calendar day (local time).
+        Click a day to open the day schedule. Badges show appointment count,
+        staff blocks touching that day (local time), and how many appointments
+        that day still need intake (pending, sent, or expired).
       </p>
     </div>
   );

@@ -88,6 +88,17 @@ export const CreateAppointmentBodySchema = z.object({
 });
 export type CreateAppointmentBody = z.infer<typeof CreateAppointmentBodySchema>;
 
+// POST /admin/appointments/:id/required-forms-booking-ack — operator attestation
+// after Quick Book (must match the appointment's client/staff/service).
+export const LogRequiredFormsBookingAckBodySchema = z.object({
+  staffId: TRIM_NONEMPTY,
+  clientId: TRIM_NONEMPTY,
+  serviceId: TRIM_NONEMPTY,
+});
+export type LogRequiredFormsBookingAckBody = z.infer<
+  typeof LogRequiredFormsBookingAckBodySchema
+>;
+
 // PATCH allows notes updates and calendar reschedule (same appointment row).
 // Optional scheduledStartAt / staffId / locationId together update time and/or
 // column; scheduledEndAt is recomputed from Service.durationMinutes.

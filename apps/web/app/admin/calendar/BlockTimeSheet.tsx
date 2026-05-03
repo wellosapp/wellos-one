@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import type { Route } from 'next';
-import { useActionState, useEffect } from 'react';
+import { useEffect } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 
 import { Alert, Button, Input } from '@/components/ui';
@@ -25,6 +26,15 @@ const CATEGORIES = [
   'custom',
 ] as const;
 
+function SaveBlockButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" variant="accent" size="md" loading={pending}>
+      {pending ? 'Saving…' : 'Save block'}
+    </Button>
+  );
+}
+
 interface BlockTimeSheetProps {
   staff: Staff[];
   locations: WhoamiLocation[];
@@ -41,10 +51,10 @@ export function BlockTimeSheet({
   defaultStaffId,
 }: BlockTimeSheetProps) {
   const router = useRouter();
-  const [state, formAction, isPending] = useActionState<
-    ActionState,
-    FormData
-  >(createStaffScheduleBlockAction, { ok: false });
+  const [state, formAction] = useFormState<ActionState, FormData>(
+    createStaffScheduleBlockAction,
+    { ok: false },
+  );
 
   useEffect(() => {
     if (state.ok) {
@@ -173,9 +183,7 @@ export function BlockTimeSheet({
           >
             Cancel
           </Link>
-          <Button type="submit" variant="accent" size="md" disabled={isPending}>
-            {isPending ? 'Saving…' : 'Save block'}
-          </Button>
+          <SaveBlockButton />
         </div>
       </form>
     </aside>

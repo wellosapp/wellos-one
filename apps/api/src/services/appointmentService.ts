@@ -304,7 +304,7 @@ async function writeAudit(
   tx: ExtendedTransactionClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    actorUserId: string | null;
     action:
       | 'appointment.created'
       | 'appointment.updated'
@@ -319,7 +319,7 @@ async function writeAudit(
     data: {
       tenantId: args.tenantId,
       actorUserId: args.actorUserId,
-      actorType: 'user',
+      actorType: args.actorUserId ? 'user' : 'system',
       action: args.action,
       entityType: 'appointment',
       entityId: args.entityId,
@@ -337,7 +337,8 @@ export async function createAppointment(
   prisma: ExtendedPrismaClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    /** Null when created by the login-free public booking surface (Epic 4). */
+    actorUserId: string | null;
     body: CreateAppointmentBody;
   },
 ): Promise<CreateAppointmentResult> {

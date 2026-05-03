@@ -30,9 +30,9 @@ Single backlog checklist. **Status key:** **Done** = matches spec intent for MVP
 | 4 | Visit history | **Partial** | Recent visits from timeline with date, service, staff, state, list-price amount + notes snippet; cancellations/no-shows matrix depth still thin. |
 | 5 | Structured client notes | **Partial** | Quick Book creates **ClientNote** linked to `appointment_id` (`sourceSurface: quick_book`, category `session`); drawer Overview shows linked rows. **Gap:** category picker + non–Quick Book surfaces still thin. |
 | 6 | Pinned notes | **Partial** | Surfaced via client-context; drawer parity incomplete. |
-| 7 | Booking alerts | **Partial** | Alerts load; **acknowledgment gate + audit** before save not implemented. |
+| 7 | Booking alerts | **Partial** | Alerts load + **Quick Book gate**; after `POST /admin/appointments`, **`ClientNoteAcknowledgment` rows** are written per alert (`triggerContext: booking`, optional `appointmentId`) via existing note acknowledge API. Drawer/modal parity + idempotent replay policy still thin. |
 | 8 | Preferences + service defaults | **Not started** | Prefill provider/room/etc. per spec §5. |
-| 9 | Forms + intake status | **Partial** | Client-context now returns **intake chip** + **service booking questions** when `serviceId` is passed; soft/hard enforce-in-save path still incomplete. |
+| 9 | Forms + intake status | **Partial** | Client-context returns **intake chip** + **service booking questions** when `serviceId` is passed; **`createAppointmentAction` soft-gates** when any form has `required_before_booking` or `required_before_visit` (must submit `ack_required_forms`); **QuickBookPanel** + **ClientQuickBookDrawer** show ack + form badges. Full Epic 5 submissions + hard policy engine still out of scope. |
 | 10 | Photos + files | **Partial** | Client-context **hydrates recent client media assets** as file summaries; attach-during-booking flow still thin. |
 | 11 | SOAP / service notes | **Partial** | SOAP module exists; shortcut + briefing loop per matrix incomplete. |
 | 12 | Payment + balance context | **Partial** | Client-context: outstanding + card **stubbed**; **upcoming committed schedule value** from appointments; Stripe ledger + deposit/block rules not end-to-end. |
@@ -58,7 +58,7 @@ Single backlog checklist. **Status key:** **Done** = matches spec intent for MVP
 
 | # | Feature | Status | Notes |
 |---|---------|--------|--------|
-| 1 | Multi-view calendar | **Partial** | Day / week / month components exist; list/agenda + mobile compact per spec not complete. |
+| 1 | Multi-view calendar | **Partial** | Day / week / month components exist; **month grid** shows per-day **intake-attention count** (appointments with pending/sent/expired intake, aligned with day/week chip rules). List/agenda + mobile compact per spec not complete. |
 | 2 | Staff column view | **Partial** | Staff columns in day view; full column chrome (counts, blocked visualization) incomplete. |
 | 3 | Quick appointment creation | **Partial** | Quick Book + gaps; **drag-range create**, **book again**, open-slot suggestion incomplete. |
 | 4 | Right-side booking panel | **Partial** | Quick Book panel; resource/deposit/policy summaries incomplete vs §5.4. |
@@ -96,9 +96,9 @@ Single backlog checklist. **Status key:** **Done** = matches spec intent for MVP
 | Single CRM context payload | `GET /admin/staff-booking/client-context` returns snapshot (incl. LTV, preferred provider), alerts, pinned, recent visits, forms (intake + service questions), file summaries, payments (**ledger/card/balance stubbed**; **upcoming committed value** live), `customRows: []`. |
 | Snapshot card in Quick Book | **Partial:** identity + snapshot metrics + payments strip + recent visits + tags + alerts — **not** full §4 CRM tabs, SOAP shortcut, or tenant custom rows in-panel. |
 | Inline create client in panel | **Shipped** in `QuickBookPanel` (`quickBookCreateClientInline`). Further polish (profile nudge, validation copy) may remain. |
-| Alert acknowledgment | No booking-gated acknowledge modal + audit log tied to `appointment_id` / note. |
+| Alert acknowledgment | **Quick Book:** server action persists **`ClientNoteAcknowledgment`** (with `appointment_id` when provided) after appointment create; API rejects ack if appointment client does not match the note’s client. **Gap:** booking-gated modal in drawer + replay/idempotency policy still thin. |
 | Structured notes from booking | Notes APIs exist in places; **appointment-linked note from booking panel** with categories needs productized flow. |
-| Forms / intake gating | Intake status on client model exists in CRM; **service-required form soft/hard rules** in booking path not implemented as spec section 8. |
+| Forms / intake gating | **Soft gate shipped:** server rejects Quick Book `createAppointment` when client-context lists `required_before_booking` / `required_before_visit` forms unless `ack_required_forms` is set; UI in calendar Quick Book + client profile Quick Book. **Audit:** `POST /admin/appointments/:id/required-forms-booking-ack` writes **`audit_log`** (`staff_booking.required_forms_acknowledged`) after successful booking when forms required ack. **Still missing:** Epic 5 submission capture and true hard policy / magic-link completion checks. |
 | Files in booking | No attach/link flow in Quick Book matching matrix row 10. |
 | Payments in booking | Payment tab in drawer is placeholder relative to full balance/deposit rules. |
 | Custom CRM row | Not tenant-configurable in UI/API yet. |

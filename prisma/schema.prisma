@@ -234,6 +234,23 @@ enum ScheduleBlockVisibility {
   public_busy @map("public_busy")
 }
 
+// Epic 5 — first-party intake forms (versioned definitions, submissions).
+enum IntakeFormDefinitionStatus {
+  draft
+  published
+  archived
+}
+
+enum IntakeFormSubmissionStatus {
+  draft
+  submitted
+}
+
+// Append-only audit row action (expand when amend/redact flows land).
+enum IntakeFormSubmissionAuditAction {
+  submitted
+}
+
 // Tenant-editable file folder taxonomy. Used by ClientFile.folder.
 // Per the master spec §5.2.4 default folders. Free string (not enum) on
 // the column so tenants can add custom folders, but these are the
@@ -277,6 +294,9 @@ model Tenant {
   serviceContentDeliveries  ServiceContentDelivery[]
   staffCalendarFeedTokens   StaffCalendarFeedToken[]
   staffScheduleBlocks       StaffScheduleBlock[]
+  intakeFormDefinitions     IntakeFormDefinition[]
+  intakeFormSubmissions     IntakeFormSubmission[]
+  intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -513,7 +533,8 @@ model Client {
   notes_         ClientNote[]          @relation("ClientNoteClient")
   authoredNotes  ClientNote[]          @relation("ClientNoteAuthorClient")
   mediaAssets    MediaAsset[]          @relation("MediaAssetClient")
-  soapNotes      SoapNote[]
+  soapNotes              SoapNote[]
+  intakeFormSubmissions  IntakeFormSubmission[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -796,6 +817,7 @@ model Appointment {
   soapNotes           SoapNote[]
   bookingAnswers      AppointmentBookingAnswer[]
   noteAcknowledgments ClientNoteAcknowledgment[]
+  intakeFormSubmissions IntakeFormSubmission[]
 
   @@index([tenantId, scheduledStartAt])
   @@index([staffId, scheduledStartAt])
@@ -1221,4 +1243,87 @@ model ServiceContentDelivery {
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@map("service_content_deliveries")
+}
+
+// ---------- Epic 5: Intake form definitions & submissions (MVP slice) ----------
+//
+// Versioning: rows sharing `groupId` are versions of the same logical form.
+// Only one `published` row per group at a time (enforced in the service layer).
+
+model IntakeFormDefinition {
+  id        String                     @id @default(cuid())
+  tenantId  String                     @map("tenant_id")
+  groupId   String                     @map("group_id")
+  title     String
+  /// Field templates: array of { key, type, label, ... } — validated at API layer.
+  schema    Json
+  version   Int
+  status    IntakeFormDefinitionStatus @default(draft)
+  /// Tenant can hide a form from pickers without deleting history.
+  isActive  Boolean                    @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submissions IntakeFormSubmission[]
+
+  @@unique([tenantId, groupId, version])
+  @@index([tenantId])
+  @@index([tenantId, groupId])
+  @@index([tenantId, status])
+  @@map("intake_form_definitions")
+}
+
+model IntakeFormSubmission {
+  id             String                   @id @default(cuid())
+  tenantId       String                   @map("tenant_id")
+  definitionId   String                   @map("definition_id")
+  /// Nullable for future magic-link flows that start before client linkage.
+  clientId       String?                  @map("client_id")
+  appointmentId  String?                  @map("appointment_id")
+  answers        Json                     @default("{}")
+  status         IntakeFormSubmissionStatus @default(draft)
+
+  submittedAt    DateTime?                @map("submitted_at") @db.Timestamptz(3)
+
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  tenant     Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  definition IntakeFormDefinition       @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  client     Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  appointment Appointment?              @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  audits     IntakeFormSubmissionAudit[]
+
+  @@index([tenantId])
+  @@index([tenantId, clientId])
+  @@index([tenantId, definitionId])
+  @@index([appointmentId])
+  @@map("intake_form_submissions")
+}
+
+// Append-only compliance trail (Epic 5 — IP, UA, version evidence). No updatedAt.
+model IntakeFormSubmissionAudit {
+  id               String                        @id @default(cuid())
+  tenantId         String                        @map("tenant_id")
+  submissionId     String                        @map("submission_id")
+  action           IntakeFormSubmissionAuditAction
+  definitionId     String                        @map("definition_id")
+  definitionVersion Int                          @map("definition_version")
+  /// Snapshot of the JSON schema the client signed against.
+  schemaSnapshot   Json                          @map("schema_snapshot")
+  answersSnapshot  Json                          @map("answers_snapshot")
+
+  ip              String?
+  userAgent       String?                       @map("user_agent")
+
+  createdAt       DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submission IntakeFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([submissionId, createdAt])
+  @@map("intake_form_submission_audits")
 }

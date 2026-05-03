@@ -13,7 +13,6 @@ import './instrument.js';
 };
 
 import * as Sentry from '@sentry/node';
-import Fastify from 'fastify';
 
 import clerkPlugin from './plugins/clerk.js';
 import corsPlugin from './plugins/cors.js';
@@ -23,6 +22,9 @@ import meRoutes from './routes/me.js';
 import publicRoutes from './routes/public/index.js';
 import webhookRoutes from './routes/webhooks/index.js';
 
+const { default: Fastify } = await import('fastify');
+
+// Default PORT 3001; dev loads ../../.env then ./.env (see package.json dev).
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
@@ -103,6 +105,7 @@ app.get('/version', async () => {
 // Protected routes — pulled into routes/ files as the surface grows.
 await app.register(meRoutes);
 await app.register(adminRoutes);
+// Login-free public booking (Epic 4) — no requireAuth; tenant scoped per request.
 await app.register(publicRoutes);
 
 // Webhooks last, encapsulated. Raw-body content-type parser is scoped to
@@ -117,6 +120,16 @@ const start = async () => {
     app.log.info(`wellos-api listening on http://${HOST}:${PORT}`);
   } catch (err) {
     app.log.error(err);
+    if (
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      err.code === 'EADDRINUSE'
+    ) {
+      app.log.error(
+        `Port ${PORT} is already in use — stop the other listener or set PORT to a free port.`,
+      );
+    }
     process.exit(1);
   }
 };

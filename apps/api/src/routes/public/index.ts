@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 
+import publicBookingRoutes from './booking.js';
 import publicCalendarFeedRoutes from './calendar-feed.js';
 
-/** Login-free surfaces (Epic 4 booking lands separately on main). */
+/** Login-free surfaces — booking (Epic 4) and staff calendar feed (Epic 7). */
 export default async function publicRoutes(app: FastifyInstance): Promise<void> {
+  await app.register(publicBookingRoutes);
   await app.register(publicCalendarFeedRoutes);
 }

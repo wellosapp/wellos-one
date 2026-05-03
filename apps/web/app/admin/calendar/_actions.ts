@@ -10,12 +10,14 @@ import {
 } from '@/lib/api/clients';
 import {
   createAppointment,
+  logRequiredFormsBookingAcknowledgment,
   transitionAppointment,
   updateAppointment,
   type AppointmentSlotConflictBody,
   type AppointmentState,
 } from '@/lib/api/appointments';
 import {
+  acknowledgeClientNote,
   createClientNote,
   type CreateClientNoteBody,
 } from '@/lib/api/client-notes';
@@ -223,12 +225,14 @@ export async function createAppointmentAction(
     };
   }
 
+  let quickBookStaffContext: StaffBookingClientContextResponse | undefined;
   try {
-    const ctx = await getStaffBookingClientContext({
+    quickBookStaffContext = await getStaffBookingClientContext({
       clientId: clientId!,
       serviceId: serviceId!,
       staffId: staffId!,
     });
+    const ctx = quickBookStaffContext;
     const required = staffBookingItemsRequiringAcknowledgment(ctx);
     if (required.length > 0) {
       const missingAck: Record<string, string> = {};
@@ -316,6 +320,30 @@ export async function createAppointmentAction(
           throw noteErr;
         }
       }
+    }
+
+    const ctx = quickBookStaffContext;
+    if (!ctx) {
+      throw new Error('Staff booking context missing after pre-flight.');
+    }
+    // Persist operator attestations after the appointment row exists (ack API
+    // requires a real appointmentId). If a call below fails, the appointment
+    // remains — treat as rare; operator can re-ack from the client note flow.
+    for (const noteId of staffBookingItemsRequiringAcknowledgment(ctx).map(
+      (a) => a.id,
+    )) {
+      await acknowledgeClientNote(clientId!, noteId, {
+        staffId: staffId!,
+        triggerContext: 'booking',
+        appointmentId,
+      });
+    }
+    if (staffBookingFormsRequiringBookingAck(ctx).length > 0) {
+      await logRequiredFormsBookingAcknowledgment(appointmentId, {
+        staffId: staffId!,
+        clientId: clientId!,
+        serviceId: serviceId!,
+      });
     }
   } catch (err) {
     if (err instanceof ApiError) return apiErrorToState(err);

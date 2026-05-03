@@ -16,6 +16,8 @@ interface CalendarViewToggleProps {
   quickBookOpen?: boolean;
   /** Preserve block time panel on admin calendar. */
   blockTimeOpen?: boolean;
+  /** Public /book — keep tenant slug when switching month/week/day. */
+  tenantSlug?: string;
 }
 
 const MODES: CalendarViewMode[] = ['month', 'week', 'day'];
@@ -32,9 +34,12 @@ export function CalendarViewToggle({
   active,
   quickBookOpen,
   blockTimeOpen,
+  tenantSlug,
 }: CalendarViewToggleProps) {
   const qb = quickBookOpen ? '1' : undefined;
   const bt = blockTimeOpen ? '1' : undefined;
+  const tenant =
+    surface === 'book' && tenantSlug?.trim() ? tenantSlug.trim() : undefined;
   const base =
     surface === 'admin'
       ? '/admin/calendar'
@@ -55,6 +60,7 @@ export function CalendarViewToggle({
           view: mode,
           quickbook: qb,
           blocktime: bt,
+          tenant,
         });
         return (
           <Link

@@ -11,6 +11,7 @@ import {
   AppointmentIdParamsSchema,
   CreateAppointmentBodySchema,
   ListAppointmentsQuerySchema,
+  LogRequiredFormsBookingAckBodySchema,
   TransitionAppointmentBodySchema,
   UpdateAppointmentBodySchema,
 } from '../../schemas/appointment.js';
@@ -27,6 +28,10 @@ import {
   transitionAppointmentState,
   updateAppointment,
 } from '../../services/appointmentService.js';
+import {
+  StaffBookingComplianceError,
+  logRequiredFormsBookingAcknowledgment,
+} from '../../services/staffBookingComplianceService.js';
 
 // /admin/appointments — booking engine CRUD (E3-S1).
 //
@@ -217,6 +222,78 @@ export default async function appointmentsRoutes(
       }
 
       return reply.send({ appointment });
+    },
+  );
+
+  // POST /admin/appointments/:id/required-forms-booking-ack
+  app.post(
+    '/appointments/:id/required-forms-booking-ack',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const parsedBody = LogRequiredFormsBookingAckBodySchema.safeParse(
+        request.body,
+      );
+      if (!parsedBody.success) {
+        return reply.code(400).send(zodErrorBody(parsedBody.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      try {
+        await logRequiredFormsBookingAcknowledgment(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          appointmentId: params.data.id,
+          staffId: parsedBody.data.staffId,
+          clientId: parsedBody.data.clientId,
+          serviceId: parsedBody.data.serviceId,
+        });
+        return reply.code(201).send({ ok: true });
+      } catch (err) {
+        if (err instanceof StaffBookingComplianceError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: err.message,
+          });
+        }
+        throw err;
+      }
     },
   );
 

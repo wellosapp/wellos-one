@@ -71,13 +71,24 @@ export async function apiFetch<T>(
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache,
-    next,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache,
+      next,
+    });
+  } catch (cause) {
+    const msg =
+      cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `API fetch failed: ${method} ${url.href} (${msg}). ` +
+        `Set NEXT_PUBLIC_API_URL to your Fastify base (e.g. http://127.0.0.1:3001 for local) and ensure the API process is running.`,
+      { cause },
+    );
+  }
 
   // 204 No Content → no body
   if (res.status === 204) {

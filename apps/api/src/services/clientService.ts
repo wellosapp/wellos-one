@@ -528,3 +528,64 @@ export async function softDeleteClient(
     return { deleted: true };
   });
 }
+
+/** Epic 4 — silent duplicate attach by email + create when missing (docs/09-dev-handoff.md). */
+export async function resolveOrCreateClientForPublicBooking(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    email: string;
+    phone: string | undefined;
+    firstName: string;
+    lastName: string | undefined;
+  },
+): Promise<{ clientId: string; created: boolean; banned: boolean }> {
+  const emailTrimmed = args.email.trim();
+
+  const existing = await prisma.client.findFirst({
+    where: {
+      tenantId: args.tenantId,
+      email: { equals: emailTrimmed, mode: 'insensitive' },
+    },
+    select: {
+      id: true,
+      banned: true,
+    },
+  });
+
+  if (existing) {
+    return {
+      clientId: existing.id,
+      created: false,
+      banned: existing.banned,
+    };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const client = await tx.client.create({
+      data: {
+        tenantId: args.tenantId,
+        firstName: args.firstName.trim(),
+        lastName: args.lastName?.trim() || null,
+        email: emailTrimmed,
+        phone: args.phone?.trim() || null,
+      },
+      select: CLIENT_SAFE_FIELDS,
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: args.tenantId,
+        actorUserId: null,
+        actorType: 'system',
+        action: 'client.created',
+        entityType: 'client',
+        entityId: client.id,
+        before: Prisma.JsonNull,
+        after: client as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return { clientId: client.id, created: true, banned: false };
+  });
+}

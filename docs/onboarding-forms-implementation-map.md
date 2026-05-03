@@ -62,7 +62,7 @@
 | Canonical UX spec | **`02-onboarding-flow.md`** missing — import per [`MISSING-DOCS.md`](./MISSING-DOCS.md). |
 | Product write-up | **`onboarding-forms-write-up.md`** is **complete** — parity rows below still map primarily to `11-onboarding-buildout` tickets; write-up **§10–11** = acceptance + build order narrative (analytics §6 / sign-off §11 cited there). |
 | Onboarding wizard | No first-class wizard matching O-1–O-5; tenant provisioning may use Clerk/webhooks only — **gap vs buildout**. |
-| Forms epic | **Epic 5** largely unimplemented vs handoff; overlaps with partial intake/triage in booking CRM — track separately to avoid double-counting “done”. |
+| Forms epic | **Epic 5** largely unimplemented vs handoff; staff booking adds a **lightweight pre-book operator ack** when client-context marks forms `required_before_booking` / `required_before_visit` (see `staff-booking-implementation-map.md` A9 — not submission capture or magic links). |
 
 ---
 

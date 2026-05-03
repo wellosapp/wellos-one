@@ -120,6 +120,17 @@ export async function createAppointment(
   return apiFetch('/admin/appointments', { method: 'POST', body });
 }
 
+/** Persists audit when operator acknowledged required forms during Quick Book. */
+export async function logRequiredFormsBookingAcknowledgment(
+  appointmentId: string,
+  body: { staffId: string; clientId: string; serviceId: string },
+): Promise<{ ok: true }> {
+  return apiFetch(
+    `/admin/appointments/${appointmentId}/required-forms-booking-ack`,
+    { method: 'POST', body },
+  );
+}
+
 // 409 conflict body shape from the create route. Surfaces in catch blocks.
 export type AppointmentSlotConflictBody = {
   error: 'Conflict';

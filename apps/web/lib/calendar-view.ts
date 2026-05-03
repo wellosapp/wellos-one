@@ -142,6 +142,8 @@ export function buildCalendarUrl(
     quickbook?: string;
     /** Staff schedule block side panel (calendar-area-features §9). */
     blocktime?: string;
+    /** Public book surface — maps to `tenant` query (tenants.slug). */
+    tenant?: string;
   },
 ): string {
   const params = new URLSearchParams();
@@ -151,5 +153,6 @@ export function buildCalendarUrl(
   if (opts.tab) params.set('tab', opts.tab);
   if (opts.quickbook) params.set('quickbook', opts.quickbook);
   if (opts.blocktime) params.set('blocktime', opts.blocktime);
+  if (opts.tenant) params.set('tenant', opts.tenant);
   return `${basePath}?${params.toString()}`;
 }

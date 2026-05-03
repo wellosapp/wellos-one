@@ -403,3 +403,14 @@ export async function getStaffBookingClientContext(
     customRows: [],
   };
 }
+
+/** Matches web `staffBookingFormsRequiringBookingAck` — API-side compliance checks. */
+export function staffBookingFormsRequiringBookingAckWire(
+  context: StaffBookingClientContextResponseWire,
+): StaffBookingFormSummaryWire[] {
+  return context.forms.filter(
+    (f) =>
+      f.status === 'required_before_booking' ||
+      f.status === 'required_before_visit',
+  );
+}

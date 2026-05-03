@@ -26,7 +26,15 @@ async function corsPlugin(app: FastifyInstance): Promise<void> {
   await app.register(cors, {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Clerk-Auth'],
+    allowedHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Idempotency-Key',
+      'X-Clerk-Auth',
+      // Public booking tenant resolution (see routes/public/booking.ts).
+      'X-Wellos-Tenant-Slug',
+      'X-Tenant-Id',
+    ],
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (allowList.has(origin)) return cb(null, true);

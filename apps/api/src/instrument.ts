@@ -1,9 +1,7 @@
 // IMPORTANT: This file MUST be imported at the very top of src/index.ts,
-// before any other Fastify or app imports. Sentry's auto-instrumentation
-// patches Node modules at require time — instrumentation only catches code
-// loaded AFTER Sentry.init() runs.
-//
-// See https://docs.sentry.io/platforms/javascript/guides/fastify/install/
+// before any other Fastify or app imports. Call `preloadOpenTelemetry()` before
+// `Sentry.init()` and keep `fastify` as a dynamic import in `index.ts` so OTEL
+// can patch before construction (ESM + tsx).
 
 import * as Sentry from '@sentry/node';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
@@ -11,6 +9,7 @@ import { nodeProfilingIntegration } from '@sentry/profiling-node';
 const dsn = process.env.SENTRY_DSN_API;
 
 if (dsn) {
+  Sentry.preloadOpenTelemetry();
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV ?? 'development',
