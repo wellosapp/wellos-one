@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import {
+  isPrivilegedCalendarUser,
+  resolveStaffMemberIdForUser,
+} from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import { ListAvailabilityQuerySchema } from '../../schemas/appointment.js';
 import {
@@ -28,7 +32,7 @@ export default async function availabilityRoutes(
 ): Promise<void> {
   app.get(
     '/availability',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -36,6 +40,21 @@ export default async function availabilityRoutes(
       const parsed = ListAvailabilityQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return reply.code(400).send(zodErrorBody(parsed.error));
+      }
+
+      if (!isPrivilegedCalendarUser(user)) {
+        const selfId = await resolveStaffMemberIdForUser(
+          app.prisma,
+          tenantId,
+          user.email,
+        );
+        if (!selfId || parsed.data.staffId !== selfId) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message:
+              'You can only load availability for your own schedule.',
+          });
+        }
       }
 
       try {

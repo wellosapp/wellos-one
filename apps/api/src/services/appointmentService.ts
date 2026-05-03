@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import type { Appointment, AppointmentStatus } from '@prisma/client';
+import type {
+  Appointment,
+  AppointmentStatus,
+  ClientIntakeStatus,
+} from '@prisma/client';
 
 import type {
   ExtendedPrismaClient,
@@ -50,10 +54,32 @@ const APPOINTMENT_SAFE_FIELDS = {
   cancelledAt: true,
   cancelledByUserId: true,
   cancelReason: true,
+  bookedBasePriceCents: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
 } satisfies Prisma.AppointmentSelect;
+
+/** List/detail wire shape: appointment scalars + client intake for CRM/calendar chips. */
+export type AppointmentWithClientIntake = Appointment & {
+  clientIntakeStatus: ClientIntakeStatus;
+};
+
+const APPOINTMENT_WITH_CLIENT_INTAKE_SELECT = {
+  ...APPOINTMENT_SAFE_FIELDS,
+  client: { select: { intakeStatus: true } },
+} satisfies Prisma.AppointmentSelect;
+
+type AppointmentClientIntakeRow = Prisma.AppointmentGetPayload<{
+  select: typeof APPOINTMENT_WITH_CLIENT_INTAKE_SELECT;
+}>;
+
+function toAppointmentWithClientIntake(
+  row: AppointmentClientIntakeRow,
+): AppointmentWithClientIntake {
+  const { client, ...rest } = row;
+  return { ...rest, clientIntakeStatus: client.intakeStatus };
+}
 
 export type CreateAppointmentResult = { appointment: Appointment };
 export type UpdateAppointmentResult = { appointment: Appointment };
@@ -81,6 +107,37 @@ export class AppointmentSlotConflictError extends Error {
   }
 }
 
+/** Appointment overlaps a staff schedule block (break, PTO, closure, etc.). */
+export class AppointmentStaffScheduleBlockConflictError extends Error {
+  code = 'APPOINTMENT_STAFF_SCHEDULE_BLOCK_CONFLICT' as const;
+  blockId: string;
+  blockTitle: string;
+  blockStartsAt: Date;
+  blockEndsAt: Date;
+  staffId: string;
+  scheduledStartAt: Date;
+  scheduledEndAt: Date;
+  constructor(args: {
+    blockId: string;
+    blockTitle: string;
+    blockStartsAt: Date;
+    blockEndsAt: Date;
+    staffId: string;
+    scheduledStartAt: Date;
+    scheduledEndAt: Date;
+  }) {
+    super('This time range overlaps blocked time on the staff schedule.');
+    this.name = 'AppointmentStaffScheduleBlockConflictError';
+    this.blockId = args.blockId;
+    this.blockTitle = args.blockTitle;
+    this.blockStartsAt = args.blockStartsAt;
+    this.blockEndsAt = args.blockEndsAt;
+    this.staffId = args.staffId;
+    this.scheduledStartAt = args.scheduledStartAt;
+    this.scheduledEndAt = args.scheduledEndAt;
+  }
+}
+
 // Thrown when one of the FK references doesn't belong to the caller's
 // tenant (cross-tenant attempt) or doesn't exist. Route layer maps to 400
 // with field-style errors. Mirrors INVALID_STAFF_IDS / INVALID_TAG_IDS.
@@ -95,6 +152,28 @@ export class InvalidAppointmentReferenceError extends Error {
     this.name = 'InvalidAppointmentReferenceError';
     this.field = field;
   }
+}
+
+/** Terminal or completed appointments cannot move on the calendar via PATCH. */
+export class AppointmentRescheduleNotAllowedError extends Error {
+  code = 'APPOINTMENT_RESCHEDULE_NOT_ALLOWED' as const;
+  constructor(
+    message = 'This appointment cannot be rescheduled in its current state.',
+  ) {
+    super(message);
+    this.name = 'AppointmentRescheduleNotAllowedError';
+  }
+}
+
+const RESCHEDULABLE_STATES: AppointmentStatus[] = [
+  'scheduled',
+  'confirmed',
+  'checked_in',
+  'in_progress',
+];
+
+function appointmentAllowsCalendarReschedule(state: AppointmentStatus): boolean {
+  return RESCHEDULABLE_STATES.includes(state);
 }
 
 // Postgres exclusion-constraint violations surface as P2010 in Prisma 5.
@@ -118,6 +197,8 @@ async function findConflictingAppointmentId(
     staffId: string;
     scheduledStartAt: Date;
     scheduledEndAt: Date;
+    /** When updating an appointment, exclude its current row from overlap lookup. */
+    excludeAppointmentId?: string;
   },
 ): Promise<string | null> {
   // Best-effort lookup: surface ONE overlapping appointment id so the UI can
@@ -127,6 +208,9 @@ async function findConflictingAppointmentId(
     where: {
       staffId: args.staffId,
       state: { notIn: ['cancelled', 'no_show'] },
+      ...(args.excludeAppointmentId
+        ? { id: { not: args.excludeAppointmentId } }
+        : {}),
       AND: [
         { scheduledStartAt: { lt: args.scheduledEndAt } },
         { scheduledEndAt: { gt: args.scheduledStartAt } },
@@ -149,25 +233,39 @@ async function validateReferences(
   },
 ): Promise<{
   durationMinutes: number;
+  basePriceCents: number;
 }> {
-  const [location, client, staff, service] = await Promise.all([
-    tx.location.findFirst({
-      where: { id: args.locationId, tenantId: args.tenantId },
-      select: { id: true },
-    }),
-    tx.client.findFirst({
-      where: { id: args.clientId, tenantId: args.tenantId },
-      select: { id: true },
-    }),
-    tx.staff.findFirst({
-      where: { id: args.staffId, tenantId: args.tenantId },
-      select: { id: true, active: true },
-    }),
-    tx.service.findFirst({
-      where: { id: args.serviceId, tenantId: args.tenantId },
-      select: { id: true, durationMinutes: true, active: true },
-    }),
-  ]);
+  const [location, client, staff, service, assignmentCount, assignmentHit] =
+    await Promise.all([
+      tx.location.findFirst({
+        where: { id: args.locationId, tenantId: args.tenantId },
+        select: { id: true },
+      }),
+      tx.client.findFirst({
+        where: { id: args.clientId, tenantId: args.tenantId },
+        select: { id: true },
+      }),
+      tx.staff.findFirst({
+        where: { id: args.staffId, tenantId: args.tenantId },
+        select: { id: true, active: true },
+      }),
+      tx.service.findFirst({
+        where: { id: args.serviceId, tenantId: args.tenantId },
+        select: {
+          id: true,
+          durationMinutes: true,
+          active: true,
+          basePriceCents: true,
+        },
+      }),
+      tx.staffService.count({
+        where: { serviceId: args.serviceId },
+      }),
+      tx.staffService.findFirst({
+        where: { serviceId: args.serviceId, staffId: args.staffId },
+        select: { staffId: true },
+      }),
+    ]);
   if (!location)
     throw new InvalidAppointmentReferenceError(
       'locationId',
@@ -188,7 +286,18 @@ async function validateReferences(
       'serviceId',
       'Unknown service for this tenant.',
     );
-  return { durationMinutes: service.durationMinutes };
+  // Staff eligibility: when the service has explicit StaffService rows, the
+  // pair must exist; when no rows (legacy / open assignment), any staff OK.
+  if (assignmentCount > 0 && !assignmentHit) {
+    throw new InvalidAppointmentReferenceError(
+      'serviceId',
+      'This staff member is not assigned to this service.',
+    );
+  }
+  return {
+    durationMinutes: service.durationMinutes,
+    basePriceCents: service.basePriceCents,
+  };
 }
 
 async function writeAudit(
@@ -236,7 +345,7 @@ export async function createAppointment(
   const startAt = new Date(body.scheduledStartAt);
 
   return prisma.$transaction(async (tx) => {
-    const { durationMinutes } = await validateReferences(tx, {
+    const { durationMinutes, basePriceCents } = await validateReferences(tx, {
       tenantId,
       locationId: body.locationId,
       clientId: body.clientId,
@@ -245,6 +354,38 @@ export async function createAppointment(
     });
 
     const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
+
+    const blockHit = await tx.staffScheduleBlock.findFirst({
+      where: {
+        tenantId,
+        staffId: body.staffId,
+        deletedAt: null,
+        AND: [
+          { startsAt: { lt: endAt } },
+          { endsAt: { gt: startAt } },
+          {
+            OR: [{ locationId: null }, { locationId: body.locationId }],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+      },
+    });
+    if (blockHit) {
+      throw new AppointmentStaffScheduleBlockConflictError({
+        blockId: blockHit.id,
+        blockTitle: blockHit.title,
+        blockStartsAt: blockHit.startsAt,
+        blockEndsAt: blockHit.endsAt,
+        staffId: body.staffId,
+        scheduledStartAt: startAt,
+        scheduledEndAt: endAt,
+      });
+    }
 
     let appointment: Appointment;
     try {
@@ -260,6 +401,8 @@ export async function createAppointment(
           state: body.state ?? 'confirmed',
           notes: body.notes,
           createdByUserId: actorUserId,
+          bookedBasePriceCents: basePriceCents,
+          source: body.source ?? 'staff',
         },
         select: APPOINTMENT_SAFE_FIELDS,
       });
@@ -299,7 +442,7 @@ export async function listAppointments(
     tenantId: string;
     query: ListAppointmentsQuery;
   },
-): Promise<{ appointments: Appointment[]; total: number }> {
+): Promise<{ appointments: AppointmentWithClientIntake[]; total: number }> {
   const { tenantId, query } = args;
 
   const where: Prisma.AppointmentWhereInput = { tenantId };
@@ -315,10 +458,10 @@ export async function listAppointments(
     where.deletedAt = undefined;
   }
 
-  const [appointments, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.appointment.findMany({
       where,
-      select: APPOINTMENT_SAFE_FIELDS,
+      select: APPOINTMENT_WITH_CLIENT_INTAKE_SELECT,
       orderBy: [{ scheduledStartAt: 'asc' }, { id: 'asc' }],
       take: query.take,
       skip: query.skip,
@@ -326,17 +469,21 @@ export async function listAppointments(
     prisma.appointment.count({ where }),
   ]);
 
-  return { appointments, total };
+  return {
+    appointments: rows.map(toAppointmentWithClientIntake),
+    total,
+  };
 }
 
 export async function getAppointmentById(
   prisma: ExtendedPrismaClient,
   args: { tenantId: string; id: string },
-): Promise<Appointment | null> {
-  return prisma.appointment.findFirst({
+): Promise<AppointmentWithClientIntake | null> {
+  const row = await prisma.appointment.findFirst({
     where: { tenantId: args.tenantId, id: args.id },
-    select: APPOINTMENT_SAFE_FIELDS,
+    select: APPOINTMENT_WITH_CLIENT_INTAKE_SELECT,
   });
+  return row ? toAppointmentWithClientIntake(row) : null;
 }
 
 export async function updateAppointment(
@@ -346,9 +493,30 @@ export async function updateAppointment(
     actorUserId: string;
     id: string;
     body: UpdateAppointmentBody;
+    /** Set when PATCH includes x-wellos-calendar-drag (calendar UI drag-drop). */
+    markCalendarDrag?: boolean;
   },
 ): Promise<UpdateAppointmentResult | null> {
-  const { tenantId, actorUserId, id, body } = args;
+  const { tenantId, actorUserId, id, body, markCalendarDrag } = args;
+
+  const wantsReschedule =
+    body.scheduledStartAt !== undefined ||
+    body.staffId !== undefined ||
+    body.locationId !== undefined;
+
+  const hasPatch =
+    body.notes !== undefined ||
+    body.scheduledStartAt !== undefined ||
+    body.staffId !== undefined ||
+    body.locationId !== undefined;
+
+  if (!hasPatch) {
+    const existing = await prisma.appointment.findFirst({
+      where: { tenantId, id },
+      select: APPOINTMENT_SAFE_FIELDS,
+    });
+    return existing ? { appointment: existing } : null;
+  }
 
   return prisma.$transaction(async (tx) => {
     const before = await tx.appointment.findFirst({
@@ -357,17 +525,109 @@ export async function updateAppointment(
     });
     if (!before) return null;
 
-    // Empty PATCH → no-op. Don't write an audit row for a non-change.
-    const hasChanges = Object.keys(body).length > 0;
-    if (!hasChanges) {
-      return { appointment: before };
+    if (!wantsReschedule) {
+      const after = await tx.appointment.update({
+        where: { id },
+        data: { notes: body.notes },
+        select: APPOINTMENT_SAFE_FIELDS,
+      });
+
+      await writeAudit(tx, {
+        tenantId,
+        actorUserId,
+        action: 'appointment.updated',
+        entityId: after.id,
+        before,
+        after,
+      });
+
+      return { appointment: after };
     }
 
-    const after = await tx.appointment.update({
-      where: { id },
-      data: body,
-      select: APPOINTMENT_SAFE_FIELDS,
+    if (!appointmentAllowsCalendarReschedule(before.state)) {
+      throw new AppointmentRescheduleNotAllowedError();
+    }
+
+    const nextLocationId = body.locationId ?? before.locationId;
+    const nextStaffId = body.staffId ?? before.staffId;
+    const nextStartAt =
+      body.scheduledStartAt !== undefined
+        ? new Date(body.scheduledStartAt)
+        : before.scheduledStartAt;
+
+    const { durationMinutes } = await validateReferences(tx, {
+      tenantId,
+      locationId: nextLocationId,
+      clientId: before.clientId,
+      staffId: nextStaffId,
+      serviceId: before.serviceId,
     });
+
+    const endAt = new Date(nextStartAt.getTime() + durationMinutes * 60_000);
+
+    const blockHit = await tx.staffScheduleBlock.findFirst({
+      where: {
+        tenantId,
+        staffId: nextStaffId,
+        deletedAt: null,
+        AND: [
+          { startsAt: { lt: endAt } },
+          { endsAt: { gt: nextStartAt } },
+          {
+            OR: [{ locationId: null }, { locationId: nextLocationId }],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+      },
+    });
+    if (blockHit) {
+      throw new AppointmentStaffScheduleBlockConflictError({
+        blockId: blockHit.id,
+        blockTitle: blockHit.title,
+        blockStartsAt: blockHit.startsAt,
+        blockEndsAt: blockHit.endsAt,
+        staffId: nextStaffId,
+        scheduledStartAt: nextStartAt,
+        scheduledEndAt: endAt,
+      });
+    }
+
+    let after: Appointment;
+    try {
+      after = await tx.appointment.update({
+        where: { id },
+        data: {
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          scheduledStartAt: nextStartAt,
+          scheduledEndAt: endAt,
+          locationId: nextLocationId,
+          staffId: nextStaffId,
+          ...(markCalendarDrag ? { source: 'calendar_drag' } : {}),
+        },
+        select: APPOINTMENT_SAFE_FIELDS,
+      });
+    } catch (err) {
+      if (isExclusionViolation(err)) {
+        const conflictingAppointmentId = await findConflictingAppointmentId(tx, {
+          staffId: nextStaffId,
+          scheduledStartAt: nextStartAt,
+          scheduledEndAt: endAt,
+          excludeAppointmentId: id,
+        });
+        throw new AppointmentSlotConflictError({
+          staffId: nextStaffId,
+          scheduledStartAt: nextStartAt,
+          scheduledEndAt: endAt,
+          conflictingAppointmentId,
+        });
+      }
+      throw err;
+    }
 
     await writeAudit(tx, {
       tenantId,

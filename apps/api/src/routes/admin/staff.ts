@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import {
+  isPrivilegedCalendarUser,
+  resolveStaffMemberIdForUser,
+} from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
   CreateStaffBodySchema,
@@ -71,7 +75,7 @@ export default async function staffRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /admin/staff — list with optional filters + pagination
-  app.get('/staff', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/staff', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
@@ -80,21 +84,60 @@ export default async function staffRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send(zodErrorBody(parsed.error));
     }
 
-    const result = await listStaff(app.prisma, {
+    let result = await listStaff(app.prisma, {
       tenantId,
       query: parsed.data,
     });
+
+    if (!isPrivilegedCalendarUser(user)) {
+      const selfId = await resolveStaffMemberIdForUser(
+        app.prisma,
+        tenantId,
+        user.email,
+      );
+      if (!selfId) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      const mine = result.staff.filter((s) => s.id === selfId);
+      result = { staff: mine, total: mine.length };
+    }
+
     return reply.send(result);
   });
 
   // GET /admin/staff/:id — one (with serviceIds)
-  app.get('/staff/:id', { preHandler: requireRole.admin }, async (request, reply) => {
+  app.get('/staff/:id', { preHandler: requireRole.staff }, async (request, reply) => {
     const user = request.currentUser!;
     const tenantId = user.tenantId!;
 
     const params = StaffIdParamsSchema.safeParse(request.params);
     if (!params.success) {
       return reply.code(400).send(zodErrorBody(params.error));
+    }
+
+    if (!isPrivilegedCalendarUser(user)) {
+      const selfId = await resolveStaffMemberIdForUser(
+        app.prisma,
+        tenantId,
+        user.email,
+      );
+      if (!selfId) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (params.data.id !== selfId) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'You can only view your own staff profile.',
+        });
+      }
     }
 
     const staff = await getStaffById(app.prisma, {

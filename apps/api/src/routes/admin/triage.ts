@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
 import { withIdempotency } from '../../middleware/idempotency.js';
+import { staffAppointmentScope } from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
   AppointmentIdParamsSchema,
@@ -12,6 +13,7 @@ import {
   ServiceIdParamsSchema,
   UpdateBookingQuestionBodySchema,
 } from '../../schemas/triage.js';
+import { getAppointmentById } from '../../services/appointmentService.js';
 import {
   InvalidTriageReferenceError,
   InvalidTriageStateError,
@@ -249,6 +251,27 @@ export default async function triageRoutes(
         return reply.code(400).send(zodErrorBody(params.error));
       }
 
+      const appt = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.appointmentId,
+      });
+      if (!appt) return reply.code(404).send(APPT_NOT_FOUND);
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        appt.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') return reply.code(404).send(APPT_NOT_FOUND);
+
       const result = await listBookingAnswersForAppointment(app.prisma, {
         tenantId,
         appointmentId: params.data.appointmentId,
@@ -284,6 +307,30 @@ export default async function triageRoutes(
           scope: 'booking_answer.promote_to_note',
         },
         async () => {
+          const appt = await getAppointmentById(app.prisma, {
+            tenantId,
+            id: params.data.appointmentId,
+          });
+          if (!appt) return { status: 404, body: APPT_NOT_FOUND };
+
+          const scope = await staffAppointmentScope(
+            app.prisma,
+            user,
+            tenantId,
+            appt.staffId,
+          );
+          if (scope === 'no_staff_profile') {
+            return {
+              status: 403,
+              body: {
+                error: 'Forbidden',
+                message:
+                  'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+              },
+            };
+          }
+          if (scope === 'forbidden') return { status: 404, body: APPT_NOT_FOUND };
+
           try {
             const result = await promoteAnswerToNote(app.prisma, {
               tenantId,

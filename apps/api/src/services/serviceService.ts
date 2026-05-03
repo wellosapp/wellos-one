@@ -32,10 +32,16 @@ import type {
 const SERVICE_SAFE_FIELDS = {
   id: true,
   tenantId: true,
+  categoryId: true,
   name: true,
   description: true,
+  descriptionShort: true,
   durationMinutes: true,
   basePriceCents: true,
+  priceDisplayMode: true,
+  displayOrder: true,
+  publicVisible: true,
+  bufferBeforeMinutes: true,
   bufferAfterMinutes: true,
   color: true,
   active: true,
@@ -44,10 +50,29 @@ const SERVICE_SAFE_FIELDS = {
   deletedAt: true,
 } satisfies Prisma.ServiceSelect;
 
+const CATEGORY_SUMMARY_SELECT = {
+  id: true,
+  name: true,
+} satisfies Prisma.ServiceCategorySelect;
+
+const SERVICE_WITH_CATEGORY_SELECT = {
+  ...SERVICE_SAFE_FIELDS,
+  category: { select: CATEGORY_SUMMARY_SELECT },
+} satisfies Prisma.ServiceSelect;
+
+export type ServiceCategorySummary = {
+  id: string;
+  name: string;
+};
+
+export type ServiceListItem = Prisma.ServiceGetPayload<{
+  select: typeof SERVICE_WITH_CATEGORY_SELECT;
+}>;
+
 // Detail endpoint augments Service with staffIds (a derived projection of
 // staff_services join rows, not a column). List endpoint omits this for
 // per-row M2M-lookup cost reasons.
-export type ServiceWithStaff = Service & { staffIds: string[] };
+export type ServiceWithStaff = ServiceListItem & { staffIds: string[] };
 
 export type CreateServiceResult = { service: ServiceWithStaff };
 export type UpdateServiceResult = { service: ServiceWithStaff };
@@ -106,6 +131,23 @@ async function validateStaffIds(
   return [...foundIds];
 }
 
+async function validateCategoryId(
+  tx: ExtendedTransactionClient,
+  args: { tenantId: string; categoryId: string },
+): Promise<void> {
+  const row = await tx.serviceCategory.findFirst({
+    where: { tenantId: args.tenantId, id: args.categoryId },
+    select: { id: true },
+  });
+  if (!row) {
+    const err = new Error(
+      `Unknown service category for this tenant: ${args.categoryId}`,
+    );
+    (err as Error & { code?: string }).code = 'INVALID_CATEGORY_ID';
+    throw err;
+  }
+}
+
 // Replace the staff_services rows for a service with exactly the given
 // set. Caller is responsible for already having validated the IDs.
 async function replaceServiceStaff(
@@ -134,6 +176,48 @@ async function loadStaffIds(
   return rows.map((r) => r.staffId);
 }
 
+function buildUpdateData(
+  body: UpdateServiceBody,
+): Prisma.ServiceUpdateInput | null {
+  const data: Prisma.ServiceUpdateInput = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.description !== undefined) data.description = body.description;
+  if (body.descriptionShort !== undefined) {
+    data.descriptionShort = body.descriptionShort;
+  }
+  if (body.durationMinutes !== undefined) {
+    data.durationMinutes = body.durationMinutes;
+  }
+  if (body.basePriceCents !== undefined) {
+    data.basePriceCents = body.basePriceCents;
+  }
+  if (body.displayOrder !== undefined) data.displayOrder = body.displayOrder;
+  if (body.publicVisible !== undefined) {
+    data.publicVisible = body.publicVisible;
+  }
+  if (body.bufferBeforeMinutes !== undefined) {
+    data.bufferBeforeMinutes = body.bufferBeforeMinutes;
+  }
+  if (body.bufferAfterMinutes !== undefined) {
+    data.bufferAfterMinutes = body.bufferAfterMinutes;
+  }
+  if (body.priceDisplayMode !== undefined) {
+    data.priceDisplayMode = body.priceDisplayMode;
+  }
+  if (body.color !== undefined) data.color = body.color;
+  if (body.active !== undefined) data.active = body.active;
+
+  if (body.categoryId !== undefined) {
+    if (body.categoryId === null || body.categoryId === '') {
+      data.category = { disconnect: true };
+    } else {
+      data.category = { connect: { id: body.categoryId } };
+    }
+  }
+
+  return Object.keys(data).length > 0 ? data : null;
+}
+
 export async function createService(
   prisma: ExtendedPrismaClient,
   args: {
@@ -149,20 +233,28 @@ export async function createService(
       ? await validateStaffIds(tx, { tenantId, staffIds: body.staffIds })
       : [];
 
+    if (body.categoryId) {
+      await validateCategoryId(tx, { tenantId, categoryId: body.categoryId });
+    }
+
     const service = await tx.service.create({
       data: {
         tenantId,
         name: body.name,
         description: body.description,
+        descriptionShort: body.descriptionShort,
         durationMinutes: body.durationMinutes,
         basePriceCents: body.basePriceCents,
+        categoryId: body.categoryId ?? undefined,
+        displayOrder: body.displayOrder,
+        publicVisible: body.publicVisible,
+        bufferBeforeMinutes: body.bufferBeforeMinutes,
+        bufferAfterMinutes: body.bufferAfterMinutes,
+        priceDisplayMode: body.priceDisplayMode,
         color: body.color,
-        // Default to active=true on create unless explicitly false. Same
-        // default the DB column has, but stating it here avoids surprise
-        // if the schema default ever changes.
         active: body.active ?? true,
       },
-      select: SERVICE_SAFE_FIELDS,
+      select: SERVICE_WITH_CATEGORY_SELECT,
     });
 
     if (body.staffIds) {
@@ -183,11 +275,18 @@ export async function createService(
       action: 'service.created',
       entityId: service.id,
       before: null,
-      after: withStaff,
+      after: stripCategoryForAudit(withStaff),
     });
 
     return { service: withStaff };
   });
+}
+
+/** Audit payloads mirror historical Service JSON shape (no nested category). */
+function stripCategoryForAudit(s: ServiceWithStaff): AuditPayload {
+  const { staffIds, category: _c, ...rest } = s;
+  void _c;
+  return { ...(rest as Service), staffIds };
 }
 
 export async function listServices(
@@ -196,29 +295,54 @@ export async function listServices(
     tenantId: string;
     query: ListServicesQuery;
   },
-): Promise<{ services: Service[]; total: number }> {
+): Promise<{ services: ServiceListItem[]; total: number }> {
   const { tenantId, query } = args;
 
-  // Build a Prisma where that the soft-delete extension can still inject
-  // deletedAt: null into. Setting deletedAt explicitly in the where (when
-  // includeDeleted is true) opts out.
   const where: Prisma.ServiceWhereInput = { tenantId };
   if (query.active !== undefined) where.active = query.active;
+  if (query.publicVisible !== undefined) {
+    where.publicVisible = query.publicVisible;
+  }
+  if (query.categoryId !== undefined) {
+    where.categoryId = query.categoryId;
+  }
   if (query.q) {
     where.OR = [
       { name: { contains: query.q, mode: 'insensitive' } },
       { description: { contains: query.q, mode: 'insensitive' } },
+      {
+        descriptionShort: { contains: query.q, mode: 'insensitive' },
+      },
     ];
   }
   if (query.includeDeleted) {
     where.deletedAt = undefined;
   }
+  if (query.staffId) {
+    where.AND = [
+      ...(where.AND
+        ? Array.isArray(where.AND)
+          ? where.AND
+          : [where.AND]
+        : []),
+      {
+        OR: [
+          { staff: { none: {} } },
+          { staff: { some: { staffId: query.staffId } } },
+        ],
+      },
+    ];
+  }
 
   const [services, total] = await Promise.all([
     prisma.service.findMany({
       where,
-      select: SERVICE_SAFE_FIELDS,
-      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      select: SERVICE_WITH_CATEGORY_SELECT,
+      orderBy: [
+        { displayOrder: 'asc' },
+        { name: 'asc' },
+        { id: 'asc' },
+      ],
       take: query.take,
       skip: query.skip,
     }),
@@ -238,7 +362,7 @@ export async function getServiceById(
   return prisma.$transaction(async (tx) => {
     const service = await tx.service.findFirst({
       where: { tenantId: args.tenantId, id: args.id },
-      select: SERVICE_SAFE_FIELDS,
+      select: SERVICE_WITH_CATEGORY_SELECT,
     });
     if (!service) return null;
     const staffIds = await loadStaffIds(tx, service.id);
@@ -260,13 +384,15 @@ export async function updateService(
   return prisma.$transaction(async (tx) => {
     const beforeService = await tx.service.findFirst({
       where: { tenantId, id },
-      select: SERVICE_SAFE_FIELDS,
+      select: SERVICE_WITH_CATEGORY_SELECT,
     });
     if (!beforeService) return null;
     const beforeStaffIds = await loadStaffIds(tx, id);
-    const before: ServiceWithStaff = { ...beforeService, staffIds: beforeStaffIds };
+    const before: ServiceWithStaff = {
+      ...beforeService,
+      staffIds: beforeStaffIds,
+    };
 
-    // Empty PATCH (no service fields, no staffIds) → no-op.
     const hasServiceChanges =
       Object.keys(body).filter((k) => k !== 'staffIds').length > 0;
     const hasStaffIdsChange = 'staffIds' in body && body.staffIds !== undefined;
@@ -274,16 +400,28 @@ export async function updateService(
       return { service: before };
     }
 
+    if (body.categoryId !== undefined && body.categoryId !== null) {
+      const cid =
+        typeof body.categoryId === 'string' && body.categoryId.length > 0
+          ? body.categoryId
+          : null;
+      if (cid) {
+        await validateCategoryId(tx, { tenantId, categoryId: cid });
+      }
+    }
+
     let afterService = beforeService;
     if (hasServiceChanges) {
-      // Strip staffIds (not a service column) before passing data to update.
-      const { staffIds: _omit, ...serviceFields } = body;
+      const { staffIds: _omit, ...rest } = body;
       void _omit;
-      afterService = await tx.service.update({
-        where: { id },
-        data: serviceFields,
-        select: SERVICE_SAFE_FIELDS,
-      });
+      const updateData = buildUpdateData(rest);
+      if (updateData) {
+        afterService = await tx.service.update({
+          where: { id },
+          data: updateData,
+          select: SERVICE_WITH_CATEGORY_SELECT,
+        });
+      }
     }
 
     let afterStaffIds = beforeStaffIds;
@@ -303,8 +441,8 @@ export async function updateService(
       actorUserId,
       action: 'service.updated',
       entityId: after.id,
-      before,
-      after,
+      before: stripCategoryForAudit(before),
+      after: stripCategoryForAudit(after),
     });
 
     return { service: after };
@@ -324,7 +462,7 @@ export async function softDeleteService(
   return prisma.$transaction(async (tx) => {
     const beforeService = await tx.service.findFirst({
       where: { tenantId, id },
-      select: SERVICE_SAFE_FIELDS,
+      select: SERVICE_WITH_CATEGORY_SELECT,
     });
     if (!beforeService) return { deleted: false };
     const beforeStaffIds = await loadStaffIds(tx, id);
@@ -332,19 +470,25 @@ export async function softDeleteService(
     const afterService = await tx.service.update({
       where: { id },
       data: { deletedAt: new Date() },
-      select: SERVICE_SAFE_FIELDS,
+      select: SERVICE_WITH_CATEGORY_SELECT,
     });
 
-    // Don't tear down staff_services rows on soft-delete: assignment
-    // history is part of the audit/reporting trail. The booking engine
-    // will filter on service.deletedAt at query time.
+    const before: ServiceWithStaff = {
+      ...beforeService,
+      staffIds: beforeStaffIds,
+    };
+    const after: ServiceWithStaff = {
+      ...afterService,
+      staffIds: beforeStaffIds,
+    };
+
     await writeAudit(tx, {
       tenantId,
       actorUserId,
       action: 'service.deleted',
       entityId: id,
-      before: { ...beforeService, staffIds: beforeStaffIds },
-      after: { ...afterService, staffIds: beforeStaffIds },
+      before: stripCategoryForAudit(before),
+      after: stripCategoryForAudit(after),
     });
 
     return { deleted: true };

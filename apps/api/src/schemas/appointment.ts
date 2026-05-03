@@ -59,6 +59,20 @@ const REASON = z
   .optional()
   .or(z.literal('').transform(() => undefined));
 
+// Matches Prisma enum `AppointmentSource`. Sent by clients for analytics paths
+// (Quick Book, staff UI, public web, etc.).
+export const AppointmentSourceSchema = z.enum([
+  'web',
+  'staff',
+  'widget',
+  'api',
+  'import',
+  'campaign',
+  'walk_in',
+  'quick_book',
+  'calendar_drag',
+]);
+
 export const CreateAppointmentBodySchema = z.object({
   locationId: TRIM_NONEMPTY,
   clientId: TRIM_NONEMPTY,
@@ -69,16 +83,22 @@ export const CreateAppointmentBodySchema = z.object({
   // plan. Clients can override to schedule but most won't bother.
   state: AppointmentStatusSchema.optional(),
   notes: NOTES,
+  /** When omitted, server defaults to `staff` for backwards compatibility. */
+  source: AppointmentSourceSchema.optional(),
 });
 export type CreateAppointmentBody = z.infer<typeof CreateAppointmentBodySchema>;
 
-// PATCH only allows editing the editable subset. Time triple (start/end/
-// duration) and FK references are NOT editable to keep the EXCLUDE re-check
-// surface small — cancel + create a new appointment if you need to change
-// the time. State changes go through POST /:id/transition.
+// PATCH allows notes updates and calendar reschedule (same appointment row).
+// Optional scheduledStartAt / staffId / locationId together update time and/or
+// column; scheduledEndAt is recomputed from Service.durationMinutes.
+// Pass header x-wellos-calendar-drag: 1 from our calendar UI so source can be
+// set to calendar_drag for analytics. State changes still use POST transition.
 export const UpdateAppointmentBodySchema = z
   .object({
     notes: NOTES,
+    scheduledStartAt: ISO_DATETIME.optional(),
+    staffId: TRIM_NONEMPTY.optional(),
+    locationId: TRIM_NONEMPTY.optional(),
   })
   .strict();
 export type UpdateAppointmentBody = z.infer<typeof UpdateAppointmentBodySchema>;
@@ -108,7 +128,8 @@ export const ListAppointmentsQuerySchema = z.object({
   state: AppointmentStatusSchema.optional(),
   from: ISO_DATETIME.optional(),
   to: ISO_DATETIME.optional(),
-  take: z.coerce.number().int().min(1).max(200).default(50),
+  // Calendar week/month views request a wider window (see apps/web/lib/calendar-view.ts).
+  take: z.coerce.number().int().min(1).max(500).default(50),
   skip: z.coerce.number().int().min(0).default(0),
   includeDeleted: QueryBoolFlag,
 });
