@@ -1,23 +1,31 @@
 /**
  * Bootstrap admin script — Epic 1 sub-step 8
  *
- * Creates a Tenant + default Location, claims an orphan user as admin.
- * One-shot, idempotent, atomic. Run from a trusted laptop with the
- * production DATABASE_URL in .env.
+ * Creates a Tenant + default Location, claims an orphan user as admin
+ * (or super_admin with --super). One-shot, idempotent, atomic. Run from
+ * a trusted laptop with the production DATABASE_URL in .env.
  *
  * Usage:
  *   pnpm --filter @wellos/api bootstrap:admin -- \
  *     --email johnathan.carlson@me.com \
  *     --tenant-name "Wellos" \
  *     [--tenant-slug "wellos"] \
- *     [--location-name "Main"]
+ *     [--location-name "Main"] \
+ *     [--super]
+ *
+ * --super provisions the user as `super_admin` instead of `admin`. The
+ * super_admin role can impersonate other users via the Sign-in-as flow
+ * (see docs/SESSION-HANDOFF-2026-05-20.md §6). NEVER expose this flag
+ * through any web UI — it's intentionally CLI-only.
  *
  * Idempotent: re-running with the same args is safe.
  *   - Tenant upserted by slug
  *   - User claim no-op if already in this tenant; refuses if user is in
  *     a different tenant
  *   - Location created only if no Location with the same name exists
- *   - RoleAssignment upserted by composite key
+ *   - RoleAssignment upserted by composite key (admin AND super_admin
+ *     can coexist on the same user; --super adds super_admin without
+ *     removing admin)
  *
  * Audit log: every state change writes to audit_log with actorType='system'.
  */
@@ -36,6 +44,7 @@ type Args = {
   tenantName: string;
   tenantSlug: string;
   locationName: string;
+  superAdmin: boolean;
 };
 
 function slugify(s: string): string {
@@ -52,6 +61,7 @@ function parseAndValidateArgs(): Args {
       'tenant-name': { type: 'string' },
       'tenant-slug': { type: 'string' },
       'location-name': { type: 'string' },
+      super: { type: 'boolean', default: false },
     },
     strict: true,
   });
@@ -63,8 +73,9 @@ function parseAndValidateArgs(): Args {
 
   const tenantSlug = values['tenant-slug']?.trim() || slugify(tenantName);
   const locationName = values['location-name']?.trim() || tenantName;
+  const superAdmin = values.super === true;
 
-  return { email, tenantName, tenantSlug, locationName };
+  return { email, tenantName, tenantSlug, locationName, superAdmin };
 }
 
 async function main(): Promise<void> {
@@ -103,9 +114,16 @@ async function main(): Promise<void> {
     }
     const user = candidates[0]!;
 
-    const adminRole = await prisma.role.findUnique({ where: { name: 'admin' } });
-    if (!adminRole) {
-      throw new Error('Admin role not found. Run `pnpm --filter @wellos/api db:seed` first.');
+    const targetRoleName = args.superAdmin ? 'super_admin' : 'admin';
+    const targetRole = await prisma.role.findUnique({ where: { name: targetRoleName } });
+    if (!targetRole) {
+      throw new Error(
+        `Role "${targetRoleName}" not found. ${
+          args.superAdmin
+            ? 'Run the migration 20260520090000_super_admin_role_and_impersonation_audit first (or `pnpm --filter @wellos/api db:seed`).'
+            : 'Run `pnpm --filter @wellos/api db:seed` first.'
+        }`,
+      );
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -188,7 +206,7 @@ async function main(): Promise<void> {
           tenantId_userId_roleId: {
             tenantId: tenant.id,
             userId: user.id,
-            roleId: adminRole.id,
+            roleId: targetRole.id,
           },
         },
       });
@@ -196,11 +214,13 @@ async function main(): Promise<void> {
       let assignment = existingAssignment;
       if (!assignment) {
         assignment = await tx.roleAssignment.create({
-          data: { tenantId: tenant.id, userId: user.id, roleId: adminRole.id },
+          data: { tenantId: tenant.id, userId: user.id, roleId: targetRole.id },
         });
         roleAssigned = true;
         audits.push({
-          action: 'user.role_assigned',
+          action: args.superAdmin
+            ? 'user.super_admin_role_assigned'
+            : 'user.role_assigned',
           entityType: 'role_assignment',
           entityId: assignment.id,
           before: null,
@@ -272,7 +292,7 @@ async function main(): Promise<void> {
       }`,
     );
     console.log(
-      `Role assignment:  admin — id=${result.assignment?.id}${
+      `Role assignment:  ${targetRoleName}${args.superAdmin ? ' [SUPER ADMIN]' : ''} — id=${result.assignment?.id}${
         result.roleAssigned ? ' [CREATED]' : ' [existing]'
       }`,
     );

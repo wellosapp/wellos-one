@@ -288,6 +288,7 @@ model User {
   tenant              Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   roleAssignments     RoleAssignment[]
   auditEntries        AuditLog[]       @relation("AuditActor")
+  auditSubjectEntries AuditLog[]       @relation("AuditSubject")
   authoredClientNotes ClientNote[]     @relation("ClientNoteAuthorUser")
 
   @@unique([tenantId, email])
@@ -300,7 +301,7 @@ model User {
 
 model Role {
   id          String    @id @default(cuid())
-  name        String    @unique // 'admin' | 'manager' | 'staff'
+  name        String    @unique // 'super_admin' | 'admin' | 'manager' | 'staff'
   description String?
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -389,25 +390,32 @@ model IdempotencyKey {
 // Append-only. No `updatedAt`, no soft-delete; rows are immutable once written.
 
 model AuditLog {
-  id          String    @id @default(cuid())
-  tenantId    String?   @map("tenant_id")
-  actorUserId String?   @map("actor_user_id")
-  actorType   ActorType @map("actor_type")
-  action      String
-  entityType  String    @map("entity_type")
-  entityId    String    @map("entity_id")
-  before      Json?
-  after       Json?
-  ip          String?
-  userAgent   String?   @map("user_agent")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id            String    @id @default(cuid())
+  tenantId      String?   @map("tenant_id")
+  actorUserId   String?   @map("actor_user_id")
+  actorType     ActorType @map("actor_type")
+  // Filled only when the action was performed under super-admin impersonation.
+  // `actorUserId` stays the real human (the super-admin); `subjectUserId` is
+  // the user whose session was being assumed. Lets the audit trail survive
+  // the impersonation flow per docs/SESSION-HANDOFF-2026-05-20.md §6.
+  subjectUserId String?   @map("subject_user_id")
+  action        String
+  entityType    String    @map("entity_type")
+  entityId      String    @map("entity_id")
+  before        Json?
+  after         Json?
+  ip            String?
+  userAgent     String?   @map("user_agent")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  actor  User?   @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  tenant  Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  actor   User?   @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  subject User?   @relation("AuditSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
   @@index([entityType, entityId])
   @@index([actorUserId])
+  @@index([subjectUserId])
   @@map("audit_log")
 }
 
