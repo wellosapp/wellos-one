@@ -1,7 +1,7 @@
 import { getAuth } from '@clerk/fastify';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 
-import type { CurrentUser } from '../types/fastify.js';
+import type { CurrentUser, Impersonator } from '../types/fastify.js';
 
 // preHandler that resolves the Clerk session to a DB user (with tenant-scoped
 // roles) and stashes the result on `request.currentUser` for downstream guards
@@ -86,4 +86,58 @@ export const loadCurrentUser: preHandlerHookHandler = async (
   };
 
   request.currentUser = currentUser;
+
+  // Impersonation: Clerk's actor token flow sets `auth.actor.sub` to the
+  // ORIGINAL signer's clerkUserId. `auth.userId` is the impersonated user
+  // (whose session is active). Fetch the impersonator so audit-log writes
+  // can record both actor_user_id (real human) and subject_user_id
+  // (impersonated user). If the impersonator row is missing or soft-deleted,
+  // we log loudly and refuse — an active actor claim with no DB user is a
+  // tamper signal.
+  const actorClerkUserId =
+    typeof auth.actor === 'object' && auth.actor !== null && 'sub' in auth.actor
+      ? String(auth.actor.sub)
+      : null;
+
+  if (actorClerkUserId) {
+    const actor = await request.server.prisma.user.findUnique({
+      where: { clerkUserId: actorClerkUserId },
+      select: {
+        id: true,
+        email: true,
+        deletedAt: true,
+        tenantId: true,
+        roleAssignments: {
+          select: {
+            tenantId: true,
+            role: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    if (!actor || actor.deletedAt) {
+      request.log.error(
+        { clerkUserId: auth.userId, actorClerkUserId, url: request.url },
+        'loadCurrentUser: actor claim present but actor user missing or soft-deleted — 401',
+      );
+      return reply.code(401).send({
+        error: 'Unauthorized',
+        message: 'Impersonation actor not found.',
+      });
+    }
+
+    const actorRoles = actor.roleAssignments
+      .filter((a) => a.tenantId === actor.tenantId)
+      .map((a) => a.role.name);
+
+    const impersonator: Impersonator = {
+      id: actor.id,
+      clerkUserId: actorClerkUserId,
+      email: actor.email,
+      roles: actorRoles,
+    };
+
+    request.impersonator = impersonator;
+  }
 };
