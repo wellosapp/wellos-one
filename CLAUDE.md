@@ -115,7 +115,118 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 
 ---
 
-## 4. Hard rules (from `00-V2-per-build-setup.md` §3.4)
+## 4. Commands
+
+pnpm 10 is the only supported package manager. The root workspace delegates to each app via pnpm filters.
+
+```bash
+# Dev — all three apps in parallel
+pnpm dev                                      # api:3001 · web:3002 · studio:3003
+
+# Dev — single app
+pnpm --filter @wellos/api dev
+pnpm --filter @wellos/web dev
+pnpm --filter @wellos/studio dev
+
+# Database (api workspace owns these; root .env is the value source)
+pnpm --filter @wellos/api db:migrate          # interactive — uses DIRECT_URL
+pnpm --filter @wellos/api db:migrate:deploy   # non-interactive
+pnpm --filter @wellos/api db:seed             # idempotent
+pnpm --filter @wellos/api db:studio           # Prisma Studio against connected DB
+pnpm --filter @wellos/api bootstrap:admin     # bootstrap first admin user
+
+# Env scaffolding — creates all four required .env files (see §5 Cross-cutting)
+bash scripts/setup-env.sh                     # macOS / Linux / Git Bash on Windows
+pwsh scripts/setup-env.ps1                    # PowerShell on Windows
+
+# Quality gates (all run --no-bail across workspaces)
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+
+# Smoke
+curl http://localhost:3001/healthz            # {"ok":true,"db":"ok"} when DB reachable
+curl http://localhost:3001/version            # commit SHA + deployment id
+```
+
+Notes:
+- `apps/api` lint/test scripts are currently `exit 0` placeholders. Vitest is not yet wired. `apps/web` and `apps/studio` run `next lint` only. **No single-test runner exists yet** — coordinate before adding one.
+- `prisma generate` runs automatically in api's `postinstall` and `build` — usually no need to call it directly. If you see "Cannot find module '@prisma/client'" mid-session, run `pnpm install` from the repo root.
+- Migrations apply only via the local `db:migrate` command. Railway does **not** run `migrate deploy` at build time — see §5 Cross-cutting.
+
+---
+
+## 5. Code architecture
+
+### apps/api (Fastify 5, ESM, tsx in dev, deployed to Railway)
+
+**Boot order in `src/index.ts` is load-bearing — do not reorder:**
+1. `import './instrument.js'` — Sentry init **first** so auto-instrumentation patches Node modules before Fastify loads.
+2. `BigInt.prototype.toJSON = ...` — Prisma returns BigInt for columns like `MediaAsset.sizeBytes`; without this Fastify's serializer throws on response.
+3. `Sentry.setupFastifyErrorHandler(app)` — wires Sentry into Fastify's error pipeline.
+4. Plugin register order: `corsPlugin` → `clerkPlugin` → `prismaPlugin`. CORS first so OPTIONS preflights short-circuit before Clerk's JWKS work. Clerk populates `request.auth` but does **not** block — auth is per-route opt-in via the `requireAuth` middleware.
+5. Route register order: `meRoutes` → `adminRoutes` → `publicRoutes` → `webhookRoutes`. Webhooks last because their raw-body content-type parser is scoped to that `register()` call — registering anything after them would inherit the wrong parser.
+
+**Three-layer pattern inside `apps/api/src/`:**
+
+| Layer | Where | Responsibility |
+|---|---|---|
+| Routes | `routes/admin/*`, `routes/public/*`, `routes/webhooks/*`, `routes/me.ts` | HTTP shape — Zod validation → call service → format response |
+| Services | `services/*Service.ts` | Business logic. Multi-tenant scoping happens here. No HTTP awareness. |
+| Schemas | `schemas/*.ts` | Zod request/response shapes shared between routes and services |
+
+Supporting modules:
+- `plugins/` — Fastify plugins (Clerk, CORS, Prisma).
+- `middleware/` — `requireAuth`, `requireRole`, `loadCurrentUser`, `idempotency`. Composed per-route, not global.
+- `integrations/` — third-party SDK wrappers. Currently `r2.ts` (Cloudflare R2 for media). Per hard-rule #12, provider SDK calls live here.
+- `lib/` — pure utilities (`rfc5545.ts` for iCal generation).
+- `db/` — `client.ts` (Prisma client wrapper) and `softDelete.ts` (soft-delete helpers).
+- `types/` — shared TS types within api.
+
+**Sentinel endpoints:**
+- `/healthz` — pings Postgres to keep the pool warm between Railway cold starts (BetterStack hits this every 3 min). Returns 200 even if DB is down, with `db: 'error'` in body — so BetterStack doesn't false-alarm on Supabase blips.
+- `/version` — exposes `RAILWAY_GIT_COMMIT_SHA`, `RAILWAY_DEPLOYMENT_ID`, `RAILWAY_ENVIRONMENT_NAME`. Use to verify post-deploy that prod is on the expected commit. Lesson from 2026-04-29: a failed Railway deploy can silently roll back and `/healthz` keeps returning 200 on stale code.
+
+### apps/web (Next.js 14 App Router, React 18, Tailwind, Vercel → app.wellos.one)
+
+Admin sections wired so far: `app/admin/{calendar,clients,services,staff,client-tags,media}`. Plus `app/dashboard`, `app/sign-in`, `app/sign-up`, and root layout/providers/global-error boundary.
+
+Per `memory/feedback_admin_lists_need_row_actions.md`: every admin list ships with rightmost Actions column (Edit + Soft-delete) from day one. No list-only views.
+
+### apps/studio (Next.js 14 App Router, React 18, Vercel → app.wellos.studio)
+
+PWA shell. Currently hello-world; the lighter UI surface is yet to be built. Same underlying API as `apps/web`.
+
+### packages/
+
+- **`@wellos/notifications`** — `EmailProvider` + `SmsProvider` interfaces with adapters: `PostmarkEmailProvider`, `TextlinkSmsProvider`, plus `NoopEmailProvider` / `NoopSmsProvider` for dev. Provider SDK calls live behind these interfaces per hard-rule #12.
+- **`@wellos/shared`** — shared types/utils placeholder. Mostly empty so far.
+
+### prisma/
+
+Single `schema.prisma` at repo root, shared by all apps. `seed.ts` is wired via root `package.json` `prisma.seed` field (tsx against `apps/api/tsconfig.json`).
+
+Migrations landed so far (per filename):
+- `init_foundation` — tenants, users, roles, flags
+- `users_tenant_id_nullable` — tenant_id nullable during initial Clerk sync
+- `add_clients_staff_services` — CRM + staff + service catalog
+- `add_appointments` — booking core
+- `tier_a_client_memory_and_triage` — client memory + triage
+- `tier_a_revise_to_universal_media_assets` — unified media (R2-backed)
+- `staff_calendar_feed_token` — staff iCal feed tokens (current branch)
+
+### Cross-cutting
+
+- **TypeScript:** `tsconfig.base.json` enables `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`. Each workspace extends this — don't loosen it.
+- **Engines pin:** root `package.json` caps Node at `<21` to prevent Nixpacks silently jumping versions. See `memory/project_node_version_pin.md` for the incident this prevents.
+- **Four env files** — root `.env` (Prisma CLI), `apps/api/.env` (tsx), `apps/web/.env.local`, `apps/studio/.env.local` (Next.js per-app). `scripts/setup-env.sh` scaffolds all four idempotently. See README "Fresh-clone walkthrough" for why each tool needs its own copy.
+- **Dev DB = prod DB.** There is no separate dev Supabase. `db:migrate` against the live DB **is** the production migration. See `memory/project_single_db_dev_eq_prod.md` and `memory/project_migrations_apply_locally.md`.
+- **File storage is Cloudflare R2 in practice** (`apps/api/src/integrations/r2.ts`). The §3 stack table line "Supabase Storage" is aspirational — current code wires R2. See `memory/cloudflare_and_storage.md`.
+
+---
+
+## 6. Hard rules (from `00-V2-per-build-setup.md` §3.4)
 
 1. **Never commit `.env` files or secrets.** The only env file committed is `.env.example` with empty placeholders.
 2. **Never push directly to `main`.** Always work on a `feature/*` branch and open a PR.
@@ -134,7 +245,7 @@ When `mindbody-rebuild-master-spec.md` references the v1 stack (Drizzle / Lucia 
 
 ---
 
-## 5. Design direction
+## 7. Design direction
 
 One sentence: **warm professional — not clinical, not techy, not corporate**. Subtle shadows over heavy ones. Warm off-white over cold grey. Sage accent over corporate blue. "Looks like a well-run boutique business," not "SaaS dashboard."
 
@@ -142,9 +253,9 @@ All color / spacing / radius / shadow values reference CSS custom-property token
 
 ---
 
-## 6. Daily workflow (from `00-V2-per-build-setup.md` §8)
+## 8. Daily workflow (from `00-V2-per-build-setup.md` §8)
 
-### 6.1 Starting a ticket
+### 8.1 Starting a ticket
 
 ```bash
 git checkout main && git pull origin main
@@ -154,11 +265,11 @@ git checkout -b feature/O-3-business-profile-setup   # one ticket, one branch
 Then **before writing code**, Claude must:
 1. State the ticket ID and which epic it belongs to.
 2. List the spec docs it will read (from §2 above).
-3. Fire the applicable skills from §8.
+3. Fire the applicable skills from §10.
 4. Confirm the file list to touch with the human.
 5. For non-trivial tickets, enter plan mode and draft a plan first.
 
-### 6.2 While working
+### 8.2 While working
 
 - Commit in small meaningful increments.
 - Conventional commit format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
@@ -169,7 +280,7 @@ Then **before writing code**, Claude must:
 - Vercel posts a Preview URL on every PR — use it to verify UI changes before requesting review.
 - **Read every diff Claude Code generates. Every line.** The human is accountable for what ships.
 
-### 6.3 Opening a PR
+### 8.3 Opening a PR
 
 ```bash
 gh pr create \
@@ -179,21 +290,21 @@ gh pr create \
 
 PR body must include: ticket reference (`Closes O-X` / `Refs O-X`), one-paragraph description, screenshots if UI changed (Vercel Preview link is fine), migration notes if schema changed (Prisma migration filename), follow-up tickets discovered.
 
-### 6.4 Merging
+### 8.4 Merging
 
 - **Squash and merge.** One PR = one commit on `main`.
 - Delete the feature branch after merge.
 - Railway + Vercel auto-deploy on push to `main`. Watch Railway's deploy log and Vercel's deployment dashboard until both go green.
 - Hit `https://app.wellos.one` and `https://api.wellos.one/healthz` after deploy — both 200 means production is live on the new version.
 
-### 6.5 When things fail
+### 8.5 When things fail
 
 - **Never force-merge a red PR.** Fix CI, don't bypass it.
 - Flaky test → fix the test, don't retry.
 - Bad deploy → **forward-fix via revert commit**. Never `git reset --hard` on `main`. Don't edit code through the Railway/Vercel dashboards.
 - Both Railway and Vercel let you roll back to a previous deploy from their UI — use that as a stop-gap while preparing the revert PR.
 
-### 6.6 The `.env` sync rule (§8.9) — enforce all five places
+### 8.6 The `.env` sync rule (§8.9) — enforce all five places
 
 When adding a new env var, update all five or the next pull breaks someone:
 1. `.env.example` placeholder (in the same commit)
@@ -206,7 +317,7 @@ Note it in the PR body.
 
 ---
 
-## 7. How to talk to Claude on this project
+## 9. How to talk to Claude on this project
 
 - Tell Claude which doc(s) to read first before coding (e.g. "Read `docs/09-dev-handoff.md` Epic 2 and `docs/02-onboarding-flow.md`, then implement O-3").
 - **Scope tightly** — one ticket at a time, never "build the whole dashboard."
@@ -216,11 +327,11 @@ Note it in the PR body.
 
 ---
 
-## 8. Skill routing — which installed skills fire for which work
+## 10. Skill routing — which installed skills fire for which work
 
 Skills auto-trigger on description match. For overlap cases, this section is the tiebreaker. At the start of a task Claude should **name the skills it's loading out loud** so the human can correct the selection.
 
-### 8.1 Always-on methodology (apply to most tasks)
+### 10.1 Always-on methodology (apply to most tasks)
 
 - **`clarify`** — whenever a request is ambiguous; fire before writing code.
 - **`systematic-debugging`** — all debugging work.
@@ -229,7 +340,7 @@ Skills auto-trigger on description match. For overlap cases, this section is the
 - **`improve-codebase-architecture`** — when a change reveals structural debt worth fixing alongside.
 - **`software-architecture`** — for new modules or cross-module decisions.
 
-### 8.2 Frontend (Next.js 14 App Router · React · Tailwind · shadcn/ui · deployed to Vercel)
+### 10.2 Frontend (Next.js 14 App Router · React · Tailwind · shadcn/ui · deployed to Vercel)
 
 Primary:
 - **`nextjs-app-router-patterns`** — default for routing / server-components / data-fetching.
@@ -260,7 +371,7 @@ Skip in MVP (defer to Growth):
 - ~~`building-native-ui`~~, ~~`react-native-best-practices`~~, ~~`react-native-design`~~, ~~`sleek-design-mobile-apps`~~, ~~`vercel-react-native-skills`~~ — PWA-only in MVP.
 - ~~`nuxt-ui`~~ — wrong framework (Vue).
 
-### 8.3 Backend (Fastify · Prisma · Supabase Postgres · Upstash Redis/BullMQ · deployed to Railway)
+### 10.3 Backend (Fastify · Prisma · Supabase Postgres · Upstash Redis/BullMQ · deployed to Railway)
 
 Primary:
 - **`api-design-principles`** — default for endpoint design.
@@ -280,7 +391,7 @@ Skip:
 - ~~`rails-expert`~~, ~~`java-architect`~~ — wrong stack.
 - ~~`creating-oracle-to-postgres-migration-bug-report`~~ — not relevant.
 
-### 8.4 Automations (n8n)
+### 10.4 Automations (n8n)
 
 - **`n8n-node-configuration`** — wiring an n8n flow / adding a node.
 - **`n8n-code-javascript`** — Code node in JS.
@@ -288,21 +399,21 @@ Skip:
 
 Use whenever work touches the `automations` module or the n8n bridge.
 
-### 8.5 SEO / marketing
+### 10.5 SEO / marketing
 
 - **`schema-markup`** — SEO structured data on public booking surface or marketing pages. Not MVP-critical; apply when explicitly requested.
 
-### 8.6 Diagrams
+### 10.6 Diagrams
 
 - **`pretty-mermaid`** — nice mermaid diagrams for architecture explanations. Only invoke if a diagram is explicitly requested.
 
-### 8.7 Cross-session memory (optional)
+### 10.7 Cross-session memory (optional)
 
 - **`remembering-conversations`** — persists context between sessions. Off by default; enable when the human asks.
 
 ---
 
-## 9. Troubleshooting quick reference (from `00-V2-per-build-setup.md` §10)
+## 11. Troubleshooting quick reference (from `00-V2-per-build-setup.md` §10)
 
 | Symptom | First thing to check |
 |---|---|
@@ -325,14 +436,14 @@ For anything else: check Sentry, then Railway/Vercel logs, then ask Claude with 
 
 ---
 
-## 10. Session-start checklist for Claude
+## 12. Session-start checklist for Claude
 
 At the start of every task, in this order:
 
 1. **Read `CLAUDE.md`** (this file).
 2. **Identify the ticket ID** (e.g. O-3) and the epic it belongs to from `09-dev-handoff.md`.
 3. **Name the spec docs** I'm about to read (master spec PART X + the relevant buildout doc).
-4. **Name the skills** I'm loading for this task (from §8) — out loud.
+4. **Name the skills** I'm loading for this task (from §10) — out loud.
 5. **Run `clarify`** if any requirement is ambiguous.
 6. **Draft a plan** in plan mode for non-trivial tickets — confirm files to touch with the human before editing.
 7. **Write code**, running `pnpm test && pnpm lint && pnpm typecheck` locally before declaring anything done.
