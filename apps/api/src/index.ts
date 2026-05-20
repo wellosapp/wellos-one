@@ -20,6 +20,7 @@ import corsPlugin from './plugins/cors.js';
 import prismaPlugin from './plugins/prisma.js';
 import adminRoutes from './routes/admin/index.js';
 import meRoutes from './routes/me.js';
+import publicRoutes from './routes/public/index.js';
 import webhookRoutes from './routes/webhooks/index.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -102,6 +103,7 @@ app.get('/version', async () => {
 // Protected routes — pulled into routes/ files as the surface grows.
 await app.register(meRoutes);
 await app.register(adminRoutes);
+await app.register(publicRoutes);
 
 // Webhooks last, encapsulated. Raw-body content-type parser is scoped to
 // this register call only so non-webhook routes keep Fastify's default

@@ -246,6 +246,7 @@ model Tenant {
   serviceBookingQuestions   ServiceBookingQuestion[]
   appointmentBookingAnswers AppointmentBookingAnswer[]
   serviceContentDeliveries  ServiceContentDelivery[]
+  staffCalendarFeedTokens   StaffCalendarFeedToken[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -518,11 +519,30 @@ model Staff {
   soapNoteRevisions    SoapNoteRevision[]         @relation("SoapNoteRevisionAuthor")
   noteAcknowledgments  ClientNoteAcknowledgment[] @relation("ClientNoteAckStaff")
 
+  /// Epic 7 — optional hashed ICS subscribe secret (plain token never persisted).
+  calendarFeedToken StaffCalendarFeedToken?
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
   @@index([tenantId, active])
   @@map("staff")
+}
+
+/// Epic 7 — read-only staff appointment feed (RFC 5545). One active secret per
+/// staff row; rotate via regenerate endpoint (invalidates prior URL).
+model StaffCalendarFeedToken {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  staffId   String   @unique @map("staff_id")
+  tokenHash String   @unique @map("token_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff  Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("staff_calendar_feed_tokens")
 }
 
 model Service {
