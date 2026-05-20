@@ -7,15 +7,26 @@ import {
   ImpersonationActorMissingClerkIdError,
   ImpersonationTargetForbiddenError,
   ImpersonationTargetMissingClerkIdError,
+  ImpersonationTargetMissingError,
   ImpersonationTargetNotFoundError,
   startImpersonation,
   writeImpersonationAudit,
 } from '../../services/impersonationService.js';
 
-const StartImpersonationBodySchema = z.object({
-  targetUserId: z.string().min(1).max(64),
-  sessionMaxDurationInSeconds: z.number().int().min(60).max(28800).optional(),
-});
+const StartImpersonationBodySchema = z
+  .object({
+    targetUserId: z.string().min(1).max(64).optional(),
+    targetEmail: z.string().email().max(254).optional(),
+    sessionMaxDurationInSeconds: z.number().int().min(60).max(28800).optional(),
+  })
+  .refine(
+    (data) =>
+      (data.targetUserId !== undefined) !== (data.targetEmail !== undefined),
+    {
+      message: 'Provide exactly one of targetUserId or targetEmail.',
+      path: ['targetUserId'],
+    },
+  );
 
 function zodErrorBody(err: ZodError) {
   return {
@@ -75,6 +86,7 @@ export default async function impersonateRoutes(
         const result = await startImpersonation(app.prisma, {
           actor: { id: actor.id, clerkUserId: actor.clerkUserId },
           targetUserId: parsed.data.targetUserId,
+          targetEmail: parsed.data.targetEmail,
           sessionMaxDurationInSeconds: parsed.data.sessionMaxDurationInSeconds,
         });
 
@@ -96,6 +108,9 @@ export default async function impersonateRoutes(
           target: result.target,
         });
       } catch (err) {
+        if (err instanceof ImpersonationTargetMissingError) {
+          return reply.code(400).send({ error: 'Bad Request', message: err.message });
+        }
         if (err instanceof ImpersonationTargetNotFoundError) {
           return reply.code(404).send({ error: 'Not Found', message: err.message });
         }

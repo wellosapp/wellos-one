@@ -42,7 +42,11 @@ export class ImpersonationTargetMissingClerkIdError extends Error {
 
 type StartImpersonationParams = {
   actor: { id: string; clerkUserId: string };
-  targetUserId: string;
+  // Caller supplies exactly one of these. targetUserId is the canonical
+  // form; targetEmail is a UI convenience — the service resolves it to
+  // a User row scoped to the same tenant as the actor.
+  targetUserId?: string;
+  targetEmail?: string;
   // How long the minted token itself is valid for the client to exchange.
   // Defaults to 60 seconds — the client should exchange it immediately.
   tokenExpiresInSeconds?: number;
@@ -50,6 +54,13 @@ type StartImpersonationParams = {
   // when this expires the super-admin must re-mint and re-exchange.
   sessionMaxDurationInSeconds?: number;
 };
+
+export class ImpersonationTargetMissingError extends Error {
+  constructor() {
+    super('Either targetUserId or targetEmail is required.');
+    this.name = 'ImpersonationTargetMissingError';
+  }
+}
 
 type StartImpersonationResult = {
   actorTokenId: string;
@@ -72,15 +83,39 @@ export async function startImpersonation(
   const tokenTtlSeconds = params.tokenExpiresInSeconds ?? 60;
   const sessionMaxSeconds = params.sessionMaxDurationInSeconds ?? 3600;
 
+  if (!params.targetUserId && !params.targetEmail) {
+    throw new ImpersonationTargetMissingError();
+  }
+
+  // Resolve targetEmail -> targetUserId. Email lookup is case-insensitive
+  // and scoped to non-deleted users only. Multiple matches across tenants
+  // return the first row by creation order — super-admin should disambiguate
+  // by passing targetUserId directly when collisions matter.
+  let targetUserId = params.targetUserId;
+  if (!targetUserId && params.targetEmail) {
+    const matched = await prisma.user.findFirst({
+      where: {
+        email: { equals: params.targetEmail.trim(), mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!matched) {
+      throw new ImpersonationTargetNotFoundError();
+    }
+    targetUserId = matched.id;
+  }
+
   // Refuse to impersonate the actor themselves — protects against UI bugs.
-  if (params.actor.id === params.targetUserId) {
+  if (params.actor.id === targetUserId) {
     throw new ImpersonationTargetForbiddenError(
       'Cannot impersonate yourself.',
     );
   }
 
   const target = await prisma.user.findUnique({
-    where: { id: params.targetUserId },
+    where: { id: targetUserId },
     select: {
       id: true,
       clerkUserId: true,
