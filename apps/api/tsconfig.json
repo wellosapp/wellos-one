@@ -8,7 +8,12 @@
     "outDir": "dist",
     "rootDir": "src",
     "declaration": false,
-    "sourceMap": true
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@wellos/notifications": ["../../packages/notifications/src/index.ts"],
+      "@wellos/notifications/*": ["../../packages/notifications/src/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

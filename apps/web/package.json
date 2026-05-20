@@ -13,7 +13,9 @@
   },
   "dependencies": {
     "@clerk/nextjs": "6.12.4",
+    "@sentry/core": "8.42.0",
     "@sentry/nextjs": "8.42.0",
+    "@sentry/react": "8.42.0",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "next": "14.2.35",
