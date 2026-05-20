@@ -10,6 +10,7 @@ import { requireRole } from '../../middleware/requireRole.js';
 import {
   AppointmentIdParamsSchema,
   CreateAppointmentBodySchema,
+  DeclineAppointmentBodySchema,
   ListAppointmentsQuerySchema,
   LogRequiredFormsBookingAckBodySchema,
   TransitionAppointmentBodySchema,
@@ -461,6 +462,170 @@ export default async function appointmentsRoutes(
         });
       }
       return reply.code(204).send();
+    },
+  );
+
+  // POST /admin/appointments/:id/approve — request_approval → confirmed.
+  // Thin convenience wrapper over /transition that only accepts the
+  // requested → confirmed transition. Audit row is written by the service
+  // layer with action='appointment.state_changed'. R2 §11.2.
+  app.post(
+    '/appointments/:id/approve',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      if (existing.state !== 'requested') {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: `Only requested appointments can be approved (current state: ${existing.state}).`,
+        });
+      }
+
+      try {
+        const result = await transitionAppointmentState(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          id: params.data.id,
+          to: 'confirmed',
+          reason: undefined,
+        });
+        if (!result) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Appointment not found.',
+          });
+        }
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof InvalidStateTransitionError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: `Cannot approve appointment in state ${err.from}.`,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // POST /admin/appointments/:id/decline — request_approval → cancelled.
+  // Captures cancel reason via standard transition fields. R2 §11.2.
+  app.post(
+    '/appointments/:id/decline',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = DeclineAppointmentBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      if (existing.state !== 'requested') {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: `Only requested appointments can be declined (current state: ${existing.state}).`,
+        });
+      }
+
+      try {
+        const result = await transitionAppointmentState(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          id: params.data.id,
+          to: 'cancelled',
+          reason: body.data.reason,
+        });
+        if (!result) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Appointment not found.',
+          });
+        }
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof InvalidStateTransitionError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: `Cannot decline appointment in state ${err.from}.`,
+          });
+        }
+        throw err;
+      }
     },
   );
 

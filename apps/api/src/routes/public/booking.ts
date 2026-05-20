@@ -103,12 +103,25 @@ export default async function publicBookingRoutes(
       });
     }
 
+    // staff_only services: hide the slot grid by returning empty + a flag.
+    // request_approval still returns real slots — clients can request them.
+    const policyService = await app.prisma.service.findFirst({
+      where: { tenantId: tenant.tenantId, id: parsed.data.serviceId },
+      select: { bookingPolicy: true },
+    });
+    if (policyService?.bookingPolicy === 'staff_only') {
+      return reply.send({ slots: [], bookingPolicy: 'staff_only' as const });
+    }
+
     try {
       const result = await listAvailableSlots(app.prisma, {
         tenantId: tenant.tenantId,
         query: toListAvailabilityQuery(parsed.data),
       });
-      return reply.send(result);
+      return reply.send({
+        ...result,
+        bookingPolicy: policyService?.bookingPolicy ?? 'instant',
+      });
     } catch (err) {
       if (err instanceof InvalidAvailabilityRequestError) {
         return reply.code(400).send({
@@ -149,6 +162,44 @@ export default async function publicBookingRoutes(
       async () => {
         const guest = parsed.data.guest;
 
+        // R2 §11 — gate on Service.bookingPolicy before doing any client-side
+        // resolution work. staff_only refuses public writes; request_approval
+        // lands the appointment in `requested` (staff must approve).
+        const policyService = await app.prisma.service.findFirst({
+          where: {
+            tenantId: tenant.tenantId,
+            id: parsed.data.serviceId,
+          },
+          select: { id: true, bookingPolicy: true, active: true },
+        });
+        if (!policyService) {
+          return {
+            status: 400,
+            body: {
+              error: 'Bad Request',
+              message: 'Validation failed.',
+              issues: [
+                { path: 'serviceId', message: 'Unknown service for this tenant.' },
+              ],
+            },
+          };
+        }
+        if (policyService.bookingPolicy === 'staff_only') {
+          return {
+            status: 403,
+            body: {
+              error: 'Forbidden',
+              message:
+                'This service is staff-booking only. Please contact us to book.',
+              bookingPolicy: 'staff_only',
+            },
+          };
+        }
+        const targetState =
+          policyService.bookingPolicy === 'request_approval'
+            ? ('requested' as const)
+            : ('confirmed' as const);
+
         const { clientId, banned } = await resolveOrCreateClientForPublicBooking(
           app.prisma,
           {
@@ -183,7 +234,7 @@ export default async function publicBookingRoutes(
               scheduledStartAt: parsed.data.scheduledStartAt,
               notes: parsed.data.notes,
               source: 'web',
-              state: 'confirmed',
+              state: targetState,
             },
           });
 
@@ -199,6 +250,12 @@ export default async function publicBookingRoutes(
                 serviceId: appointment.serviceId,
                 locationId: appointment.locationId,
               },
+              bookingPolicy: policyService.bookingPolicy,
+              // UI uses this to swap copy on the confirmation card.
+              message:
+                policyService.bookingPolicy === 'request_approval'
+                  ? 'Your request has been sent. Staff will review and confirm by email.'
+                  : 'Your appointment is confirmed.',
             },
           };
         } catch (err) {

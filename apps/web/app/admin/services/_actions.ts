@@ -7,6 +7,7 @@ import {
   createService,
   deleteService,
   updateService,
+  type BookingPolicy,
   type ServicePriceDisplayMode,
   type ServiceWriteBody,
 } from '@/lib/api/services';
@@ -31,6 +32,7 @@ export type ServiceFormValues = {
   bufferBeforeMinutes?: string;
   bufferAfterMinutes?: string;
   priceDisplayMode?: ServicePriceDisplayMode;
+  bookingPolicy?: BookingPolicy;
   // Staff IDs assigned to perform this service (StaffService M2M, inverse
   // of Staff.serviceIds).
   staffIds?: string[];
@@ -76,6 +78,14 @@ function valuesFromForm(formData: FormData): ServiceFormValues {
       ? (priceRaw as ServicePriceDisplayMode)
       : undefined;
 
+  const policyRaw = formData.get('bookingPolicy');
+  const bookingPolicy =
+    typeof policyRaw === 'string' &&
+    policyRaw !== '' &&
+    ['instant', 'request_approval', 'staff_only'].includes(policyRaw)
+      ? (policyRaw as BookingPolicy)
+      : undefined;
+
   return {
     name: pick(formData, 'name'),
     description: pick(formData, 'description'),
@@ -93,6 +103,7 @@ function valuesFromForm(formData: FormData): ServiceFormValues {
     bufferBeforeMinutes: pick(formData, 'bufferBeforeMinutes'),
     bufferAfterMinutes: pick(formData, 'bufferAfterMinutes'),
     priceDisplayMode,
+    bookingPolicy,
     staffIds: formData.getAll('staffIds').filter(
       (v): v is string => typeof v === 'string',
     ),
@@ -184,6 +195,7 @@ function parseBody(
     bufferBeforeMinutes,
     bufferAfterMinutes,
     priceDisplayMode: values.priceDisplayMode,
+    bookingPolicy: values.bookingPolicy,
     staffIds: values.staffIds ?? [],
   };
 

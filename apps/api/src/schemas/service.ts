@@ -40,6 +40,14 @@ export type ServicePriceDisplayModeInput = z.infer<
   typeof ServicePriceDisplayModeSchema
 >;
 
+/** Mirrors Prisma enum BookingPolicy. See R2 §11. */
+export const BookingPolicySchema = z.enum([
+  'instant',
+  'request_approval',
+  'staff_only',
+]);
+export type BookingPolicyInput = z.infer<typeof BookingPolicySchema>;
+
 const OPTIONAL_CATEGORY_ID = z
   .union([
     z.string().trim().min(1),
@@ -68,6 +76,7 @@ export const CreateServiceBodySchema = z.object({
   priceDisplayMode: ServicePriceDisplayModeSchema.optional(),
   color: HEX_COLOR,
   active: z.boolean().optional(),
+  bookingPolicy: BookingPolicySchema.optional(),
   staffIds: STAFF_IDS,
 });
 export type CreateServiceBody = z.infer<typeof CreateServiceBodySchema>;

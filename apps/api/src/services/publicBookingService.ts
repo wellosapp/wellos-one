@@ -1,3 +1,5 @@
+import type { BookingPolicy } from '@prisma/client';
+
 import type { ExtendedPrismaClient } from '../db/client.js';
 
 export type PublicBookingCatalogWire = {
@@ -8,6 +10,11 @@ export type PublicBookingCatalogWire = {
     descriptionShort: string | null;
     durationMinutes: number;
     basePriceCents: number;
+    // R2 §11 — drives the public confirm UX:
+    //   instant          → "Book appointment"
+    //   request_approval → "Request appointment" + approval-pending copy
+    //   staff_only       → hidden / contact-only card (the API also rejects writes)
+    bookingPolicy: BookingPolicy;
     staffIds: string[];
   }>;
   staff: Array<{ id: string; displayName: string }>;
@@ -69,6 +76,7 @@ export async function getPublicBookingCatalog(
         descriptionShort: true,
         durationMinutes: true,
         basePriceCents: true,
+        bookingPolicy: true,
         staff: {
           select: {
             staff: {
@@ -103,6 +111,9 @@ export async function getPublicBookingCatalog(
         });
       }
     }
+    // staff_only services are intentionally still surfaced — the web client
+    // renders them as "Contact us to book" cards (R2 §11.3). The public
+    // appointment-create endpoint refuses to write them; UI hides the slot grid.
     if (staffIds.length === 0) continue;
     services.push({
       id: s.id,
@@ -110,6 +121,7 @@ export async function getPublicBookingCatalog(
       descriptionShort: s.descriptionShort,
       durationMinutes: s.durationMinutes,
       basePriceCents: s.basePriceCents,
+      bookingPolicy: s.bookingPolicy,
       staffIds,
     });
   }

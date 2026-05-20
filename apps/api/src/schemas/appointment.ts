@@ -17,6 +17,7 @@ const TRIM_NONEMPTY = z.string().trim().min(1);
 // Appointment states the API surface accepts. Matches the Prisma enum order
 // and the underlying DB enum. Service layer validates allowed transitions.
 export const AppointmentStatusSchema = z.enum([
+  'requested',
   'scheduled',
   'confirmed',
   'checked_in',
@@ -119,6 +120,13 @@ export const TransitionAppointmentBodySchema = z.object({
   reason: REASON,
 });
 export type TransitionAppointmentBody = z.infer<typeof TransitionAppointmentBodySchema>;
+
+// POST /admin/appointments/:id/decline — staff declines a request_approval
+// booking. Reason is optional; surfaces in audit + later in the client email.
+export const DeclineAppointmentBodySchema = z.object({
+  reason: REASON,
+});
+export type DeclineAppointmentBody = z.infer<typeof DeclineAppointmentBodySchema>;
 
 // Same query-bool helpers as schemas/service.ts. Local to avoid premature
 // shared-helper extraction; hoist when a fourth schema needs them.

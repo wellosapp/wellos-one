@@ -45,6 +45,7 @@ const SERVICE_SAFE_FIELDS = {
   bufferAfterMinutes: true,
   color: true,
   active: true,
+  bookingPolicy: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
@@ -206,6 +207,9 @@ function buildUpdateData(
   }
   if (body.color !== undefined) data.color = body.color;
   if (body.active !== undefined) data.active = body.active;
+  if (body.bookingPolicy !== undefined) {
+    data.bookingPolicy = body.bookingPolicy;
+  }
 
   if (body.categoryId !== undefined) {
     if (body.categoryId === null || body.categoryId === '') {
@@ -253,6 +257,7 @@ export async function createService(
         priceDisplayMode: body.priceDisplayMode,
         color: body.color,
         active: body.active ?? true,
+        bookingPolicy: body.bookingPolicy ?? 'instant',
       },
       select: SERVICE_WITH_CATEGORY_SELECT,
     });

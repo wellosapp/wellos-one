@@ -26,6 +26,7 @@ function serviceToFormDefaults(s: ServiceWithStaff): ServiceFormValues {
     bufferAfterMinutes: String(s.bufferAfterMinutes),
     color: s.color ?? undefined,
     active: s.active,
+    bookingPolicy: s.bookingPolicy,
     staffIds: s.staffIds,
   };
 }

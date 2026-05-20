@@ -19,12 +19,19 @@ import {
 
 import { cn } from '@/lib/cn';
 
-import { transitionAppointmentAction } from '../_actions';
+import {
+  approveAppointmentAction,
+  declineAppointmentAction,
+  transitionAppointmentAction,
+} from '../_actions';
 
 // Map current state → list of allowed next states. Mirrors the lifecycle
 // guard in apps/api/src/services/appointmentService.ts. Server is still
 // authoritative — these just hide buttons that would always 400.
+// `requested` is handled by dedicated Approve / Decline buttons below — keep
+// it out of the generic transition list so it doesn't render as another chip.
 const NEXT_STATES: Record<AppointmentState, AppointmentState[]> = {
+  requested: [],
   scheduled: ['confirmed', 'checked_in', 'cancelled', 'no_show'],
   confirmed: ['checked_in', 'cancelled', 'no_show'],
   checked_in: ['in_progress', 'cancelled', 'no_show'],
@@ -35,6 +42,7 @@ const NEXT_STATES: Record<AppointmentState, AppointmentState[]> = {
 };
 
 const STATE_LABEL: Record<AppointmentState, string> = {
+  requested: 'Requested',
   scheduled: 'Scheduled',
   confirmed: 'Confirmed',
   checked_in: 'Checked in',
@@ -48,6 +56,7 @@ const STATE_BADGE_TONE: Record<
   AppointmentState,
   'neutral' | 'accent' | 'amber' | 'green' | 'red'
 > = {
+  requested: 'amber',
   scheduled: 'neutral',
   confirmed: 'accent',
   checked_in: 'amber',
@@ -58,6 +67,7 @@ const STATE_BADGE_TONE: Record<
 };
 
 const ACTION_LABEL: Record<AppointmentState, string> = {
+  requested: 'Mark requested',
   scheduled: 'Mark scheduled',
   confirmed: 'Confirm',
   checked_in: 'Check in',
@@ -98,6 +108,31 @@ export function OverviewTab({
       }
       // revalidatePath() runs server-side; nudge the router so the new state
       // streams in.
+      router.refresh();
+    });
+  };
+
+  // R2 §11.2 — staff approve/decline a request_approval booking.
+  const fireApprove = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await approveAppointmentAction(appointment.id);
+      if (!result.ok) {
+        setError(result.error ?? 'Approve failed.');
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const fireDecline = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await declineAppointmentAction(appointment.id);
+      if (!result.ok) {
+        setError(result.error ?? 'Decline failed.');
+        return;
+      }
       router.refresh();
     });
   };
@@ -206,6 +241,36 @@ export function OverviewTab({
         )}
       </section>
 
+      {appointment.state === 'requested' && (
+        <section className="flex flex-col gap-s3">
+          <h3 className="t-display-sm text-ink">Request approval</h3>
+          <p className="t-body-sm text-ink-soft">
+            The client requested this appointment. Approve to confirm, or
+            decline to cancel and free the slot.
+          </p>
+          <div className="flex flex-wrap gap-s2">
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={pending}
+              loading={pending}
+              onClick={fireApprove}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              loading={pending}
+              onClick={fireDecline}
+            >
+              Decline
+            </Button>
+          </div>
+        </section>
+      )}
+
       {allowed.length > 0 && (
         <section className="flex flex-col gap-s3">
           <h3 className="t-display-sm text-ink">Actions</h3>
@@ -226,7 +291,7 @@ export function OverviewTab({
         </section>
       )}
 
-      {allowed.length === 0 && (
+      {allowed.length === 0 && appointment.state !== 'requested' && (
         <p className="t-body-sm text-ink-soft italic">
           This appointment has reached a terminal state — no further actions.
         </p>

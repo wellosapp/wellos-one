@@ -13,6 +13,7 @@ export type ClientIntakeStatus =
 
 // AppointmentState string union — matches AppointmentStatusSchema in the API.
 export type AppointmentState =
+  | 'requested'
   | 'scheduled'
   | 'confirmed'
   | 'checked_in'
@@ -153,6 +154,26 @@ export async function transitionAppointment(
   body: TransitionAppointmentBody,
 ): Promise<{ appointment: Appointment }> {
   return apiFetch(`/admin/appointments/${id}/transition`, {
+    method: 'POST',
+    body,
+  });
+}
+
+/** R2 §11.2 — staff approves a request_approval booking (requested → confirmed). */
+export async function approveAppointment(
+  id: string,
+): Promise<{ appointment: Appointment }> {
+  return apiFetch(`/admin/appointments/${id}/approve`, {
+    method: 'POST',
+  });
+}
+
+/** R2 §11.2 — staff declines a request_approval booking (requested → cancelled). */
+export async function declineAppointment(
+  id: string,
+  body: { reason?: string } = {},
+): Promise<{ appointment: Appointment }> {
+  return apiFetch(`/admin/appointments/${id}/decline`, {
     method: 'POST',
     body,
   });

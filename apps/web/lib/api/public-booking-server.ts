@@ -18,6 +18,9 @@ export class PublicApiError extends Error {
   }
 }
 
+/** R2 §11 — booking policy on the public catalog. */
+export type BookingPolicy = 'instant' | 'request_approval' | 'staff_only';
+
 export type PublicBookingCatalogResponse = {
   tenantSlug: string;
   locations: Array<{ id: string; name: string; timezone: string }>;
@@ -27,6 +30,7 @@ export type PublicBookingCatalogResponse = {
     descriptionShort: string | null;
     durationMinutes: number;
     basePriceCents: number;
+    bookingPolicy: BookingPolicy;
     staffIds: string[];
   }>;
   staff: Array<{ id: string; displayName: string }>;
@@ -101,6 +105,9 @@ export type CreatePublicAppointmentResult = {
     serviceId: string;
     locationId: string;
   };
+  /** Echoed by the API for the Confirm card copy (instant vs request_approval). */
+  bookingPolicy?: BookingPolicy;
+  message?: string;
 };
 
 export async function createPublicAppointmentRequest(args: {

@@ -141,6 +141,8 @@ export function BookPageBody({
     id: string;
     scheduledStartAt: string;
     scheduledEndAt: string;
+    /** R2 §11.2 — when set, booking entered `requested`, not `confirmed`. */
+    requested?: boolean;
   } | null>(null);
 
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -275,6 +277,9 @@ export function BookPageBody({
             id: res.result.appointment.id,
             scheduledStartAt: res.result.appointment.scheduledStartAt,
             scheduledEndAt: res.result.appointment.scheduledEndAt,
+            requested:
+              res.result.bookingPolicy === 'request_approval' ||
+              res.result.appointment.state === 'requested',
           });
           setBookingMessage(null);
           return;
@@ -290,6 +295,9 @@ export function BookPageBody({
   const summaryWhen = selectedSlotStart
     ? `${formatDateLong(new Date(selectedSlotStart))} · ${formatSlotLabel(selectedSlotStart)}`
     : '—';
+  // R2 §11.2 — request_approval changes the confirm copy + post-submit message.
+  const isRequestApproval =
+    selectedService?.bookingPolicy === 'request_approval';
 
   return (
     <div className="min-h-screen bg-surface">
@@ -404,7 +412,11 @@ export function BookPageBody({
             </span>
             <div className="mt-s4 flex flex-wrap gap-s2">
               <Badge tone={bookingDone ? 'accent' : 'neutral'}>
-                {bookingDone ? 'Confirmed' : 'Draft'}
+                {bookingDone
+                  ? bookingDone.requested
+                    ? 'Pending approval'
+                    : 'Confirmed'
+                  : 'Draft'}
               </Badge>
               <Badge tone="neutral">Magic link manage — TODO</Badge>
             </div>
@@ -601,6 +613,12 @@ export function BookPageBody({
                   ) : (
                     catalog.services.map((svc) => {
                       const selected = selectedServiceId === svc.id;
+                      // R2 §11.3 — staff_only services render as contact-only
+                      // cards. The Select button is disabled and there is no
+                      // policy-bypassing affordance.
+                      const staffOnly = svc.bookingPolicy === 'staff_only';
+                      const requestApproval =
+                        svc.bookingPolicy === 'request_approval';
                       return (
                         <article
                           key={svc.id}
@@ -608,9 +626,16 @@ export function BookPageBody({
                         >
                           <div className="h-28 bg-gradient-to-br from-accent-pale to-white" />
                           <div className="p-s4">
-                            <strong className="t-body-lg text-ink">
-                              {svc.name}
-                            </strong>
+                            <div className="flex items-baseline justify-between gap-s2">
+                              <strong className="t-body-lg text-ink">
+                                {svc.name}
+                              </strong>
+                              {staffOnly ? (
+                                <Badge tone="neutral">Contact us</Badge>
+                              ) : requestApproval ? (
+                                <Badge tone="accent">Request approval</Badge>
+                              ) : null}
+                            </div>
                             <p className="mt-s2 t-body-sm text-ink-soft">
                               {svc.durationMinutes} min · from{' '}
                               {formatUsd(svc.basePriceCents)}
@@ -627,9 +652,18 @@ export function BookPageBody({
                                   'border border-surface-3 bg-white shadow-sm',
                               )}
                               type="button"
-                              onClick={() => setSelectedServiceId(svc.id)}
+                              disabled={staffOnly}
+                              onClick={
+                                staffOnly
+                                  ? undefined
+                                  : () => setSelectedServiceId(svc.id)
+                              }
                             >
-                              {selected ? 'Selected' : 'Select'}
+                              {staffOnly
+                                ? 'Contact us to book'
+                                : selected
+                                  ? 'Selected'
+                                  : 'Select'}
                             </Button>
                           </div>
                         </article>
@@ -786,6 +820,16 @@ export function BookPageBody({
                   </p>
                 ) : null}
 
+                {isRequestApproval ? (
+                  <p
+                    className="mt-s4 rounded-xl border border-amber-200 bg-amber-50 px-s3 py-s3 t-body-sm text-ink"
+                    role="status"
+                  >
+                    This service requires staff approval. You will receive an
+                    email when your request is confirmed or declined.
+                  </p>
+                ) : null}
+
                 <Button
                   variant="accent"
                   size="md"
@@ -794,7 +838,13 @@ export function BookPageBody({
                   disabled={pendingBook || !tenantSlug}
                   onClick={() => onSubmitBooking()}
                 >
-                  {pendingBook ? 'Booking…' : 'Book appointment'}
+                  {pendingBook
+                    ? isRequestApproval
+                      ? 'Sending request…'
+                      : 'Booking…'
+                    : isRequestApproval
+                      ? 'Request appointment'
+                      : 'Book appointment'}
                 </Button>
               </aside>
             </div>

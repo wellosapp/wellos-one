@@ -22,6 +22,12 @@ const STATUS_TONE: Record<
     border: string;
   }
 > = {
+  requested: {
+    badgeTone: 'amber',
+    label: 'Requested',
+    gradient: 'bg-gradient-to-b from-amber-pale to-white',
+    border: 'border-amber/35',
+  },
   scheduled: {
     badgeTone: 'neutral',
     label: 'Scheduled',
