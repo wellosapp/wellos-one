@@ -1,13 +1,38 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 
-export default function AdminLayout({
+import { ApiError } from '@/lib/api/client';
+import { getImpersonationActive } from '@/lib/api/impersonate';
+
+import { ImpersonationBanner } from './ImpersonationBanner';
+
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Server-side fetch of impersonation state so the banner renders on the
+  // first paint, not after a client-side flash. If the API call fails
+  // (e.g. local dev with API down), swallow and hide the banner — no UI
+  // breakage for a missing observability surface.
+  let impersonation: Awaited<ReturnType<typeof getImpersonationActive>> | null =
+    null;
+  try {
+    impersonation = await getImpersonationActive();
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    // 401 here just means the layout was rendered server-side without a
+    // session (e.g. middleware redirect race). Hide the banner gracefully.
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-surface">
+      {impersonation?.active && (
+        <ImpersonationBanner
+          actor={{ email: impersonation.actor.email }}
+          subject={{ email: impersonation.subject.email }}
+        />
+      )}
       <header className="flex items-center justify-between border-b border-surface-3 bg-white/70 px-s8 py-s4 backdrop-blur">
         <nav className="flex items-center gap-s8">
           <Link
