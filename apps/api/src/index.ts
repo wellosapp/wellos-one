@@ -2,11 +2,14 @@
 // modules before Fastify and other deps are loaded.
 import './instrument.js';
 
-// Teach JSON.stringify how to serialize BigInt — Prisma returns BigInt for
-// columns like MediaAsset.sizeBytes, and Fastify's default serializer
-// otherwise throws "Do not know how to serialize a BigInt" on response.
-// Stringifying preserves precision past Number.MAX_SAFE_INTEGER; the web
-// wrapper coerces back to number where needed.
+/**
+ * Teach JSON.stringify how to serialize BigInt.
+ *
+ * Prisma returns BigInt for columns like MediaAsset.sizeBytes, and Fastify's
+ * default serializer otherwise throws "Do not know how to serialize a BigInt"
+ * on response. Stringifying preserves precision past Number.MAX_SAFE_INTEGER;
+ * the web wrapper coerces back to number where needed.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();

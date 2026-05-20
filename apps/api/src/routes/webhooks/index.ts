@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 
 import clerkWebhookRoute from './clerk.js';
+import postmarkWebhookRoutes from './postmark.js';
+import textlinkWebhookRoutes from './textlink.js';
 
 // Encapsulated webhook context. The raw-body content-type parser only applies
 // inside this register call, so non-webhook routes keep Fastify's default
@@ -27,4 +29,6 @@ export default async function webhookRoutes(app: FastifyInstance): Promise<void>
   );
 
   await app.register(clerkWebhookRoute, { prefix: '/webhooks' });
+  await app.register(postmarkWebhookRoutes, { prefix: '/webhooks' });
+  await app.register(textlinkWebhookRoutes, { prefix: '/webhooks' });
 }
