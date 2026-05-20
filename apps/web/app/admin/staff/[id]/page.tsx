@@ -9,6 +9,7 @@ import { getStaff, DAY_KEYS, type DayKey } from '@/lib/api/staff';
 import { StaffForm } from '../StaffForm';
 import type { StaffFormValues } from '../_actions';
 import { deleteStaffAction, updateStaffAction } from '../_actions';
+import { CalendarFeedCard } from './CalendarFeedCard';
 
 function staffToFormDefaults(
   s: Awaited<ReturnType<typeof getStaff>>['staff'],
@@ -123,6 +124,8 @@ export default async function StaffDetailPage({
           successMessage="Staff updated."
         />
       </Card>
+
+      {!staff.deletedAt && <CalendarFeedCard staffId={staff.id} />}
 
       {!staff.deletedAt && (
         <Card padding="md" className="border border-red/20 bg-red-pale/40">
