@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { Badge, Button, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
+import { listServiceCategories } from '@/lib/api/service-categories';
 import { getService, type ServiceWithStaff } from '@/lib/api/services';
 import { listStaff } from '@/lib/api/staff';
 
@@ -14,8 +15,15 @@ function serviceToFormDefaults(s: ServiceWithStaff): ServiceFormValues {
   return {
     name: s.name,
     description: s.description ?? undefined,
+    descriptionShort: s.descriptionShort ?? undefined,
+    categoryId: s.categoryId ?? '',
     durationMinutes: String(s.durationMinutes),
     basePriceDollars: (s.basePriceCents / 100).toFixed(2),
+    displayOrder: String(s.displayOrder),
+    publicVisible: s.publicVisible,
+    priceDisplayMode: s.priceDisplayMode,
+    bufferBeforeMinutes: String(s.bufferBeforeMinutes),
+    bufferAfterMinutes: String(s.bufferAfterMinutes),
     color: s.color ?? undefined,
     active: s.active,
     staffIds: s.staffIds,
@@ -40,7 +48,12 @@ export default async function ServiceDetailPage({
     throw err;
   }
 
-  const { staff } = await listStaff({ active: true, take: 200 });
+  const [staffResp, categoriesResp] = await Promise.all([
+    listStaff({ active: true, take: 200 }),
+    listServiceCategories({ take: 200 }),
+  ]);
+  const { staff } = staffResp;
+  const { categories } = categoriesResp;
 
   const updateAction = updateServiceAction.bind(null, id);
   const deleteAction = deleteServiceAction.bind(null, id);
@@ -76,6 +89,7 @@ export default async function ServiceDetailPage({
         <ServiceForm
           action={updateAction}
           initial={serviceToFormDefaults(service)}
+          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
           staff={staff.map((s) => ({
             id: s.id,
             firstName: s.firstName,

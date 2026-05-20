@@ -4,13 +4,32 @@
 
 import { apiFetch } from './client';
 
+export type ServicePriceDisplayMode =
+  | 'fixed'
+  | 'starting_at'
+  | 'range'
+  | 'hidden'
+  | 'consultation';
+
+export type ServiceCategorySummary = {
+  id: string;
+  name: string;
+};
+
 export type Service = {
   id: string;
   tenantId: string;
+  categoryId: string | null;
   name: string;
   description: string | null;
+  descriptionShort: string | null;
   durationMinutes: number;
   basePriceCents: number;
+  priceDisplayMode: ServicePriceDisplayMode;
+  displayOrder: number;
+  publicVisible: boolean;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   color: string | null;
   active: boolean;
   createdAt: string;
@@ -21,8 +40,15 @@ export type Service = {
 export type ServiceWriteBody = {
   name: string;
   description?: string;
+  descriptionShort?: string;
   durationMinutes: number;
   basePriceCents: number;
+  categoryId?: string | null;
+  displayOrder?: number;
+  publicVisible?: boolean;
+  bufferBeforeMinutes?: number;
+  bufferAfterMinutes?: number;
+  priceDisplayMode?: ServicePriceDisplayMode;
   color?: string;
   active?: boolean;
   staffIds?: string[];
@@ -30,19 +56,30 @@ export type ServiceWriteBody = {
 
 // Detail endpoint augments Service with staffIds (a derived projection of
 // staff_services join rows). List endpoint omits this for performance.
-export type ServiceWithStaff = Service & { staffIds: string[] };
+export type ServiceWithStaff = Service & {
+  staffIds: string[];
+  category: ServiceCategorySummary | null;
+};
+
+export type ServiceListItem = Service & {
+  category: ServiceCategorySummary | null;
+};
 
 export type ListServicesResponse = {
-  services: Service[];
+  services: ServiceListItem[];
   total: number;
 };
 
 export type ListServicesQuery = {
   q?: string;
   active?: boolean;
+  publicVisible?: boolean;
+  categoryId?: string;
   take?: number;
   skip?: number;
   includeDeleted?: boolean;
+  /** Narrow to services this staff member may perform (join table); omit for full catalog. */
+  staffId?: string;
 };
 
 export async function listServices(
@@ -52,9 +89,12 @@ export async function listServices(
     searchParams: {
       q: query.q,
       active: query.active,
+      publicVisible: query.publicVisible,
+      categoryId: query.categoryId,
       take: query.take,
       skip: query.skip,
       includeDeleted: query.includeDeleted,
+      staffId: query.staffId,
     },
   });
 }

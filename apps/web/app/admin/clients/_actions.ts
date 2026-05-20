@@ -59,6 +59,7 @@ function buildBodyFromForm(formData: FormData): ClientWriteBody {
   return {
     firstName: pick(formData, 'firstName') ?? '',
     lastName: pick(formData, 'lastName'),
+    preferredName: pick(formData, 'preferredName'),
     email: pick(formData, 'email'),
     phone: pick(formData, 'phone'),
     dateOfBirth: pick(formData, 'dateOfBirth'),

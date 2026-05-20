@@ -10,12 +10,6 @@ import { z } from 'zod';
 // Length / range caps are upper bounds to prevent abuse, not UX guidance.
 
 const TRIM_NONEMPTY = z.string().trim().min(1);
-const OPTIONAL_TRIM_NONEMPTY = z
-  .string()
-  .trim()
-  .min(1)
-  .optional()
-  .or(z.literal('').transform(() => undefined));
 
 // 6-digit hex with leading "#". Matches what the Prisma column expects per
 // docs/10-design-system-buildout.md sec 2.1 token format.
@@ -32,6 +26,27 @@ const HEX_COLOR = z
 const DURATION_MINUTES = z.number().int().min(1).max(1440);
 const BASE_PRICE_CENTS = z.number().int().min(0).max(10_000_000);
 
+const BUFFER_MINUTES = z.number().int().min(0).max(1440);
+
+/** Mirrors Prisma enum ServicePriceDisplayMode. */
+export const ServicePriceDisplayModeSchema = z.enum([
+  'fixed',
+  'starting_at',
+  'range',
+  'hidden',
+  'consultation',
+]);
+export type ServicePriceDisplayModeInput = z.infer<
+  typeof ServicePriceDisplayModeSchema
+>;
+
+const OPTIONAL_CATEGORY_ID = z
+  .union([
+    z.string().trim().min(1),
+    z.literal('').transform(() => undefined),
+  ])
+  .optional();
+
 // Staff IDs eligible to perform this service (StaffService M2M, inverse
 // of Staff.serviceIds). Inline on create/update so the assignment is
 // atomic with the service write. Cap matches the cap on Staff.serviceIds.
@@ -41,8 +56,16 @@ export const CreateServiceBodySchema = z.object({
   name: TRIM_NONEMPTY.max(200),
   description: z.string().max(4000).optional()
     .or(z.literal('').transform(() => undefined)),
+  descriptionShort: z.string().max(500).optional()
+    .or(z.literal('').transform(() => undefined)),
   durationMinutes: DURATION_MINUTES,
   basePriceCents: BASE_PRICE_CENTS,
+  categoryId: OPTIONAL_CATEGORY_ID,
+  displayOrder: z.number().int().min(0).max(1_000_000).optional(),
+  publicVisible: z.boolean().optional(),
+  bufferBeforeMinutes: BUFFER_MINUTES.optional(),
+  bufferAfterMinutes: BUFFER_MINUTES.optional(),
+  priceDisplayMode: ServicePriceDisplayModeSchema.optional(),
   color: HEX_COLOR,
   active: z.boolean().optional(),
   staffIds: STAFF_IDS,
@@ -51,7 +74,16 @@ export type CreateServiceBody = z.infer<typeof CreateServiceBodySchema>;
 
 // PATCH: every field optional. Empty body is allowed but no-ops at the
 // service layer (returns the existing row unchanged).
-export const UpdateServiceBodySchema = CreateServiceBodySchema.partial();
+// categoryId may be null to clear the FK (explicit disconnect).
+export const UpdateServiceBodySchema = CreateServiceBodySchema.partial().extend({
+  categoryId: z
+    .union([
+      z.string().trim().min(1),
+      z.literal('').transform(() => null),
+      z.null(),
+    ])
+    .optional(),
+});
 export type UpdateServiceBody = z.infer<typeof UpdateServiceBodySchema>;
 
 // Query strings only carry strings; z.coerce.boolean() is just Boolean(v),
@@ -85,9 +117,13 @@ const QueryBoolFilter = z
 export const ListServicesQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   active: QueryBoolFilter,
+  publicVisible: QueryBoolFilter,
+  categoryId: z.string().min(1).optional(),
   take: z.coerce.number().int().min(1).max(200).default(50),
   skip: z.coerce.number().int().min(0).default(0),
   includeDeleted: QueryBoolFlag,
+  /** When set, return only services this staff member may perform (StaffService M2M). Services with no assignments remain eligible for anyone. */
+  staffId: z.string().min(1).optional(),
 });
 export type ListServicesQuery = z.infer<typeof ListServicesQuerySchema>;
 

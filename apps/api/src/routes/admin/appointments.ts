@@ -1,16 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import {
+  isPrivilegedCalendarUser,
+  resolveStaffMemberIdForUser,
+  staffAppointmentScope,
+} from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
   AppointmentIdParamsSchema,
   CreateAppointmentBodySchema,
   ListAppointmentsQuerySchema,
+  LogRequiredFormsBookingAckBodySchema,
   TransitionAppointmentBodySchema,
   UpdateAppointmentBodySchema,
 } from '../../schemas/appointment.js';
 import {
+  AppointmentRescheduleNotAllowedError,
   AppointmentSlotConflictError,
+  AppointmentStaffScheduleBlockConflictError,
   InvalidAppointmentReferenceError,
   InvalidStateTransitionError,
   createAppointment,
@@ -20,10 +28,16 @@ import {
   transitionAppointmentState,
   updateAppointment,
 } from '../../services/appointmentService.js';
+import {
+  StaffBookingComplianceError,
+  logRequiredFormsBookingAcknowledgment,
+} from '../../services/staffBookingComplianceService.js';
 
-// /admin/appointments — admin CRUD for the booking engine (E3-S1).
+// /admin/appointments — booking engine CRUD (E3-S1).
 //
-// Auth: requireRole.admin (chained loadCurrentUser + admin-only guard).
+// Auth: reads + transitions + creates use requireRole.staff; staff without
+// admin/manager is scoped to appointments where staff_id matches their linked
+// Staff row (email match). Deletes stay admin-only.
 //
 // Validation: Zod parsing of body / query / params at the route layer.
 //
@@ -52,7 +66,7 @@ export default async function appointmentsRoutes(
   // POST /admin/appointments
   app.post(
     '/appointments',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -60,6 +74,21 @@ export default async function appointmentsRoutes(
       const parsed = CreateAppointmentBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send(zodErrorBody(parsed.error));
+      }
+
+      if (!isPrivilegedCalendarUser(user)) {
+        const selfId = await resolveStaffMemberIdForUser(
+          app.prisma,
+          tenantId,
+          user.email,
+        );
+        if (!selfId || parsed.data.staffId !== selfId) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message:
+              'You can only book appointments on your own schedule. Ask an admin for cross-staff booking.',
+          });
+        }
       }
 
       try {
@@ -89,6 +118,22 @@ export default async function appointmentsRoutes(
             },
           });
         }
+        if (err instanceof AppointmentStaffScheduleBlockConflictError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: err.message,
+            conflict: {
+              type: 'staff_schedule_block',
+              blockId: err.blockId,
+              blockTitle: err.blockTitle,
+              blockStartsAt: err.blockStartsAt.toISOString(),
+              blockEndsAt: err.blockEndsAt.toISOString(),
+              staffId: err.staffId,
+              scheduledStartAt: err.scheduledStartAt.toISOString(),
+              scheduledEndAt: err.scheduledEndAt.toISOString(),
+            },
+          });
+        }
         throw err;
       }
     },
@@ -97,7 +142,7 @@ export default async function appointmentsRoutes(
   // GET /admin/appointments
   app.get(
     '/appointments',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -107,9 +152,26 @@ export default async function appointmentsRoutes(
         return reply.code(400).send(zodErrorBody(parsed.error));
       }
 
+      let query = parsed.data;
+      if (!isPrivilegedCalendarUser(user)) {
+        const selfId = await resolveStaffMemberIdForUser(
+          app.prisma,
+          tenantId,
+          user.email,
+        );
+        if (!selfId) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message:
+              'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+          });
+        }
+        query = { ...query, staffId: selfId };
+      }
+
       const result = await listAppointments(app.prisma, {
         tenantId,
-        query: parsed.data,
+        query,
       });
       return reply.send(result);
     },
@@ -118,7 +180,7 @@ export default async function appointmentsRoutes(
   // GET /admin/appointments/:id
   app.get(
     '/appointments/:id',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -138,14 +200,107 @@ export default async function appointmentsRoutes(
           message: 'Appointment not found.',
         });
       }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        appointment.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
       return reply.send({ appointment });
     },
   );
 
-  // PATCH /admin/appointments/:id (notes only — see schema comments)
+  // POST /admin/appointments/:id/required-forms-booking-ack
+  app.post(
+    '/appointments/:id/required-forms-booking-ack',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const parsedBody = LogRequiredFormsBookingAckBodySchema.safeParse(
+        request.body,
+      );
+      if (!parsedBody.success) {
+        return reply.code(400).send(zodErrorBody(parsedBody.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      try {
+        await logRequiredFormsBookingAcknowledgment(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          appointmentId: params.data.id,
+          staffId: parsedBody.data.staffId,
+          clientId: parsedBody.data.clientId,
+          serviceId: parsedBody.data.serviceId,
+        });
+        return reply.code(201).send({ ok: true });
+      } catch (err) {
+        if (err instanceof StaffBookingComplianceError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: err.message,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // PATCH /admin/appointments/:id — notes and/or calendar reschedule (see schema).
   app.patch(
     '/appointments/:id',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -159,19 +314,125 @@ export default async function appointmentsRoutes(
         return reply.code(400).send(zodErrorBody(body.error));
       }
 
-      const result = await updateAppointment(app.prisma, {
+      const existing = await getAppointmentById(app.prisma, {
         tenantId,
-        actorUserId: user.id,
         id: params.data.id,
-        body: body.data,
       });
-      if (!result) {
+      if (!existing) {
         return reply.code(404).send({
           error: 'Not Found',
           message: 'Appointment not found.',
         });
       }
-      return reply.send(result);
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const payload = body.data;
+      const rescheduleRequested =
+        payload.scheduledStartAt !== undefined ||
+        payload.staffId !== undefined ||
+        payload.locationId !== undefined;
+
+      if (rescheduleRequested && !isPrivilegedCalendarUser(user)) {
+        const selfId = await resolveStaffMemberIdForUser(
+          app.prisma,
+          tenantId,
+          user.email,
+        );
+        if (
+          payload.staffId !== undefined &&
+          payload.staffId !== selfId
+        ) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message:
+              'You can only reschedule within your own column. Ask an admin to move appointments between providers.',
+          });
+        }
+      }
+
+      const dragHeader = request.headers['x-wellos-calendar-drag'];
+      const markCalendarDrag =
+        rescheduleRequested &&
+        (dragHeader === '1' || dragHeader === 'true');
+
+      try {
+        const result = await updateAppointment(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          id: params.data.id,
+          body: body.data,
+          markCalendarDrag,
+        });
+        if (!result) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Appointment not found.',
+          });
+        }
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof InvalidAppointmentReferenceError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: 'Validation failed.',
+            issues: [{ path: err.field, message: err.message }],
+          });
+        }
+        if (err instanceof AppointmentSlotConflictError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: err.message,
+            conflict: {
+              appointmentId: err.conflictingAppointmentId,
+              staffId: err.staffId,
+              scheduledStartAt: err.scheduledStartAt.toISOString(),
+              scheduledEndAt: err.scheduledEndAt.toISOString(),
+            },
+          });
+        }
+        if (err instanceof AppointmentStaffScheduleBlockConflictError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: err.message,
+            conflict: {
+              type: 'staff_schedule_block',
+              blockId: err.blockId,
+              blockTitle: err.blockTitle,
+              blockStartsAt: err.blockStartsAt.toISOString(),
+              blockEndsAt: err.blockEndsAt.toISOString(),
+              staffId: err.staffId,
+              scheduledStartAt: err.scheduledStartAt.toISOString(),
+              scheduledEndAt: err.scheduledEndAt.toISOString(),
+            },
+          });
+        }
+        if (err instanceof AppointmentRescheduleNotAllowedError) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: err.message,
+          });
+        }
+        throw err;
+      }
     },
   );
 
@@ -206,7 +467,7 @@ export default async function appointmentsRoutes(
   // POST /admin/appointments/:id/transition
   app.post(
     '/appointments/:id/transition',
-    { preHandler: requireRole.admin },
+    { preHandler: requireRole.staff },
     async (request, reply) => {
       const user = request.currentUser!;
       const tenantId = user.tenantId!;
@@ -218,6 +479,37 @@ export default async function appointmentsRoutes(
       const body = TransitionAppointmentBodySchema.safeParse(request.body);
       if (!body.success) {
         return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
       }
 
       try {

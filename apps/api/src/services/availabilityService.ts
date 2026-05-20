@@ -11,14 +11,17 @@ import { stateOccupiesSlot } from './appointmentStateMachine.js';
 // hours and < 50 existing appointments it's microsecond-fast.
 //
 // Algorithm:
-//   1. Load Location (tz), Staff (workingHours JSONB), Service (duration + buffer)
+//   1. Load Location (tz), Staff (workingHours JSONB), Service (duration + buffers)
 //   2. Resolve day-of-week key in the location's timezone for the requested date
 //   3. Look up staff.workingHours[dayKey] — array of { start, end } in local time
 //   4. For each shift, generate candidate slots stepping by service duration
 //   5. Query existing appointments for this staff that overlap the day (UTC range)
-//   6. Inflate each existing appointment by ITS service's bufferAfterMinutes
-//   7. Drop candidate slots that overlap any inflated existing range
-//   8. Return UTC ISO tuples in chronological order
+//   6. Blocked footprint per existing appointment: scheduled interval enlarged by
+//      THAT service's bufferBeforeMinutes + bufferAfterMinutes (leading/trailing).
+//   7. For each candidate slot, overlap-test using the REQUESTED service's
+//      [slotStart - bufferBefore, slotEnd + bufferAfter]. Skip candidates whose
+//      expanded start is strictly before the shift start (cannot prep outside shift).
+//   8. Return UTC ISO tuples (actual booking window, not inflated) in order
 //
 // DST correctness: date-fns-tz fromZonedTime handles spring-forward and
 // fall-back natively. "9:00 America/New_York on 2026-03-08" maps to the
@@ -105,7 +108,13 @@ export async function listAvailableSlots(
     }),
     prisma.service.findFirst({
       where: { id: query.serviceId, tenantId },
-      select: { id: true, durationMinutes: true, bufferAfterMinutes: true, active: true },
+      select: {
+        id: true,
+        durationMinutes: true,
+        bufferBeforeMinutes: true,
+        bufferAfterMinutes: true,
+        active: true,
+      },
     }),
   ]);
   if (!location)
@@ -133,6 +142,8 @@ export async function listAvailableSlots(
   }
 
   const durationMs = service.durationMinutes * 60_000;
+  const bufBeforeMs = service.bufferBeforeMinutes * 60_000;
+  const bufAfterMs = service.bufferAfterMinutes * 60_000;
   if (durationMs <= 0) {
     return { slots: [] };
   }
@@ -155,21 +166,46 @@ export async function listAvailableSlots(
       scheduledStartAt: true,
       scheduledEndAt: true,
       state: true,
-      service: { select: { bufferAfterMinutes: true } },
+      service: {
+        select: {
+          bufferBeforeMinutes: true,
+          bufferAfterMinutes: true,
+        },
+      },
     },
     orderBy: { scheduledStartAt: 'asc' },
   });
 
-  // Inflate each existing appointment by its service's bufferAfterMinutes.
-  // Buffer pads only the trailing edge per the spec.
   const blocked = existing
     .filter((a) => stateOccupiesSlot(a.state))
     .map((a) => ({
-      startAt: a.scheduledStartAt,
+      startAt: new Date(
+        a.scheduledStartAt.getTime() -
+          a.service.bufferBeforeMinutes * 60_000,
+      ),
       endAt: new Date(
         a.scheduledEndAt.getTime() + a.service.bufferAfterMinutes * 60_000,
       ),
     }));
+
+  const scheduleBlocks = await prisma.staffScheduleBlock.findMany({
+    where: {
+      tenantId,
+      staffId: query.staffId,
+      deletedAt: null,
+      AND: [
+        { startsAt: { lt: dayEndUtc } },
+        { endsAt: { gt: dayStartUtc } },
+        {
+          OR: [{ locationId: null }, { locationId: query.locationId }],
+        },
+      ],
+    },
+    select: { startsAt: true, endsAt: true },
+  });
+  for (const b of scheduleBlocks) {
+    blocked.push({ startAt: b.startsAt, endAt: b.endsAt });
+  }
 
   // Generate candidate slots and filter against blocked ranges.
   const slots: AvailableSlot[] = [];
@@ -187,8 +223,13 @@ export async function listAvailableSlots(
     ) {
       const slotStart = cursor;
       const slotEnd = new Date(cursor.getTime() + durationMs);
+      const expandedStart = new Date(slotStart.getTime() - bufBeforeMs);
+      const expandedEnd = new Date(slotEnd.getTime() + bufAfterMs);
+      if (expandedStart < shiftStart) {
+        continue;
+      }
       const conflicts = blocked.some((b) =>
-        rangesOverlap(slotStart, slotEnd, b.startAt, b.endAt),
+        rangesOverlap(expandedStart, expandedEnd, b.startAt, b.endAt),
       );
       if (!conflicts) {
         slots.push({

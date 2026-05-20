@@ -79,3 +79,20 @@ export async function listClientNotes(
     },
   });
 }
+
+export type AcknowledgeClientNoteBody = {
+  staffId: string;
+  triggerContext: 'booking' | 'check_in' | 'checkout' | 'manual';
+  appointmentId?: string;
+};
+
+export async function acknowledgeClientNote(
+  clientId: string,
+  noteId: string,
+  body: AcknowledgeClientNoteBody,
+): Promise<{ acknowledgment: { id: string } }> {
+  return apiFetch(`/admin/clients/${clientId}/notes/${noteId}/acknowledge`, {
+    method: 'POST',
+    body,
+  });
+}

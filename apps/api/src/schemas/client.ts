@@ -48,6 +48,8 @@ export const CreateClientBodySchema = z.object({
   firstName: TRIM_NONEMPTY.max(80),
   lastName: z.string().trim().max(80).optional()
     .or(z.literal('').transform(() => undefined)),
+  preferredName: z.string().trim().max(80).optional()
+    .or(z.literal('').transform(() => undefined)),
   email: EMAIL,
   phone: PHONE,
   // Date-only ISO string; coerced to a JS Date at the service layer.

@@ -4,6 +4,13 @@
 
 import { apiFetch } from './client';
 
+/** Mirrors Prisma `ClientIntakeStatus` — joined on appointment list/detail. */
+export type ClientIntakeStatus =
+  | 'pending'
+  | 'sent'
+  | 'completed'
+  | 'expired';
+
 // AppointmentState string union — matches AppointmentStatusSchema in the API.
 export type AppointmentState =
   | 'scheduled'
@@ -24,7 +31,8 @@ export type AppointmentSource =
   | 'import'
   | 'campaign'
   | 'walk_in'
-  | 'quick_book';
+  | 'quick_book'
+  | 'calendar_drag';
 
 // Appointment row as returned by APPOINTMENT_SAFE_FIELDS in
 // apps/api/src/services/appointmentService.ts. The list + detail endpoints
@@ -45,9 +53,13 @@ export type Appointment = {
   cancelledAt: string | null;
   cancelledByUserId: string | null;
   cancelReason: string | null;
+  /** List price in cents, locked at booking (Services & Catalog). */
+  bookedBasePriceCents: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  /** From linked Client row; present on list + GET /admin/appointments/:id. */
+  clientIntakeStatus?: ClientIntakeStatus;
 };
 
 export type ListAppointmentsResponse = {
@@ -99,12 +111,24 @@ export type CreateAppointmentBody = {
   scheduledStartAt: string; // UTC ISO
   state?: AppointmentState;
   notes?: string;
+  source?: AppointmentSource;
 };
 
 export async function createAppointment(
   body: CreateAppointmentBody,
 ): Promise<{ appointment: Appointment }> {
   return apiFetch('/admin/appointments', { method: 'POST', body });
+}
+
+/** Persists audit when operator acknowledged required forms during Quick Book. */
+export async function logRequiredFormsBookingAcknowledgment(
+  appointmentId: string,
+  body: { staffId: string; clientId: string; serviceId: string },
+): Promise<{ ok: true }> {
+  return apiFetch(
+    `/admin/appointments/${appointmentId}/required-forms-booking-ack`,
+    { method: 'POST', body },
+  );
 }
 
 // 409 conflict body shape from the create route. Surfaces in catch blocks.
@@ -136,13 +160,29 @@ export async function transitionAppointment(
 
 export type UpdateAppointmentBody = {
   notes?: string;
+  scheduledStartAt?: string;
+  staffId?: string;
+  locationId?: string;
+};
+
+export type UpdateAppointmentOptions = {
+  /** Sends x-wellos-calendar-drag so the API can record source = calendar_drag. */
+  calendarDrag?: boolean;
 };
 
 export async function updateAppointment(
   id: string,
   body: UpdateAppointmentBody,
+  options?: UpdateAppointmentOptions,
 ): Promise<{ appointment: Appointment }> {
-  return apiFetch(`/admin/appointments/${id}`, { method: 'PATCH', body });
+  return apiFetch(`/admin/appointments/${id}`, {
+    method: 'PATCH',
+    body,
+    headers:
+      options?.calendarDrag === true
+        ? { 'x-wellos-calendar-drag': '1' }
+        : undefined,
+  });
 }
 
 // Booking answers (Intake tab). Same row shape as

@@ -169,6 +169,139 @@ export function nowLinePx(date: Date): number | null {
   return offset * GRID_PX_PER_MIN;
 }
 
+/** Snap “minutes since local midnight” to the calendar row step (30 min). */
+export function snapMinutesToGridRow(minutesSinceMidnight: number): number {
+  const step = GRID_ROW_MINUTES;
+  const snapped = Math.round(minutesSinceMidnight / step) * step;
+  const max = 24 * 60 - step;
+  return Math.max(0, Math.min(snapped, max));
+}
+
+/**
+ * Converts a vertical offset within the day grid (px from top of the scroll
+ * body) into snapped local “minutes since midnight” for the viewed day.
+ */
+export function gridTopPxToSnappedLocalMinutesSinceMidnight(topPx: number): number {
+  const clipped = Math.max(
+    0,
+    Math.min(topPx, GRID_TOTAL_MINUTES * GRID_PX_PER_MIN),
+  );
+  const minutesFromGridStart = clipped / GRID_PX_PER_MIN;
+  const raw = GRID_START_HOUR * 60 + minutesFromGridStart;
+  return snapMinutesToGridRow(raw);
+}
+
+/** Builds a UTC ISO timestamp from a calendar anchor day + local wall time. */
+export function localDayAndMinutesToUtcIso(
+  anchorDay: Date,
+  minutesSinceMidnight: number,
+): string {
+  const d = new Date(
+    anchorDay.getFullYear(),
+    anchorDay.getMonth(),
+    anchorDay.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const h = Math.floor(minutesSinceMidnight / 60);
+  const m = minutesSinceMidnight % 60;
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+/** True if a staff schedule block overlaps this calendar day (browser local TZ). */
+export function staffScheduleBlockTouchesLocalDay(
+  block: { startsAt: string; endsAt: string },
+  day: Date,
+): boolean {
+  const startOf = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).getTime();
+  const endOf = startOf + 24 * 60 * 60 * 1000;
+  const s = new Date(block.startsAt).getTime();
+  const e = new Date(block.endsAt).getTime();
+  return s < endOf && e > startOf;
+}
+
+/** Counts blocks (any staff) that touch a local calendar day — month grid summaries. */
+export function countStaffScheduleBlocksTouchingLocalDay(
+  scheduleBlocksByStaff: Record<
+    string,
+    { startsAt: string; endsAt: string }[]
+  >,
+  day: Date,
+): number {
+  let n = 0;
+  for (const blocks of Object.values(scheduleBlocksByStaff)) {
+    for (const b of blocks) {
+      if (staffScheduleBlockTouchesLocalDay(b, day)) n += 1;
+    }
+  }
+  return n;
+}
+
+/** Open intervals between consecutive appointments (same column), in grid coordinates. */
+export type CalendarGap = {
+  topPx: number;
+  heightPx: number;
+  /** Minutes from grid start (8:00) */
+  gapStartMin: number;
+  gapEndMin: number;
+};
+
+const MIN_GAP_MINUTES = 12;
+
+/**
+ * Computes whitespace gaps between sorted same-day appointments for one staff member.
+ * Ignores pairs where the gap is smaller than MIN_GAP_MINUTES.
+ */
+export function gapsBetweenAppointments(
+  appointments: { scheduledStartAt: string; scheduledEndAt: string }[],
+): CalendarGap[] {
+  if (appointments.length < 2) return [];
+  const sorted = [...appointments].sort(
+    (a, b) =>
+      new Date(a.scheduledStartAt).getTime() -
+      new Date(b.scheduledStartAt).getTime(),
+  );
+  const gaps: CalendarGap[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i];
+    const b = sorted[i + 1];
+    if (!a || !b) continue;
+    const endA = offsetFromGridStart(a.scheduledEndAt);
+    const startB = offsetFromGridStart(b.scheduledStartAt);
+    const gapStart = Math.max(0, endA);
+    const gapEnd = Math.min(GRID_TOTAL_MINUTES, startB);
+    if (gapEnd - gapStart < MIN_GAP_MINUTES) continue;
+    const topPx = gapStart * GRID_PX_PER_MIN;
+    const heightPx = Math.max(
+      GRID_ROW_MINUTES * GRID_PX_PER_MIN * 0.5,
+      (gapEnd - gapStart) * GRID_PX_PER_MIN,
+    );
+    gaps.push({
+      topPx,
+      heightPx,
+      gapStartMin: gapStart,
+      gapEndMin: gapEnd,
+    });
+  }
+  return gaps;
+}
+
+/** Minutes duration of a gap for display (rounded). */
+export function gapDurationMinutes(gap: CalendarGap): number {
+  return Math.round(gap.gapEndMin - gap.gapStartMin);
+}
+
 // Re-export some date-fns primitives used by callers so the rest of the app
 // has one import surface.
 export { addDays, parseISO, startOfDay };

@@ -25,7 +25,13 @@ interface DrawerProps {
   children: ReactNode;
   // Optional render slot for header actions (e.g. status pill, close-and-do).
   headerActions?: ReactNode;
+  /** Pinned below the scroll region (summary + primary actions). */
+  footer?: ReactNode;
   widthClassName?: string;
+  /** Extra classes on the aside panel (e.g. gradient background). */
+  panelClassName?: string;
+  /** Classes on the scrollable body wrapper (e.g. tinted bg). */
+  bodyClassName?: string;
   ariaLabel?: string;
 }
 
@@ -36,7 +42,10 @@ export function Drawer({
   subtitle,
   children,
   headerActions,
+  footer,
   widthClassName = 'w-full max-w-[520px]',
+  panelClassName,
+  bodyClassName,
   ariaLabel,
 }: DrawerProps) {
   // Esc-to-close. Bound only when open to avoid leaking a global listener.
@@ -73,15 +82,16 @@ export function Drawer({
         type="button"
         aria-label="Close drawer overlay"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-ink/40 backdrop-blur-[2px] transition-opacity duration-base"
+        className="absolute inset-0 cursor-default bg-ink/[0.42] backdrop-blur-[3px] transition-opacity duration-base motion-reduce:backdrop-blur-none"
       />
       <aside
         className={cn(
           'absolute right-0 top-0 flex h-full flex-col bg-white shadow-lg',
           widthClassName,
+          panelClassName,
         )}
       >
-        <header className="flex shrink-0 items-start justify-between gap-s4 border-b border-surface-3 px-s6 py-s4">
+        <header className="flex shrink-0 items-start justify-between gap-s4 border-b border-surface-3 bg-white px-s6 py-s5 shadow-sm">
           <div className="flex flex-col gap-s1">
             {typeof title === 'string' ? (
               <h2 className="t-display-md text-ink">{title}</h2>
@@ -98,7 +108,7 @@ export function Drawer({
               type="button"
               onClick={onClose}
               className={cn(
-                'inline-flex h-9 w-9 items-center justify-center rounded-md text-ink-soft',
+                'inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-soft',
                 'transition-colors duration-fast hover:bg-surface-2 hover:text-ink',
                 'focus-visible:outline-none focus-visible:shadow-focus',
               )}
@@ -121,7 +131,16 @@ export function Drawer({
             </button>
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div
+          className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', bodyClassName)}
+        >
+          {children}
+        </div>
+        {footer !== undefined && footer !== null && (
+          <footer className="shrink-0 border-t border-surface-3 bg-white px-s6 py-s5 shadow-md">
+            {footer}
+          </footer>
+        )}
       </aside>
     </div>
   );

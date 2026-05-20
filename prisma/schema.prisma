@@ -96,12 +96,13 @@ enum ClientNoteAuthorType {
   system
 }
 
-// Where the note originated. 7 surfaces per v2-notes §4.3.
+// Where the note originated (extend when adding booking surfaces; keep Zod in sync).
 enum ClientNoteSourceSurface {
   public_booking
   magic_link_manage
   appointment_detail
   calendar_drawer
+  quick_book
   client_profile
   intake_form
   system_transition
@@ -193,6 +194,15 @@ enum ServiceContentDeliveryChannel {
   both
 }
 
+// Public catalog / booking UI price presentation (Services & Catalog MVP).
+enum ServicePriceDisplayMode {
+  fixed
+  starting_at @map("starting_at")
+  range
+  hidden
+  consultation
+}
+
 // Where the appointment was created from. Surfaces in reporting + abuse
 // detection. Tier A column on Appointment (added 2026-04-30).
 enum AppointmentSource {
@@ -202,8 +212,43 @@ enum AppointmentSource {
   api
   import
   campaign
-  walk_in   @map("walk_in")
-  quick_book @map("quick_book")
+  walk_in       @map("walk_in")
+  quick_book    @map("quick_book")
+  calendar_drag @map("calendar_drag")
+}
+
+// Staff / calendar block time (calendar-area-features.md §9 — Tier B core).
+enum StaffScheduleBlockCategory {
+  break
+  lunch
+  pto
+  meeting
+  training
+  maintenance
+  closure
+  custom
+}
+
+enum ScheduleBlockVisibility {
+  internal
+  public_busy @map("public_busy")
+}
+
+// Epic 5 — first-party intake forms (versioned definitions, submissions).
+enum IntakeFormDefinitionStatus {
+  draft
+  published
+  archived
+}
+
+enum IntakeFormSubmissionStatus {
+  draft
+  submitted
+}
+
+// Append-only audit row action (expand when amend/redact flows land).
+enum IntakeFormSubmissionAuditAction {
+  submitted
 }
 
 // Tenant-editable file folder taxonomy. Used by ClientFile.folder.
@@ -230,6 +275,7 @@ model Tenant {
   clients                   Client[]
   staff                     Staff[]
   services                  Service[]
+  serviceCategories         ServiceCategory[]
   clientTags                ClientTag[]
   appointments              Appointment[]
 
@@ -247,6 +293,10 @@ model Tenant {
   appointmentBookingAnswers AppointmentBookingAnswer[]
   serviceContentDeliveries  ServiceContentDelivery[]
   staffCalendarFeedTokens   StaffCalendarFeedToken[]
+  staffScheduleBlocks       StaffScheduleBlock[]
+  intakeFormDefinitions     IntakeFormDefinition[]
+  intakeFormSubmissions     IntakeFormSubmission[]
+  intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -264,6 +314,7 @@ model Location {
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   appointments Appointment[]
   mediaAssets  MediaAsset[]  @relation("MediaAssetLocation")
+  staffScheduleBlocks StaffScheduleBlock[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -437,6 +488,8 @@ model Client {
   tenantId              String             @map("tenant_id")
   firstName             String             @map("first_name")
   lastName              String?            @map("last_name")
+  /// How the client prefers to be addressed in booking/CRM (spec: staff-booking-client-crm §3).
+  preferredName         String?            @map("preferred_name")
   email                 String?
   phone                 String?
   dateOfBirth           DateTime?          @map("date_of_birth") @db.Date
@@ -480,7 +533,8 @@ model Client {
   notes_         ClientNote[]          @relation("ClientNoteClient")
   authoredNotes  ClientNote[]          @relation("ClientNoteAuthorClient")
   mediaAssets    MediaAsset[]          @relation("MediaAssetClient")
-  soapNotes      SoapNote[]
+  soapNotes              SoapNote[]
+  intakeFormSubmissions  IntakeFormSubmission[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -517,6 +571,7 @@ model Staff {
   tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   services     StaffService[]
   appointments Appointment[]
+  scheduleBlocks StaffScheduleBlock[]
 
   // Tier A inverse relations.
   authoredNotes        ClientNote[]               @relation("ClientNoteAuthorStaff")
@@ -553,15 +608,46 @@ model StaffCalendarFeedToken {
   @@map("staff_calendar_feed_tokens")
 }
 
+// Tenant-scoped catalog grouping for services (optional FK on Service).
+model ServiceCategory {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  name         String
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services Service[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, displayOrder])
+  @@map("service_categories")
+}
+
 model Service {
   id                 String    @id @default(cuid())
   tenantId           String    @map("tenant_id")
+  categoryId         String?   @map("category_id")
   name               String
   description        String?
+  // Short blurb for catalog cards / SEO-adjacent surfaces (optional).
+  descriptionShort   String?   @map("description_short")
   // Service duration in minutes. The booking engine snaps to this grid.
   durationMinutes    Int       @map("duration_minutes")
   // Base price in cents.
   basePriceCents     Int       @map("base_price_cents")
+  // How the public catalog surfaces price (fixed amount vs range vs hidden).
+  priceDisplayMode   ServicePriceDisplayMode @default(fixed) @map("price_display_mode")
+  // Sort order within category / catalog admin lists.
+  displayOrder       Int       @default(0) @map("display_order")
+  // When false, hide from public booking catalog (staff calendar may still use).
+  publicVisible      Boolean   @default(true) @map("public_visible")
+  // Buffer BEFORE this service starts on the same staff member's calendar.
+  bufferBeforeMinutes Int      @default(0) @map("buffer_before_minutes")
   // Buffer applied AFTER each appointment of this service for the same staff
   // member, in minutes. Per-staff and per-service-pair buffers are Phase 2.
   bufferAfterMinutes Int       @default(0) @map("buffer_after_minutes")
@@ -580,6 +666,7 @@ model Service {
   deletedAt          DateTime? @map("deleted_at")
 
   tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  category          ServiceCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   staff             StaffService[]
   appointments      Appointment[]
   notes             ClientNote[]
@@ -590,6 +677,8 @@ model Service {
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, active])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, publicVisible])
   @@map("services")
 }
 
@@ -640,6 +729,34 @@ model ClientTagAssignment {
   @@map("client_tag_assignments")
 }
 
+// Staff schedule blocks — breaks, PTO, meetings, closures (calendar-area-features).
+// Stored in UTC; UI renders in Location.timezone. Availability + booking creation
+// both respect overlaps with these intervals.
+model StaffScheduleBlock {
+  id           String                     @id @default(cuid())
+  tenantId     String                     @map("tenant_id")
+  staffId      String                     @map("staff_id")
+  /// When set, block applies only when booking at this location; null = all locations for this staff.
+  locationId   String?                    @map("location_id")
+  title        String
+  category     StaffScheduleBlockCategory
+  startsAt     DateTime                   @map("starts_at") @db.Timestamptz(3)
+  endsAt       DateTime                   @map("ends_at")   @db.Timestamptz(3)
+  visibility   ScheduleBlockVisibility    @default(internal)
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  updatedAt    DateTime                   @updatedAt @map("updated_at")
+  deletedAt    DateTime?                  @map("deleted_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  staff    Staff     @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  location Location? @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, staffId, startsAt])
+  @@index([staffId, startsAt, endsAt])
+  @@index([tenantId, deletedAt])
+  @@map("staff_schedule_blocks")
+}
+
 // ---------- Epic 3: Booking engine ----------
 //
 // Per docs/09-dev-handoff.md "Epic 3":
@@ -680,6 +797,10 @@ model Appointment {
   cancelledByUserId String?           @map("cancelled_by_user_id")
   cancelReason      String?           @map("cancel_reason")
 
+  // Price locked at booking time (Services & Catalog spec). Service price edits
+  // do not change historical appointments.
+  bookedBasePriceCents Int            @map("booked_base_price_cents")
+
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt      @map("updated_at")
   deletedAt         DateTime?         @map("deleted_at")
@@ -696,6 +817,7 @@ model Appointment {
   soapNotes           SoapNote[]
   bookingAnswers      AppointmentBookingAnswer[]
   noteAcknowledgments ClientNoteAcknowledgment[]
+  intakeFormSubmissions IntakeFormSubmission[]
 
   @@index([tenantId, scheduledStartAt])
   @@index([staffId, scheduledStartAt])
@@ -1121,4 +1243,87 @@ model ServiceContentDelivery {
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@map("service_content_deliveries")
+}
+
+// ---------- Epic 5: Intake form definitions & submissions (MVP slice) ----------
+//
+// Versioning: rows sharing `groupId` are versions of the same logical form.
+// Only one `published` row per group at a time (enforced in the service layer).
+
+model IntakeFormDefinition {
+  id        String                     @id @default(cuid())
+  tenantId  String                     @map("tenant_id")
+  groupId   String                     @map("group_id")
+  title     String
+  /// Field templates: array of { key, type, label, ... } — validated at API layer.
+  schema    Json
+  version   Int
+  status    IntakeFormDefinitionStatus @default(draft)
+  /// Tenant can hide a form from pickers without deleting history.
+  isActive  Boolean                    @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submissions IntakeFormSubmission[]
+
+  @@unique([tenantId, groupId, version])
+  @@index([tenantId])
+  @@index([tenantId, groupId])
+  @@index([tenantId, status])
+  @@map("intake_form_definitions")
+}
+
+model IntakeFormSubmission {
+  id             String                   @id @default(cuid())
+  tenantId       String                   @map("tenant_id")
+  definitionId   String                   @map("definition_id")
+  /// Nullable for future magic-link flows that start before client linkage.
+  clientId       String?                  @map("client_id")
+  appointmentId  String?                  @map("appointment_id")
+  answers        Json                     @default("{}")
+  status         IntakeFormSubmissionStatus @default(draft)
+
+  submittedAt    DateTime?                @map("submitted_at") @db.Timestamptz(3)
+
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  tenant     Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  definition IntakeFormDefinition       @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  client     Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  appointment Appointment?              @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  audits     IntakeFormSubmissionAudit[]
+
+  @@index([tenantId])
+  @@index([tenantId, clientId])
+  @@index([tenantId, definitionId])
+  @@index([appointmentId])
+  @@map("intake_form_submissions")
+}
+
+// Append-only compliance trail (Epic 5 — IP, UA, version evidence). No updatedAt.
+model IntakeFormSubmissionAudit {
+  id               String                        @id @default(cuid())
+  tenantId         String                        @map("tenant_id")
+  submissionId     String                        @map("submission_id")
+  action           IntakeFormSubmissionAuditAction
+  definitionId     String                        @map("definition_id")
+  definitionVersion Int                          @map("definition_version")
+  /// Snapshot of the JSON schema the client signed against.
+  schemaSnapshot   Json                          @map("schema_snapshot")
+  answersSnapshot  Json                          @map("answers_snapshot")
+
+  ip              String?
+  userAgent       String?                       @map("user_agent")
+
+  createdAt       DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submission IntakeFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([submissionId, createdAt])
+  @@map("intake_form_submission_audits")
 }
