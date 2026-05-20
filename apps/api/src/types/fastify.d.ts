@@ -19,8 +19,25 @@ export interface CurrentUser {
   roles: string[];
 }
 
+// Populated by loadCurrentUser ONLY when the incoming Clerk session carries
+// an `actor` claim — meaning a super-admin is currently signed in as this
+// user via a Clerk actor token. `currentUser` is the impersonated subject;
+// `impersonator` is the real human (the super-admin) acting through them.
+// Audit-log writes should record `actor_user_id = impersonator.id` and
+// `subject_user_id = currentUser.id` whenever this is set.
+export interface Impersonator {
+  id: string;
+  clerkUserId: string;
+  email: string;
+  // Role names of the impersonator within their own tenant — useful for
+  // belt-and-suspenders checks (we never expect anything other than
+  // ['super_admin'] here, but the loader returns the full list).
+  roles: string[];
+}
+
 declare module 'fastify' {
   interface FastifyRequest {
     currentUser?: CurrentUser;
+    impersonator?: Impersonator;
   }
 }

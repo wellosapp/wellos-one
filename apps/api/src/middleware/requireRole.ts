@@ -3,8 +3,10 @@ import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastif
 import { loadCurrentUser } from './loadCurrentUser.js';
 
 // Role names match the seeded Role.name values in prisma/seed.ts
-// (admin, manager, staff). Update both together.
-export type RoleName = 'admin' | 'manager' | 'staff';
+// (super_admin, admin, manager, staff). Update both together.
+// super_admin is provisioned manually via bootstrap-admin.ts --super and
+// can impersonate other users via the Sign-in-as flow.
+export type RoleName = 'super_admin' | 'admin' | 'manager' | 'staff';
 
 // Authorization preHandler. Assumes loadCurrentUser already populated
 // `request.currentUser` — the convenience exports below bundle both.
@@ -64,9 +66,10 @@ function buildRoleGuard(allowed: readonly RoleName[]): preHandlerHookHandler {
 }
 
 // Hierarchy is implicit in the convenience exports below:
-//   admin   — admin only
-//   manager — admin or manager
-//   staff   — admin, manager, or staff
+//   superAdmin — super_admin only (platform-wide; bypass tenant gating)
+//   admin      — super_admin or admin
+//   manager    — super_admin, admin, or manager
+//   staff      — super_admin, admin, manager, or staff
 // Spell out the array via requireRole(...) for non-hierarchical role sets.
 export function requireRole(...allowed: RoleName[]): preHandlerHookHandler {
   return buildRoleGuard(allowed);
@@ -75,6 +78,19 @@ export function requireRole(...allowed: RoleName[]): preHandlerHookHandler {
 // Pre-chained [loadCurrentUser, guard] arrays so route definitions stay
 // one-liners: app.get('/admin/x', { preHandler: requireRole.admin }, ...).
 // Fastify's preHandler option accepts a mutable array, hence no `as const`.
-requireRole.admin = [loadCurrentUser, buildRoleGuard(['admin'])];
-requireRole.manager = [loadCurrentUser, buildRoleGuard(['admin', 'manager'])];
-requireRole.staff = [loadCurrentUser, buildRoleGuard(['admin', 'manager', 'staff'])];
+//
+// super_admin sits above all tenant-scoped roles by design. The Role table
+// row for super_admin still gets joined through a RoleAssignment to a
+// specific tenant (the role-assignment table requires it), but the role
+// grants platform-wide privileges — including impersonation via the
+// /admin/impersonate/* endpoints.
+requireRole.superAdmin = [loadCurrentUser, buildRoleGuard(['super_admin'])];
+requireRole.admin = [loadCurrentUser, buildRoleGuard(['super_admin', 'admin'])];
+requireRole.manager = [
+  loadCurrentUser,
+  buildRoleGuard(['super_admin', 'admin', 'manager']),
+];
+requireRole.staff = [
+  loadCurrentUser,
+  buildRoleGuard(['super_admin', 'admin', 'manager', 'staff']),
+];
