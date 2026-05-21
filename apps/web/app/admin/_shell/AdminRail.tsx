@@ -149,7 +149,11 @@ export function AdminRail({ expanded, onToggle }: AdminRailProps) {
             aria-expanded={expanded}
             className="mt-s1 flex items-center gap-s3 rounded-sm border-0 bg-transparent px-s3 py-[10px] text-left text-[12.5px] font-medium text-ink-4 transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink-2 focus-visible:shadow-focus focus-visible:outline-none"
           >
-            {expanded ? <PanelLeftIcon size={18} /> : <PanelRightIcon size={18} />}
+            {expanded ? (
+              <PanelLeftIcon size={18} className="shrink-0 max-w-none" />
+            ) : (
+              <PanelRightIcon size={18} className="shrink-0 max-w-none" />
+            )}
             <span
               className={`whitespace-nowrap transition-[opacity,transform] duration-base ${
                 expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
@@ -213,7 +217,10 @@ function RailLink({ href, label, Icon, active, expanded }: RailLinkProps) {
           className="absolute -left-s2 top-s2 bottom-s2 w-[3px] rounded-r-sm bg-sage"
         />
       ) : null}
-      <Icon size={20} />
+      {/* shrink-0 + max-w-none override Tailwind preflight's `max-width: 100%`
+          on svg — without them, flex shrinking + a narrow 28px collapsed-rail
+          inner width collapsed the icon to roughly nothing and it disappeared. */}
+      <Icon size={20} className="shrink-0 max-w-none" />
       <span
         className={`transition-[opacity,transform] duration-base ${
           expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
