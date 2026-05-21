@@ -570,6 +570,13 @@ model Client {
   intakeStatus          ClientIntakeStatus @default(pending) @map("intake_status")
   notes                 String?
 
+  /// Per-tenant sequential client number for support / phone-lookup workflows.
+  /// Rendered as "CL-{6-digit zero-padded}" by the admin UI. Computed
+  /// application-side via getNextClientNumber (MAX + 1 within the tenant);
+  /// the @@unique([tenantId, clientNumber]) constraint catches race-window
+  /// collisions so the service layer can retry once.
+  clientNumber          Int                @map("client_number")
+
   // Tier A — Communication preferences (Client CRM #2 from feature matrix).
   // Used by Epic 8 notification dispatch to gate SMS/email sends. Default
   // false so newly-created clients receive both until they opt out.
@@ -602,6 +609,7 @@ model Client {
   soapNotes              SoapNote[]
   intakeFormSubmissions  IntakeFormSubmission[]
 
+  @@unique([tenantId, clientNumber])
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
