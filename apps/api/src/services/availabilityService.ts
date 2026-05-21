@@ -27,6 +27,20 @@ import { loadActiveHoldsForStaff } from './slotHoldService.js';
 // DST correctness: date-fns-tz fromZonedTime handles spring-forward and
 // fall-back natively. "9:00 America/New_York on 2026-03-08" maps to the
 // correct UTC instant; nothing special needed in this code.
+//
+// TODO (R2 §12 — booking settings two-tier resolution):
+//   - Today we use Service.bufferBeforeMinutes / bufferAfterMinutes directly,
+//     which is the right per-service buffer. The new bookingSettingsService
+//     exports `resolveBookingSetting` which would let us fall through to
+//     a per-staff buffer override (Staff.bookingBufferMinutesOverride) and
+//     then a tenant default (Tenant.bookingDefaultBufferMinutes) when the
+//     service has no explicit buffer set.
+//   - Likewise, min-notice + max-window are NOT enforced in this query yet —
+//     a candidate slot in the next 5 minutes would be returned even when the
+//     tenant requires 2-hour notice. Wire `resolveBookingSetting` for
+//     `bookingMinNoticeHours` (filter cursor < now + minNotice) and
+//     `bookingMaxWindowDays` (reject query.date beyond now + maxWindow) when
+//     the public booking surface is hardened. See bookingSettingsService.ts.
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 type DayKey = (typeof DAY_KEYS)[number];

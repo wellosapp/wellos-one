@@ -28,6 +28,11 @@ export type Staff = {
   // to number on the consumer side.
   commissionRatePct: number | string | null;
   active: boolean;
+  // Per-staff booking override fields (R2 §12). Edit via the
+  // /admin/staff/:id/booking-preferences endpoint, not the main Staff PATCH.
+  bookingBufferMinutesOverride: number | null;
+  bookingMinNoticeHoursOverride: number | null;
+  bookingCalendarSyncOptedIn: boolean;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

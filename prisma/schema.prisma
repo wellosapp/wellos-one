@@ -293,6 +293,25 @@ model Tenant {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
+  // ---------- Booking settings (R2 §12.1) — tenant-level defaults ----------
+  // Booking policy default lives on Service (already shipped, see BookingPolicy
+  // enum + Service.bookingPolicy). These are tenant-wide knobs that resolve
+  // down to appointments unless overridden — see bookingSettingsService.
+  bookingDepositsEnabled         Boolean @default(false) @map("booking_deposits_enabled")
+  bookingDepositAmountCents      Int     @default(5000)  @map("booking_deposit_amount_cents")
+  bookingCancellationWindowHours Int     @default(24)    @map("booking_cancellation_window_hours")
+  bookingCancellationFeeCents    Int     @default(0)     @map("booking_cancellation_fee_cents")
+  bookingNoShowFeeCents          Int     @default(0)     @map("booking_no_show_fee_cents")
+  bookingMinNoticeHours          Int     @default(2)     @map("booking_min_notice_hours")
+  bookingMaxWindowDays           Int     @default(90)    @map("booking_max_window_days")
+  bookingDefaultBufferMinutes    Int     @default(0)     @map("booking_default_buffer_minutes")
+  bookingWalkInsAllowed          Boolean @default(true)  @map("booking_walk_ins_allowed")
+  bookingTipsEnabled             Boolean @default(true)  @map("booking_tips_enabled")
+  /// "email_only" | "email_phone" | "email_name" — validated by Zod at the API edge.
+  bookingClientRecognitionMode   String  @default("email_phone")    @map("booking_client_recognition_mode")
+  /// Comma-separated role names allowed to override double-book (e.g. "admin,manager").
+  bookingOverrideRoles           String  @default("admin,manager")  @map("booking_override_roles")
+
   locations                 Location[]
   users                     User[]
   roleAssignments           RoleAssignment[]
@@ -593,6 +612,17 @@ model Staff {
   // Commission as a percentage (0-100). Decimal column for precision.
   commissionRatePct Decimal?  @map("commission_rate_pct") @db.Decimal(5, 2)
   active            Boolean   @default(true)
+
+  // ---------- Per-staff booking override fields (R2 §12) ----------
+  // Nullable: null falls through to the tenant-level default at resolution time.
+  // See bookingSettingsService.resolveBookingSetting for the two-tier order.
+  bookingBufferMinutesOverride  Int?     @map("booking_buffer_minutes_override")
+  bookingMinNoticeHoursOverride Int?     @map("booking_min_notice_hours_override")
+  /// Spec: tenant enables calendar sync, staff opts in. Non-nullable boolean
+  /// because the staff member always has an explicit yes/no — there is no
+  /// "fall through to tenant" semantic for this field.
+  bookingCalendarSyncOptedIn    Boolean  @default(false) @map("booking_calendar_sync_opted_in")
+
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   deletedAt         DateTime? @map("deleted_at")

@@ -116,6 +116,12 @@ export default async function AdminLayout({
           >
             Media
           </Link>
+          <Link
+            href="/admin/settings"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Settings
+          </Link>
         </nav>
         <UserButton afterSignOutUrl="/" />
       </header>
