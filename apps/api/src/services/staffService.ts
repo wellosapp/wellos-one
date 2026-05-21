@@ -38,6 +38,11 @@ const STAFF_SAFE_FIELDS = {
   hourlyRateCents: true,
   commissionRatePct: true,
   active: true,
+  // Per-staff booking override fields (R2 §12). Owned by the booking-settings
+  // service for writes, but selected here so the Staff detail GET returns them.
+  bookingBufferMinutesOverride: true,
+  bookingMinNoticeHoursOverride: true,
+  bookingCalendarSyncOptedIn: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,

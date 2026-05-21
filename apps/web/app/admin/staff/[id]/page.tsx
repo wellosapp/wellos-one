@@ -9,6 +9,8 @@ import { getStaff, DAY_KEYS, type DayKey } from '@/lib/api/staff';
 import { StaffForm } from '../StaffForm';
 import type { StaffFormValues } from '../_actions';
 import { deleteStaffAction, updateStaffAction } from '../_actions';
+import { BookingPreferencesCard } from './BookingPreferencesCard';
+import { updateStaffBookingPrefsAction } from './_booking-preferences-actions';
 import { CalendarFeedCard } from './CalendarFeedCard';
 
 function staffToFormDefaults(
@@ -81,6 +83,7 @@ export default async function StaffDetailPage({
 
   const updateAction = updateStaffAction.bind(null, id);
   const deleteAction = deleteStaffAction.bind(null, id);
+  const updatePrefsAction = updateStaffBookingPrefsAction.bind(null, id);
 
   return (
     <div className="flex flex-col gap-s6">
@@ -124,6 +127,23 @@ export default async function StaffDetailPage({
           successMessage="Staff updated."
         />
       </Card>
+
+      {!staff.deletedAt && (
+        <BookingPreferencesCard
+          action={updatePrefsAction}
+          initial={{
+            bookingBufferMinutesOverride:
+              staff.bookingBufferMinutesOverride === null
+                ? ''
+                : String(staff.bookingBufferMinutesOverride),
+            bookingMinNoticeHoursOverride:
+              staff.bookingMinNoticeHoursOverride === null
+                ? ''
+                : String(staff.bookingMinNoticeHoursOverride),
+            bookingCalendarSyncOptedIn: staff.bookingCalendarSyncOptedIn,
+          }}
+        />
+      )}
 
       {!staff.deletedAt && <CalendarFeedCard staffId={staff.id} />}
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import appointmentsRoutes from './appointments.js';
 import availabilityRoutes from './availability.js';
+import bookingSettingsRoutes from './booking-settings.js';
 import clientNotesRoutes from './client-notes.js';
 import clientTagsRoutes from './client-tags.js';
 import clientsRoutes from './clients.js';
@@ -14,6 +15,7 @@ import onboardingRoutes from './onboarding.js';
 import serviceCategoriesRoutes from './service-categories.js';
 import servicesRoutes from './services.js';
 import soapNotesRoutes from './soap-notes.js';
+import staffBookingPreferencesRoutes from './staff-booking-preferences.js';
 import staffBookingRoutes from './staff-booking.js';
 import staffCalendarSyncRoutes from './staff-calendar-sync.js';
 import staffScheduleBlocksRoutes from './staff-schedule-blocks.js';
@@ -32,7 +34,9 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(servicesRoutes, { prefix: '/admin' });
   await app.register(serviceCategoriesRoutes, { prefix: '/admin' });
   await app.register(staffRoutes, { prefix: '/admin' });
+  await app.register(staffBookingPreferencesRoutes, { prefix: '/admin' });
   await app.register(staffCalendarSyncRoutes, { prefix: '/admin' });
+  await app.register(bookingSettingsRoutes, { prefix: '/admin' });
   await app.register(appointmentsRoutes, { prefix: '/admin' });
   await app.register(availabilityRoutes, { prefix: '/admin' });
   await app.register(linkedRecordsRoutes, { prefix: '/admin' });

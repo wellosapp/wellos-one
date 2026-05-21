@@ -20,6 +20,7 @@ import prismaPlugin from './plugins/prisma.js';
 import adminRoutes from './routes/admin/index.js';
 import meRoutes from './routes/me.js';
 import publicRoutes from './routes/public/index.js';
+import staffSelfRoutes from './routes/staff-self.js';
 import webhookRoutes from './routes/webhooks/index.js';
 
 const { default: Fastify } = await import('fastify');
@@ -104,6 +105,9 @@ app.get('/version', async () => {
 
 // Protected routes — pulled into routes/ files as the surface grows.
 await app.register(meRoutes);
+// /staff/* self-service surface (e.g. /staff/my-booking-preferences). Top-
+// level (no prefix) so staff don't need to know their own staffId in the URL.
+await app.register(staffSelfRoutes);
 await app.register(adminRoutes);
 // Login-free public booking (Epic 4) — no requireAuth; tenant scoped per request.
 await app.register(publicRoutes);
