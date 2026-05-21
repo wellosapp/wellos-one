@@ -492,7 +492,8 @@ export async function updateAppointment(
   prisma: ExtendedPrismaClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    /** Null for system-initiated paths (magic-link reschedule/cancel) — surfaces as actorType='system' on the audit row. */
+    actorUserId: string | null;
     id: string;
     body: UpdateAppointmentBody;
     /** Set when PATCH includes x-wellos-calendar-drag (calendar UI drag-drop). */
@@ -648,7 +649,8 @@ export async function transitionAppointmentState(
   prisma: ExtendedPrismaClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    /** Null for system-initiated transitions (magic-link cancel, no-show auto-trigger). Surfaces as actorType='system' on the audit row + cancelledByUserId=null. */
+    actorUserId: string | null;
     id: string;
     to: AppointmentStatus;
     reason: string | undefined;

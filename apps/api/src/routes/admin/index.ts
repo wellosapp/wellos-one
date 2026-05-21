@@ -11,6 +11,7 @@ import impersonateRoutes from './impersonate.js';
 import intakeFormsRoutes from './intake-forms.js';
 import linkedRecordsRoutes from './linked-records.js';
 import mediaRoutes from './media.js';
+import mintManageLinkRoutes from './mint-manage-link.js';
 import onboardingRoutes from './onboarding.js';
 import serviceCategoriesRoutes from './service-categories.js';
 import servicesRoutes from './services.js';
@@ -47,6 +48,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(contentDeliveriesRoutes, { prefix: '/admin' });
   await app.register(soapNotesRoutes, { prefix: '/admin' });
   await app.register(mediaRoutes, { prefix: '/admin' });
+  await app.register(mintManageLinkRoutes, { prefix: '/admin' });
   await app.register(onboardingRoutes, { prefix: '/admin' });
   await app.register(intakeFormsRoutes, { prefix: '/admin' });
   await app.register(waitlistRoutes, { prefix: '/admin' });
