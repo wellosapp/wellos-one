@@ -17,9 +17,13 @@ import {
 import { AlertsStrip } from './_overview/AlertsStrip';
 import { KpiCard } from './_overview/KpiCard';
 import { KpiStrip } from './_overview/KpiStrip';
+import { NextUp } from './_overview/NextUp';
+import { OutstandingIntake } from './_overview/OutstandingIntake';
 import { QuickActions } from './_overview/QuickActions';
 import { RevenueChart } from './_overview/RevenueChart';
 import { ScheduleStrip } from './_overview/ScheduleStrip';
+import { StaffOnShift } from './_overview/StaffOnShift';
+import { WaitlistPreview } from './_overview/WaitlistPreview';
 import { getOverviewData } from './_overview/data';
 
 export default async function AdminHomePage() {
@@ -77,6 +81,20 @@ export default async function AdminHomePage() {
         </div>
         <div className="lg:col-span-4">
           <QuickActions />
+        </div>
+
+        <div className="lg:col-span-4">
+          <StaffOnShift rows={data.staffOnShift} />
+        </div>
+        <div className="lg:col-span-4">
+          <WaitlistPreview rows={data.waitlist} />
+        </div>
+        <div className="lg:col-span-4">
+          <OutstandingIntake rows={data.outstandingIntake} />
+        </div>
+
+        <div className="lg:col-span-12">
+          <NextUp rows={data.nextUp} />
         </div>
       </div>
     </div>

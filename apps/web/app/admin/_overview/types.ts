@@ -88,4 +88,51 @@ export type OverviewData = {
   /** e.g. 'Wednesday · May 21'. */
   todayLabel: string;
   revenueChart: RevenueChartData;
+  waitlist: WaitlistPreviewRow[];
+  outstandingIntake: OutstandingIntakeRow[];
+  nextUp: NextUpRow[];
+  staffOnShift: StaffOnShiftRow[];
+};
+
+export type WaitlistPreviewRow = {
+  id: string;
+  clientFirstName: string;
+  clientLastName: string | null;
+  serviceName: string;
+  /** Human-friendly time preference. e.g. 'Mornings · Tue/Thu'. */
+  preferenceLabel: string;
+  /** e.g. 'today', '2d ago' — server-formatted relative. */
+  createdAtLabel: string;
+};
+
+export type OutstandingIntakeRow = {
+  clientId: string;
+  clientFirstName: string;
+  clientLastName: string | null;
+  /** 'pending' | 'sent' — drives the badge tone. */
+  status: 'pending' | 'sent';
+  /** Optional: id of the intake form template if we have it. Null when unknown. */
+  formId: string | null;
+};
+
+export type NextUpRow = {
+  appointmentId: string;
+  startsAtLabel: string;          // e.g. 'Tomorrow · 2:00 PM' or 'Fri · 9:30 AM'
+  startsAtIso: string;             // for the calendar deep-link
+  clientFirstName: string;
+  staffFirstName: string;
+  serviceName: string;
+  durationLabel: string;           // e.g. '50 min'
+};
+
+export type StaffOnShiftRow = {
+  staffId: string;
+  firstName: string;
+  lastName: string | null;
+  /** e.g. 'On shift until 5:00 PM'. */
+  shiftLabel: string;
+  /** Optional small text under the name. Number of appointments currently in progress + queued today. */
+  loadLabel: string;
+  /** Drives the small colored dot — design tokens '.status-dot live | break | off'. */
+  status: 'live' | 'break' | 'off';
 };

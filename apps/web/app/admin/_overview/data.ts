@@ -15,15 +15,23 @@ import { listAppointments, type Appointment } from '@/lib/api/appointments';
 import { listClients, type Client } from '@/lib/api/clients';
 import { listStaff, type Staff } from '@/lib/api/staff';
 import { listServices, type ServiceListItem } from '@/lib/api/services';
+import {
+  listWaitlistEntries,
+  type WaitlistEntry,
+} from '@/lib/api/waitlist';
 import { getWhoami, type WhoamiLocation } from '@/lib/api/whoami';
 import type { DayKey, Shift } from '@/lib/staff-days';
 import type {
   AlertItem,
   Delta,
   KpiSeries,
+  NextUpRow,
+  OutstandingIntakeRow,
   OverviewData,
   RevenueChartData,
   ScheduleAppointment,
+  StaffOnShiftRow,
+  WaitlistPreviewRow,
 } from './types';
 
 // ---- Constants ----
@@ -362,6 +370,16 @@ async function safeListServices(): Promise<ServiceListItem[]> {
   }
 }
 
+async function safeListWaitlist(): Promise<WaitlistEntry[]> {
+  try {
+    const res = await listWaitlistEntries({ status: 'active', limit: 50 });
+    return res.entries;
+  } catch (err) {
+    console.error('[overview-data] listWaitlistEntries failed', err);
+    return [];
+  }
+}
+
 async function safeTenantTimezone(): Promise<string | undefined> {
   try {
     const w = await getWhoami();
@@ -615,6 +633,351 @@ function buildTodaysSchedule(
   return out;
 }
 
+// ---- New widget builders ----
+
+/** "today" / "Nd ago" relative label for a past timestamp vs `now`. */
+function formatRelativePast(then: Date, now: Date): string {
+  const diffMs = now.getTime() - then.getTime();
+  if (diffMs < 0) return 'today';
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'today';
+  if (days === 1) return '1d ago';
+  return `${days}d ago`;
+}
+
+/** "Today · 2:00 PM" / "Tomorrow · 9:30 AM" / "Fri · 9:30 AM" for an upcoming time. */
+function formatRelativeUpcoming(at: Date, now: Date): string {
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const startOfAt = new Date(
+    at.getFullYear(),
+    at.getMonth(),
+    at.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const dayDiff = Math.round(
+    (startOfAt.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  const time = at.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  if (dayDiff <= 0) return `Today · ${time}`;
+  if (dayDiff === 1) return `Tomorrow · ${time}`;
+  const weekday = at.toLocaleDateString('en-US', { weekday: 'short' });
+  return `${weekday} · ${time}`;
+}
+
+/** Map a WaitlistEntry's preference fields into a small one-line label. */
+function formatWaitlistPreferenceLabel(entry: WaitlistEntry): string {
+  const parts: string[] = [];
+  if (entry.preferredTimeOfDay) {
+    switch (entry.preferredTimeOfDay) {
+      case 'morning':
+        parts.push('Mornings');
+        break;
+      case 'afternoon':
+        parts.push('Afternoons');
+        break;
+      case 'evening':
+        parts.push('Evenings');
+        break;
+      case 'any':
+        parts.push('Any time');
+        break;
+    }
+  }
+  if (entry.preferredStart) {
+    const d = new Date(entry.preferredStart);
+    const label = d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+    parts.push(`from ${label}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'Any time';
+}
+
+/** Split a "First Last" string from WaitlistEntry.contactName into parts. */
+function splitContactName(name: string): { first: string; last: string | null } {
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return { first: 'Guest', last: null };
+  const idx = trimmed.indexOf(' ');
+  if (idx === -1) return { first: trimmed, last: null };
+  return {
+    first: trimmed.slice(0, idx),
+    last: trimmed.slice(idx + 1) || null,
+  };
+}
+
+function buildWaitlistPreview(
+  entries: WaitlistEntry[],
+  serviceById: Map<string, ServiceListItem>,
+  now: Date,
+): WaitlistPreviewRow[] {
+  return entries
+    .filter((e) => e.status === 'active')
+    .slice(0, 5)
+    .map((entry) => {
+      const service = serviceById.get(entry.serviceId);
+      const { first, last } = splitContactName(entry.contactName);
+      return {
+        id: entry.id,
+        clientFirstName: first,
+        clientLastName: last,
+        serviceName: service?.name ?? 'Service',
+        preferenceLabel: formatWaitlistPreferenceLabel(entry),
+        createdAtLabel: formatRelativePast(new Date(entry.createdAt), now),
+      };
+    });
+}
+
+function buildOutstandingIntake(clients: Client[]): OutstandingIntakeRow[] {
+  return clients
+    .filter(
+      (c) =>
+        c.deletedAt === null &&
+        (c.intakeStatus === 'pending' || c.intakeStatus === 'sent'),
+    )
+    .slice(0, 5)
+    .map((c) => ({
+      clientId: c.id,
+      clientFirstName: c.firstName,
+      clientLastName: c.lastName,
+      // Filter above guarantees the narrow union — re-cast for the type system.
+      status: c.intakeStatus as 'pending' | 'sent',
+      formId: null,
+    }));
+}
+
+function buildNextUp(
+  appts: Appointment[],
+  now: Date,
+  clientById: Map<string, Client>,
+  staffById: Map<string, Staff>,
+  serviceById: Map<string, ServiceListItem>,
+): NextUpRow[] {
+  const nowMs = now.getTime();
+  return appts
+    .filter((a) => {
+      const t = new Date(a.scheduledStartAt).getTime();
+      if (t <= nowMs) return false;
+      return a.state !== 'cancelled' && a.state !== 'no_show';
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.scheduledStartAt).getTime() -
+        new Date(b.scheduledStartAt).getTime(),
+    )
+    .slice(0, 5)
+    .map((a) => {
+      const start = new Date(a.scheduledStartAt);
+      const end = new Date(a.scheduledEndAt);
+      const durationMin = Math.max(
+        0,
+        Math.round((end.getTime() - start.getTime()) / 60000),
+      );
+      const client = clientById.get(a.clientId);
+      const staffRow = staffById.get(a.staffId);
+      const service = serviceById.get(a.serviceId);
+      // Prefer the catalog duration when it agrees with the row; otherwise
+      // fall back to the scheduled span so the label is never wrong-by-buffer.
+      const labelDuration = service?.durationMinutes ?? durationMin;
+      return {
+        appointmentId: a.id,
+        startsAtLabel: formatRelativeUpcoming(start, now),
+        startsAtIso: a.scheduledStartAt,
+        clientFirstName: client?.firstName ?? 'Client',
+        staffFirstName: staffRow?.firstName ?? 'Staff',
+        serviceName: service?.name ?? 'Service',
+        durationLabel: `${labelDuration} min`,
+      };
+    });
+}
+
+/**
+ * Parse the day's shifts for a Staff row. Returns the sorted list of shifts
+ * (in minute offsets from midnight) on the supplied weekday. Degrades to []
+ * when workingHours is null / malformed / unrecognized.
+ */
+function shiftsForDay(
+  staffRow: Staff,
+  dayKey: DayKey,
+): Array<{ startMin: number; endMin: number; endLabel: string }> {
+  const hours = staffRow.workingHours;
+  if (!hours) return [];
+  const raw = hours[dayKey];
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ startMin: number; endMin: number; endLabel: string }> = [];
+  for (const shift of raw) {
+    if (!shift || typeof shift !== 'object') continue;
+    const startStr = (shift as Shift).start;
+    const endStr = (shift as Shift).end;
+    if (typeof startStr !== 'string' || typeof endStr !== 'string') continue;
+    const [sh, sm] = startStr.split(':').map(Number);
+    const [eh, em] = endStr.split(':').map(Number);
+    if (
+      sh === undefined ||
+      sm === undefined ||
+      eh === undefined ||
+      em === undefined ||
+      Number.isNaN(sh) ||
+      Number.isNaN(sm) ||
+      Number.isNaN(eh) ||
+      Number.isNaN(em)
+    ) {
+      continue;
+    }
+    const startMin = sh * 60 + sm;
+    const endMin = eh * 60 + em;
+    if (endMin <= startMin) continue;
+    const period = eh >= 12 ? 'PM' : 'AM';
+    const h12 = ((eh + 11) % 12) + 1;
+    const endLabel = `${h12}:${em.toString().padStart(2, '0')} ${period}`;
+    out.push({ startMin, endMin, endLabel });
+  }
+  out.sort((a, b) => a.startMin - b.startMin);
+  return out;
+}
+
+const STATUS_PRIORITY: Record<StaffOnShiftRow['status'], number> = {
+  live: 0,
+  break: 1,
+  off: 2,
+};
+
+function buildStaffOnShift(
+  staff: Staff[],
+  appts: Appointment[],
+  now: Date,
+): StaffOnShiftRow[] {
+  const dayKey = DAY_KEYS_ORDERED[(now.getDay() + 6) % 7];
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowMs = now.getTime();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).getTime();
+  const endOfToday = startOfToday + 24 * 60 * 60 * 1000;
+
+  // Tally same-day appointment load per staff up front.
+  const inProgressByStaff = new Map<string, number>();
+  const upcomingByStaff = new Map<string, number>();
+  for (const a of appts) {
+    if (a.state === 'cancelled' || a.state === 'no_show') continue;
+    const t = new Date(a.scheduledStartAt).getTime();
+    if (t < startOfToday || t >= endOfToday) continue;
+    if (a.state === 'in_progress' || a.state === 'checked_in') {
+      inProgressByStaff.set(
+        a.staffId,
+        (inProgressByStaff.get(a.staffId) ?? 0) + 1,
+      );
+    } else if (t > nowMs) {
+      upcomingByStaff.set(
+        a.staffId,
+        (upcomingByStaff.get(a.staffId) ?? 0) + 1,
+      );
+    }
+  }
+
+  const rows: StaffOnShiftRow[] = [];
+  for (const s of staff) {
+    if (s.deletedAt) continue;
+    if (!s.active) continue;
+    const shifts = dayKey ? shiftsForDay(s, dayKey) : [];
+
+    let status: StaffOnShiftRow['status'] = 'off';
+    let shiftLabel = 'No shift today';
+
+    if (shifts.length > 0) {
+      const dayStart = shifts[0]?.startMin ?? 0;
+      const dayEnd = shifts[shifts.length - 1]?.endMin ?? 0;
+      const inAnyShift = shifts.some(
+        (sh) => nowMin >= sh.startMin && nowMin < sh.endMin,
+      );
+      const beforeStart = nowMin < dayStart;
+      const afterEnd = nowMin >= dayEnd;
+      if (inAnyShift) {
+        status = 'live';
+        // Find the active shift's end label.
+        const active = shifts.find(
+          (sh) => nowMin >= sh.startMin && nowMin < sh.endMin,
+        );
+        shiftLabel = `On shift until ${active?.endLabel ?? ''}`.trim();
+      } else if (!beforeStart && !afterEnd) {
+        // Between two shifts (lunch / split shift).
+        status = 'break';
+        const nextShift = shifts.find((sh) => sh.startMin > nowMin);
+        if (nextShift) {
+          const period = Math.floor(nextShift.startMin / 60) >= 12 ? 'PM' : 'AM';
+          const h12 = ((Math.floor(nextShift.startMin / 60) + 11) % 12) + 1;
+          const min = (nextShift.startMin % 60).toString().padStart(2, '0');
+          shiftLabel = `On break until ${h12}:${min} ${period}`;
+        } else {
+          shiftLabel = 'On break';
+        }
+      } else if (afterEnd) {
+        status = 'off';
+        shiftLabel = 'Shift ended';
+      } else {
+        // Before first shift starts.
+        status = 'off';
+        const next = shifts[0];
+        if (next) {
+          const period = Math.floor(next.startMin / 60) >= 12 ? 'PM' : 'AM';
+          const h12 = ((Math.floor(next.startMin / 60) + 11) % 12) + 1;
+          const min = (next.startMin % 60).toString().padStart(2, '0');
+          shiftLabel = `Starts ${h12}:${min} ${period}`;
+        }
+      }
+    }
+
+    const inProgress = inProgressByStaff.get(s.id) ?? 0;
+    const upcoming = upcomingByStaff.get(s.id) ?? 0;
+    let loadLabel: string;
+    if (inProgress === 0 && upcoming === 0) {
+      loadLabel = 'No appointments today';
+    } else {
+      const segs: string[] = [];
+      if (inProgress > 0) segs.push(`${inProgress} in progress`);
+      if (upcoming > 0) segs.push(`${upcoming} upcoming`);
+      loadLabel = segs.join(' · ');
+    }
+
+    rows.push({
+      staffId: s.id,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      shiftLabel,
+      loadLabel,
+      status,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const pa = STATUS_PRIORITY[a.status];
+    const pb = STATUS_PRIORITY[b.status];
+    if (pa !== pb) return pa - pb;
+    return a.firstName.localeCompare(b.firstName);
+  });
+  return rows.slice(0, 8);
+}
+
 function buildRevenueChart(
   appts: Appointment[],
   thisStart: Date,
@@ -669,34 +1032,28 @@ export async function getOverviewData(): Promise<OverviewData> {
 
   // 2. Parallel core fetches. The appointments query covers prior week +
   //    this week + (rest of today) — one trip serves bookings + revenue +
-  //    schedule + chart.
-  const [appts, clients, intakePendingCount, staff] = await Promise.all([
-    safeListAppointments(priorStart.toISOString(), todayEnd.toISOString()),
-    safeListClients(),
-    safeIntakePendingCount(),
-    safeListStaff(),
-  ]);
+  //    schedule + chart. We extend the upper bound to +7 days so the
+  //    `nextUp` widget has rows to surface beyond today.
+  const upcomingEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const [appts, clients, intakePendingCount, staff, waitlistEntries] =
+    await Promise.all([
+      safeListAppointments(priorStart.toISOString(), upcomingEnd.toISOString()),
+      safeListClients(),
+      safeIntakePendingCount(),
+      safeListStaff(),
+      safeListWaitlist(),
+    ]);
 
-  // 3. Schedule lookups. Only fetch services if we have schedule rows that
-  //    need names — saves a round trip on empty days. Client + staff names
-  //    are already paid for above.
-  const hasScheduleToday = appts.some((a) => {
-    const t = new Date(a.scheduledStartAt).getTime();
-    const dayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      0,
-      0,
-      0,
-      0,
-    ).getTime();
-    return t >= dayStart && t < todayEnd.getTime();
-  });
-  // Note: listClients/listStaff/listServices don't accept an `{ ids: [...] }`
-  // filter at the API layer, so we fetch full lists and look up by id
-  // client-side. Acceptable at boutique volumes; revisit if catalogs balloon.
-  const services: ServiceListItem[] = hasScheduleToday
+  // 3. Schedule lookups. Services are needed by todaysSchedule + nextUp +
+  //    the waitlist preview, so fetch once when any of those slices have
+  //    rows to name. Client + staff names are already paid for above.
+  //
+  //    Note: listClients/listStaff/listServices don't accept an
+  //    `{ ids: [...] }` filter at the API layer, so we fetch full lists and
+  //    look up by id client-side. Acceptable at boutique volumes; revisit
+  //    if catalogs balloon.
+  const needsServices = appts.length > 0 || waitlistEntries.length > 0;
+  const services: ServiceListItem[] = needsServices
     ? await safeListServices()
     : [];
 
@@ -735,6 +1092,18 @@ export async function getOverviewData(): Promise<OverviewData> {
     ? buildRevenueChart(appts, thisStart, priorStart)
     : emptyRevenueChart(thisStart);
 
+  // Lookup maps reused across the four new widget builders.
+  const clientById = new Map<string, Client>(clients.map((c) => [c.id, c]));
+  const staffById = new Map<string, Staff>(staff.map((s) => [s.id, s]));
+  const serviceById = new Map<string, ServiceListItem>(
+    services.map((s) => [s.id, s]),
+  );
+
+  const waitlist = buildWaitlistPreview(waitlistEntries, serviceById, now);
+  const outstandingIntake = buildOutstandingIntake(clients);
+  const nextUp = buildNextUp(appts, now, clientById, staffById, serviceById);
+  const staffOnShift = buildStaffOnShift(staff, appts, now);
+
   // Defensive: if a fetch failed and degraded a slice to its empty shape,
   // honor that — bookings/revenue/etc above already use EMPTY_KPI semantics
   // implicitly via the empty `appts` array. Nothing extra to wire here.
@@ -749,5 +1118,9 @@ export async function getOverviewData(): Promise<OverviewData> {
     todaysSchedule,
     todayLabel: formatTodayLabel(now, tz),
     revenueChart,
+    waitlist,
+    outstandingIntake,
+    nextUp,
+    staffOnShift,
   };
 }
