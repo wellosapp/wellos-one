@@ -135,7 +135,18 @@ export function CalendarEventBlock({
           {service?.name ?? 'Service'}
         </strong>
         <div className="flex shrink-0 flex-col items-end gap-s1">
-          <Badge tone={tone.badgeTone}>{badgeLabel}</Badge>
+          <div className="flex items-center gap-s1">
+            {appointment.seriesId ? (
+              <span
+                aria-label="Recurring"
+                title="Recurring appointment"
+                className="inline-flex h-[14px] w-[14px] items-center justify-center rounded-full bg-surface-2 text-[11px] leading-none text-ink-soft"
+              >
+                ↻
+              </span>
+            ) : null}
+            <Badge tone={tone.badgeTone}>{badgeLabel}</Badge>
+          </div>
           {intakeChip ? (
             <Badge tone={intakeChip.tone} className="max-w-[9rem] truncate">
               {intakeChip.label}

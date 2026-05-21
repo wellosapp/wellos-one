@@ -75,6 +75,12 @@ export default async function AdminLayout({
             Calendar
           </Link>
           <Link
+            href="/admin/appointment-series"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Recurring series
+          </Link>
+          <Link
             href="/admin/clients"
             className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
           >

@@ -56,6 +56,12 @@ export type Appointment = {
   cancelReason: string | null;
   /** List price in cents, locked at booking (Services & Catalog). */
   bookedBasePriceCents: number;
+  /**
+   * Non-null when this appointment was generated as one occurrence of a
+   * recurring AppointmentSeries. Selected via APPOINTMENT_SAFE_FIELDS on the
+   * Fastify side; the calendar block uses it to render a recurring badge.
+   */
+  seriesId: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
