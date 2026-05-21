@@ -1,7 +1,11 @@
-// RevenueChart — inline-SVG dual-line chart showing this week's daily
-// revenue vs the prior week. Straight-line segments (no curve smoothing
-// in MVP). Five horizontal gridlines, dashed prior-week trace, solid
-// current-week trace + soft sage fill under it.
+// RevenueChart — fluid dual-line chart showing this week's daily
+// revenue vs the prior week. The SVG holds only the gridlines + the
+// line/area paths + the dot markers and stretches with `preserveAspect
+// Ratio="none"` so it fills the container's width. The y-axis dollar
+// labels + x-axis day labels render as HTML overlays positioned
+// absolutely over the SVG plot area — that keeps the text at native
+// pixel size at every container width instead of stretching with the
+// non-uniform SVG scale.
 
 import { TrendUpIcon, TrendDownIcon } from '@/app/admin/_shell/icons';
 import type { RevenueChartData } from './types';
@@ -10,12 +14,21 @@ type RevenueChartProps = RevenueChartData & {
   className?: string;
 };
 
+// SVG viewBox dimensions. The aspect ratio doesn't have to match the
+// rendered container — preserveAspectRatio="none" stretches both axes
+// to fill, and labels are HTML so they don't follow the stretch.
 const W = 600;
 const H = 200;
-const PAD_L = 40;
+// PAD_L is the left-side reserved space for the y-axis labels (absolute
+// HTML, sized in px). Keeping it in the same numeric world as the
+// viewBox is convenient — the chart's plot area runs from PAD_L to
+// W - PAD_R in viewBox units AND from `${PAD_L_PX}px` to right-edge
+// in CSS units. Because both axes stretch identically, the absolute
+// percent positions for HTML overlays line up with the SVG plot points.
+const PAD_L = 44;
 const PAD_R = 12;
 const PAD_T = 16;
-const PAD_B = 28;
+const PAD_B = 30;
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -62,6 +75,13 @@ export function RevenueChart({
   const gridTicks = [0, 0.25, 0.5, 0.75, 1];
   const deltaUp = deltaPct !== null && deltaPct >= 0;
 
+  // Percent positions for HTML label overlays. These mirror the SVG
+  // padding so the labels land on the gridlines / plot points regardless
+  // of container width.
+  const leftPctFor = (i: number) => ((PAD_L + i * step) / W) * 100;
+  const yPctFor = (tickFrac: number) =>
+    ((PAD_T + tickFrac * (H - PAD_T - PAD_B)) / H) * 100;
+
   return (
     <section
       className={`flex flex-col gap-s3 rounded-md border border-line bg-surface p-s5 shadow-sm ${className ?? ''}`}
@@ -84,54 +104,31 @@ export function RevenueChart({
         </div>
       </header>
 
-      <div className="relative h-[200px]">
+      <div className="relative h-[200px] w-full">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           preserveAspectRatio="none"
-          className="block h-full w-full"
+          className="absolute inset-0 block h-full w-full"
           aria-label={`Revenue chart for week of ${weekOf}`}
         >
-          {/* Gridlines + y-axis labels */}
+          {/* Gridlines only — labels render as HTML overlays below to
+              avoid getting stretched with the non-uniform SVG scale. */}
           {gridTicks.map((t) => {
             const yy = PAD_T + t * (H - PAD_T - PAD_B);
-            const v = Math.round(maxV * (1 - t));
             return (
-              <g key={t}>
-                <line
-                  x1={PAD_L}
-                  x2={W - PAD_R}
-                  y1={yy}
-                  y2={yy}
-                  stroke="var(--line)"
-                  strokeWidth={1}
-                  strokeDasharray="2 4"
-                />
-                <text
-                  x={PAD_L - 6}
-                  y={yy + 3}
-                  textAnchor="end"
-                  className="fill-ink-4 font-mono"
-                  style={{ fontSize: 10 }}
-                >
-                  {formatGridLabel(v)}
-                </text>
-              </g>
+              <line
+                key={t}
+                x1={PAD_L}
+                x2={W - PAD_R}
+                y1={yy}
+                y2={yy}
+                stroke="var(--line)"
+                strokeWidth={1}
+                strokeDasharray="2 4"
+                vectorEffect="non-scaling-stroke"
+              />
             );
           })}
-
-          {/* Day labels */}
-          {DAY_LABELS.map((d, i) => (
-            <text
-              key={d}
-              x={x(i)}
-              y={H - 8}
-              textAnchor="middle"
-              className="fill-ink-4"
-              style={{ fontSize: 10 }}
-            >
-              {d}
-            </text>
-          ))}
 
           {/* Prior week — dashed */}
           {priorWeek.length > 0 ? (
@@ -143,6 +140,7 @@ export function RevenueChart({
               strokeDasharray="3 4"
               strokeLinejoin="round"
               strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
             />
           ) : null}
 
@@ -157,6 +155,7 @@ export function RevenueChart({
                 strokeWidth={2}
                 strokeLinejoin="round"
                 strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
               />
               {currentWeek.map((v, i) => (
                 <circle
@@ -165,11 +164,56 @@ export function RevenueChart({
                   cy={y(v)}
                   r={3}
                   fill="var(--sage)"
+                  // Without vector-effect, the circle would also distort
+                  // horizontally with the stretched SVG. Non-scaling-stroke
+                  // doesn't apply to fills; using `<rect>` with
+                  // non-scaling transform would, but small dots are
+                  // tolerable as ovals at extreme widths. Acceptable for
+                  // MVP — revisit if dot distortion becomes visible.
                 />
               ))}
             </>
           ) : null}
         </svg>
+
+        {/* HTML overlay: y-axis $ labels. Native px sizing — never stretches. */}
+        <div className="pointer-events-none absolute inset-0">
+          {gridTicks.map((t) => {
+            const v = Math.round(maxV * (1 - t));
+            return (
+              <span
+                key={t}
+                className="absolute font-mono text-[10px] leading-none text-ink-4"
+                style={{
+                  top: `${yPctFor(t)}%`,
+                  left: 0,
+                  width: `${PAD_L - 8}px`,
+                  textAlign: 'right',
+                  transform: 'translateY(-50%)',
+                }}
+              >
+                {formatGridLabel(v)}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* HTML overlay: x-axis day labels. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[20px]">
+          {DAY_LABELS.slice(0, pointCount).map((d, i) => (
+            <span
+              key={d}
+              className="absolute text-[10px] leading-none text-ink-4"
+              style={{
+                left: `${leftPctFor(i)}%`,
+                bottom: 0,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {d}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-s3 t-body-md">
