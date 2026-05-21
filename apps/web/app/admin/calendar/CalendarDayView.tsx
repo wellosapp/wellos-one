@@ -60,6 +60,8 @@ interface CalendarDayViewProps {
   activeTab: string;
   quickBookOpen: boolean;
   blockTimeOpen: boolean;
+  /** 30-min density bins (count of appointments overlapping each bin). */
+  densityBins: { hour: number; count: number }[];
 }
 
 export function CalendarDayView({
@@ -77,6 +79,7 @@ export function CalendarDayView({
   activeTab,
   quickBookOpen,
   blockTimeOpen,
+  densityBins,
 }: CalendarDayViewProps) {
   const router = useRouter();
   const qb = quickBookOpen ? '1' : undefined;
@@ -318,6 +321,7 @@ export function CalendarDayView({
           hrefQuickBook={hrefQuickBook}
           nextAppointmentId={nextAppointmentId}
           onDeleteScheduleBlock={handleDeleteBlock}
+          densityBins={densityBins}
         />
       ) : view === 'week' ? (
         <CalendarWeekView

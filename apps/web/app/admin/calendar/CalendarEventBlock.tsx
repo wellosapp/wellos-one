@@ -2,7 +2,7 @@
 
 import { Badge } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { blockPosition, formatTimeLocal } from '@/lib/calendar';
+import { formatTimeLocal } from '@/lib/calendar';
 import type {
   Appointment,
   AppointmentState,
@@ -10,65 +10,66 @@ import type {
 import type { Service } from '@/lib/api/services';
 import { intakeStatusCalendarChip } from './intake-status-label';
 
-// One appointment block. Positioned absolutely within its staff column by
-// start/end. Tone tracks status. Past visits dim.
+// One appointment chip in the horizontal staff river. Parent positions
+// (absolute left/top/width). Status keys the left-border tone; service
+// keys an optional pale background hint. Past visits dim. Hover lifts.
 
 const STATUS_TONE: Record<
   AppointmentState,
   {
     badgeTone: 'neutral' | 'accent' | 'red' | 'amber' | 'green';
     label: string;
-    gradient: string;
-    border: string;
+    chip: string;
+    leftBorder: string;
   }
 > = {
   requested: {
     badgeTone: 'amber',
     label: 'Requested',
-    gradient: 'bg-gradient-to-b from-amber-pale to-white',
-    border: 'border-amber/35',
+    chip: 'bg-amber-pale border-amber/30',
+    leftBorder: 'border-l-amber',
   },
   scheduled: {
     badgeTone: 'neutral',
     label: 'Scheduled',
-    gradient: 'bg-gradient-to-b from-surface-2 to-white',
-    border: 'border-surface-3',
+    chip: 'bg-sand-soft border-line',
+    leftBorder: 'border-l-sand',
   },
   confirmed: {
     badgeTone: 'accent',
     label: 'Confirmed',
-    gradient: 'bg-gradient-to-b from-accent-pale to-white',
-    border: 'border-accent/25',
+    chip: 'bg-sage-tint border-sage-soft',
+    leftBorder: 'border-l-sage',
   },
   checked_in: {
     badgeTone: 'amber',
     label: 'Checked in',
-    gradient: 'bg-gradient-to-b from-amber-pale to-white',
-    border: 'border-amber/35',
+    chip: 'bg-amber-pale border-amber/30',
+    leftBorder: 'border-l-amber',
   },
   in_progress: {
     badgeTone: 'amber',
     label: 'In progress',
-    gradient: 'bg-gradient-to-b from-amber-pale to-white',
-    border: 'border-amber',
+    chip: 'bg-amber-pale border-amber/35',
+    leftBorder: 'border-l-amber',
   },
   completed: {
     badgeTone: 'green',
     label: 'Completed',
-    gradient: 'bg-gradient-to-b from-green-pale to-white',
-    border: 'border-green/35',
+    chip: 'bg-green-pale border-green/30',
+    leftBorder: 'border-l-green',
   },
   cancelled: {
     badgeTone: 'red',
     label: 'Cancelled',
-    gradient: 'bg-gradient-to-b from-red-pale to-white',
-    border: 'border-red/35',
+    chip: 'bg-red-pale border-red/30',
+    leftBorder: 'border-l-red',
   },
   no_show: {
     badgeTone: 'red',
     label: 'No-show',
-    gradient: 'bg-gradient-to-b from-red-pale to-white',
-    border: 'border-red/35',
+    chip: 'bg-red-pale border-red/30',
+    leftBorder: 'border-l-red',
   },
 };
 
@@ -82,10 +83,29 @@ interface CalendarEventBlockProps {
   /** Replaces status badge label when set (e.g. &quot;next up&quot;). */
   statusOverride?: string;
   /**
-   * When true, parent supplies positioning (e.g. drag handle + link wrapper).
-   * Inner card fills height (`h-full`).
+   * When true, parent supplies positioning. The chip fills its container
+   * with `h-full w-full`. Kept for backwards-compat with the grid wrapper.
    */
   omitOuterPosition?: boolean;
+}
+
+// TODO: appointment.seriesId is not yet on the Appointment type. When the
+// recurring series API lands, expose it here for the ↻ badge.
+function isRecurring(_appointment: Appointment): boolean {
+  return false;
+}
+
+// TODO: appointment.client?.firstTime / group capacity are not on the
+// Appointment shape on this branch. Stubbed to false until the API exposes
+// them — see PR S3 follow-up.
+function isFirstTime(_appointment: Appointment): boolean {
+  return false;
+}
+
+function groupCapacity(
+  _appointment: Appointment,
+): { attending: number; capacity: number } | null {
+  return null;
 }
 
 export function CalendarEventBlock({
@@ -98,44 +118,74 @@ export function CalendarEventBlock({
   omitOuterPosition,
 }: CalendarEventBlockProps) {
   const tone = STATUS_TONE[appointment.state];
-  const pos = blockPosition(
-    appointment.scheduledStartAt,
-    appointment.scheduledEndAt,
-  );
   const isPast = new Date(appointment.scheduledEndAt) < new Date();
-  if (!omitOuterPosition && pos.heightPx <= 0) return null;
+  const isNextUp = statusOverride === 'Next up';
 
   const badgeLabel = statusOverride ?? tone.label;
-  const intakeChip = intakeStatusCalendarChip(
-    appointment.clientIntakeStatus,
-  );
+  const intakeChip = intakeStatusCalendarChip(appointment.clientIntakeStatus);
+  const showStatusBadge =
+    statusOverride !== undefined || appointment.state !== 'confirmed';
+  const recurring = isRecurring(appointment);
+  const firstTime = isFirstTime(appointment);
+  const capacity = groupCapacity(appointment);
+  const hasAlertNote =
+    Boolean(appointment.notes) &&
+    appointment.state !== 'completed' &&
+    appointment.state !== 'cancelled' &&
+    Boolean(alertStyle);
 
   const shellClass = cn(
-    'flex flex-col gap-s1 overflow-hidden rounded-[14px] border px-s3 py-s3 shadow-sm',
-    'transition-shadow duration-fast hover:shadow-md',
-    omitOuterPosition ? 'h-full min-h-0' : 'absolute left-s2 right-s2',
-    tone.gradient,
-    tone.border,
-    alertStyle && 'border-amber/40 bg-gradient-to-b from-amber-pale to-white',
+    'relative flex flex-col gap-s1 overflow-hidden rounded-md border border-l-[3px] px-s2 py-s2 shadow-sm',
+    'transition-all duration-fast hover:-translate-y-px hover:shadow-md hover:z-10',
+    tone.chip,
+    tone.leftBorder,
+    hasAlertNote && 'border-amber/40 bg-amber-pale',
     isPast && appointment.state !== 'completed' && 'opacity-60',
-    isSelected && 'ring-2 ring-accent shadow-md',
+    isSelected && 'ring-2 ring-sage shadow-md',
+    isNextUp && !isSelected && 'ring-2 ring-sage',
+    omitOuterPosition ? 'h-full w-full' : 'h-full w-full',
   );
 
-  const shellStyle = omitOuterPosition
-    ? undefined
-    : {
-        top: pos.topPx,
-        height: pos.heightPx,
-      };
+  const clientLabel = clientDisplayName ?? 'Client';
+  const serviceLabel = service?.name ?? 'Service';
 
   return (
-    <div className={shellClass} style={shellStyle}>
-      <div className="flex items-start justify-between gap-s2">
-        <strong className="min-w-0 flex-1 truncate t-body-sm font-semibold text-ink">
-          {service?.name ?? 'Service'}
-        </strong>
-        <div className="flex shrink-0 flex-col items-end gap-s1">
-          <Badge tone={tone.badgeTone}>{badgeLabel}</Badge>
+    <div className={shellClass}>
+      {/* Top row: time pill + status badges + capacity ring + new pill */}
+      <div className="flex items-center justify-between gap-s2">
+        <div className="flex min-w-0 items-center gap-s1">
+          <span className="font-mono text-[10px] text-ink-3">
+            {formatTimeLocal(appointment.scheduledStartAt)}
+          </span>
+          {recurring ? (
+            <span
+              className="text-[11px] leading-none text-ink-3"
+              title="Recurring appointment"
+              aria-label="Recurring"
+            >
+              {'↻'}
+            </span>
+          ) : null}
+          {hasAlertNote ? (
+            <span
+              className="text-[11px] leading-none text-amber"
+              title="Has notes — review before session"
+              aria-label="Has alert note"
+            >
+              {'⚠'}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-s1">
+          {capacity ? (
+            <CapacityRing
+              attending={capacity.attending}
+              capacity={capacity.capacity}
+            />
+          ) : null}
+          {showStatusBadge ? (
+            <Badge tone={tone.badgeTone}>{badgeLabel}</Badge>
+          ) : null}
           {intakeChip ? (
             <Badge tone={intakeChip.tone} className="max-w-[9rem] truncate">
               {intakeChip.label}
@@ -143,18 +193,67 @@ export function CalendarEventBlock({
           ) : null}
         </div>
       </div>
-      <p className="t-caption text-ink-soft">
-        {formatTimeLocal(appointment.scheduledStartAt)}
-        {clientDisplayName ? (
-          <>
-            {' · '}
-            <span className="text-ink">{clientDisplayName}</span>
-          </>
-        ) : null}
-      </p>
-      {appointment.notes ? (
-        <p className="line-clamp-2 t-caption text-ink-soft">{appointment.notes}</p>
+
+      {/* Middle: client name */}
+      <div className="t-body-sm truncate font-semibold text-ink">
+        {clientLabel}
+      </div>
+
+      {/* Bottom: service · staff (staff name comes from the lane label so we
+          show service alone here — keeps the bottom line readable in narrow chips) */}
+      <div className="truncate text-[11px] text-ink-3">{serviceLabel}</div>
+
+      {/* First-time pill: bottom-right corner */}
+      {firstTime ? (
+        <span className="absolute bottom-s1 right-s1 rounded-sm bg-surface px-[5px] py-[1px] text-[9px] font-bold uppercase tracking-[0.06em] text-terracotta shadow-sm">
+          NEW
+        </span>
       ) : null}
     </div>
+  );
+}
+
+interface CapacityRingProps {
+  attending: number;
+  capacity: number;
+}
+
+function CapacityRing({ attending, capacity }: CapacityRingProps) {
+  const size = 16;
+  const radius = size / 2 - 2;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = Math.min(1, attending / Math.max(1, capacity));
+  const offset = circumference * (1 - fraction);
+  return (
+    <span
+      className="inline-flex items-center gap-[3px] font-mono text-[10px] text-ink-3"
+      title={`${attending}/${capacity} attending`}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          className="stroke-line"
+          strokeWidth={2}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          className="stroke-sage"
+          strokeWidth={2}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <span>
+        {attending}/{capacity}
+      </span>
+    </span>
   );
 }

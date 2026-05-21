@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { Route } from 'next';
 import type { ReactNode } from 'react';
 
-import { Badge, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { addDays, formatDateShort, isToday } from '@/lib/calendar';
 import type { CalendarViewMode } from '@/lib/calendar-view';
 
@@ -28,7 +28,7 @@ export interface CalendarToolbarProps {
 }
 
 /**
- * R2 “CalendarToolbar” — period navigation, view toggle, Quick Book entry.
+ * R2 "CalendarToolbar" — period navigation, view toggle, Quick Book entry.
  * URL state is built by the parent (`buildCalendarUrl` + `useMemo` hrefs).
  */
 export function CalendarToolbar({
@@ -47,31 +47,31 @@ export function CalendarToolbar({
   hrefCloseBlockTime,
   blockTimeOpen,
 }: CalendarToolbarProps) {
-  const titleWithBadge: ReactNode =
+  const todayBadge: ReactNode =
     view === 'day' && isToday(date) ? (
-      <>
-        {periodTitle}
-        <Badge tone="accent" className="self-center">
-          Today
-        </Badge>
-      </>
-    ) : (
-      periodTitle
-    );
+      <span className="font-display italic text-ink-3">Today&rsquo;s</span>
+    ) : null;
 
   return (
     <header className="flex flex-col gap-s4 md:flex-row md:items-end md:justify-between">
-      <div className="flex flex-col gap-s1">
-        <span className="t-eyebrow text-accent">Calendar</span>
-        <h1 className="t-display-lg flex flex-wrap items-baseline gap-s3">
-          {titleWithBadge}
+      <div className="flex flex-col gap-s2">
+        <div className="flex items-center gap-s2">
+          <span
+            aria-hidden="true"
+            className="inline-block h-[6px] w-[6px] rounded-full bg-sage"
+          />
+          <span className="t-eyebrow text-ink-3">Calendar</span>
+        </div>
+        <h1 className="flex flex-wrap items-baseline gap-s2 font-display text-[28px] font-medium leading-tight tracking-[-0.01em] text-ink">
+          {todayBadge}
+          <span>{periodTitle}</span>
         </h1>
-        <div className="flex flex-wrap items-center gap-s3">
+        <div className="flex flex-wrap items-center gap-s2">
           <Link href={prevNav as Route} className="no-underline">
             <Button variant="ghost" size="sm">
-              {view === 'day' && <>← {formatDateShort(addDays(date, -1))}</>}
-              {view === 'week' && <>← Previous week</>}
-              {view === 'month' && <>← Previous month</>}
+              {view === 'day' && <>&larr; {formatDateShort(addDays(date, -1))}</>}
+              {view === 'week' && <>&larr; Previous week</>}
+              {view === 'month' && <>&larr; Previous month</>}
             </Button>
           </Link>
           <Link href={jumpTodayNav as Route} className="no-underline">
@@ -85,22 +85,22 @@ export function CalendarToolbar({
           </Link>
           <Link href={nextNav as Route} className="no-underline">
             <Button variant="ghost" size="sm">
-              {view === 'day' && <>{formatDateShort(addDays(date, +1))} →</>}
-              {view === 'week' && <>Next week →</>}
-              {view === 'month' && <>Next month →</>}
+              {view === 'day' && <>{formatDateShort(addDays(date, +1))} &rarr;</>}
+              {view === 'week' && <>Next week &rarr;</>}
+              {view === 'month' && <>Next month &rarr;</>}
             </Button>
           </Link>
           {view !== 'day' && (
             <>
-              <span className="text-ink-soft">·</span>
+              <span className="text-ink-4">·</span>
               <Link href={dayJumpPrev as Route} className="no-underline">
                 <Button variant="ghost" size="sm">
-                  Day ←
+                  Day &larr;
                 </Button>
               </Link>
               <Link href={dayJumpNext as Route} className="no-underline">
                 <Button variant="ghost" size="sm">
-                  Day →
+                  Day &rarr;
                 </Button>
               </Link>
             </>
@@ -108,7 +108,7 @@ export function CalendarToolbar({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-s3">
+      <div className="flex flex-wrap items-center gap-s2">
         <CalendarViewToggle
           surface="admin"
           dateParam={dateParam}
@@ -117,8 +117,12 @@ export function CalendarToolbar({
           blockTimeOpen={blockTimeOpen}
         />
 
-        <span className="rounded-md border border-surface-3 bg-white px-s4 py-s2 t-body-sm font-medium text-ink-soft shadow-sm">
+        {/* Static filter chips — wire up in a follow-up ticket. */}
+        <span className="inline-flex items-center gap-s1 rounded-full border border-line bg-surface px-s3 py-[6px] text-[12px] font-medium text-ink-3">
           All staff
+        </span>
+        <span className="inline-flex items-center gap-s1 rounded-full border border-line bg-surface px-s3 py-[6px] text-[12px] font-medium text-ink-3">
+          All services
         </span>
 
         <Link href={hrefQuickBook as Route} className="no-underline">

@@ -23,6 +23,72 @@ import {
 
 import { CalendarDayView } from './CalendarDayView';
 
+// Density wave window — 7:00 → 19:30 in 30-min steps = 26 bins. Mirrors the
+// horizontal staff river constants in CalendarGrid; if those change, keep
+// this in sync.
+const DENSITY_START_HOUR = 7;
+const DENSITY_END_HOUR = 20;
+const DENSITY_BIN_MINUTES = 30;
+
+type DensityBin = { hour: number; count: number };
+
+type DayBoundsAppointment = {
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  state:
+    | 'requested'
+    | 'scheduled'
+    | 'confirmed'
+    | 'checked_in'
+    | 'in_progress'
+    | 'completed'
+    | 'cancelled'
+    | 'no_show';
+};
+
+/**
+ * Count appointments overlapping each 30-min bin between dayStart and dayEnd.
+ * Skips cancelled + no_show so the density wave reflects "load on the floor",
+ * not historical churn. Pure function — easy to unit-test later.
+ */
+function computeDensityBins(
+  appointments: DayBoundsAppointment[],
+  dayStart: Date,
+): DensityBin[] {
+  const bins: DensityBin[] = [];
+  const dayBase = new Date(
+    dayStart.getFullYear(),
+    dayStart.getMonth(),
+    dayStart.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const active = appointments.filter(
+    (a) => a.state !== 'cancelled' && a.state !== 'no_show',
+  );
+  const stepMs = DENSITY_BIN_MINUTES * 60 * 1000;
+  const totalBins =
+    ((DENSITY_END_HOUR - DENSITY_START_HOUR) * 60) / DENSITY_BIN_MINUTES;
+  for (let i = 0; i < totalBins; i++) {
+    const binStartMs =
+      dayBase.getTime() + (DENSITY_START_HOUR * 60 + i * DENSITY_BIN_MINUTES) * 60 * 1000;
+    const binEndMs = binStartMs + stepMs;
+    let count = 0;
+    for (const a of active) {
+      const s = new Date(a.scheduledStartAt).getTime();
+      const e = new Date(a.scheduledEndAt).getTime();
+      if (s < binEndMs && e > binStartMs) count += 1;
+    }
+    bins.push({
+      hour: DENSITY_START_HOUR + (i * DENSITY_BIN_MINUTES) / 60,
+      count,
+    });
+  }
+  return bins;
+}
+
 function formatCalendarLoadError(err: unknown): string {
   if (err instanceof ApiError) {
     return err.message;
@@ -184,6 +250,19 @@ export default async function CalendarPage({
     scheduleBlocksByStaff = Object.fromEntries(blockPairs);
   }
 
+  // Compute density bins from the day's visible appointments (browser-local
+  // day window). The grid is the only consumer for now; cheaper to compute
+  // here than to thread the full list deeper.
+  const dayApptsForDensity = appts.filter((a) => {
+    const start = new Date(a.scheduledStartAt);
+    return (
+      start.getFullYear() === date.getFullYear() &&
+      start.getMonth() === date.getMonth() &&
+      start.getDate() === date.getDate()
+    );
+  });
+  const densityBins = computeDensityBins(dayApptsForDensity, date);
+
   return (
     <CalendarDayView
       date={date}
@@ -200,6 +279,7 @@ export default async function CalendarPage({
       activeTab={sp.tab ?? 'overview'}
       quickBookOpen={sp.quickbook === '1'}
       blockTimeOpen={sp.blocktime === '1'}
+      densityBins={densityBins}
     />
   );
 }
