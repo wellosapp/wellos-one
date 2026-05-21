@@ -210,6 +210,22 @@ enum ServiceContentDeliveryChannel {
   both
 }
 
+// Waitlist entry state machine (R2 §10).
+//   active     — created by a client; no opening matched yet
+//   offered    — an opening was found and an offer notification was sent
+//                (Epic 8 wires the actual SMS/email; until then the trigger
+//                hook only logs "would offer to N").
+//   claimed    — client accepted the offer; appointment was created
+//   expired    — TTL elapsed without any offer or claim
+//   cancelled  — client (or admin) manually cancelled the waitlist signup
+enum WaitlistEntryStatus {
+  active
+  offered
+  claimed
+  expired
+  cancelled
+}
+
 // Public catalog / booking UI price presentation (Services & Catalog MVP).
 enum ServicePriceDisplayMode {
   fixed
@@ -344,6 +360,7 @@ model Tenant {
   intakeFormSubmissions     IntakeFormSubmission[]
   intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
   slotHolds                 SlotHold[]
+  waitlistEntries           WaitlistEntry[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -363,6 +380,7 @@ model Location {
   mediaAssets  MediaAsset[]  @relation("MediaAssetLocation")
   staffScheduleBlocks StaffScheduleBlock[]
   slotHolds    SlotHold[]
+  waitlistEntries WaitlistEntry[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -631,6 +649,7 @@ model Staff {
   services     StaffService[]
   appointments Appointment[]
   scheduleBlocks StaffScheduleBlock[]
+  waitlistEntries WaitlistEntry[]
 
   // Tier A inverse relations.
   authoredNotes        ClientNote[]               @relation("ClientNoteAuthorStaff")
@@ -737,6 +756,7 @@ model Service {
   bookingQuestions  ServiceBookingQuestion[]
   contentDeliveries ServiceContentDelivery[]
   slotHolds         SlotHold[]
+  waitlistEntries   WaitlistEntry[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1426,4 +1446,64 @@ model SlotHold {
   @@index([tenantId, status, expiresAt])
   @@index([staffId, startsAt, endsAt, status])
   @@map("slot_holds")
+}
+
+// ---------- R2 §10: Waitlist ----------
+//
+// Clients join the waitlist when no slot fits. When an opening appears
+// (appointment cancellation, schedule change, manual staff trigger), a
+// worker (Epic 8) finds eligible entries and offers the slot via SMS/email.
+// This phase ships the schema, CRUD, and matching engine. The
+// transitionAppointmentState → cancelled hook calls
+// findEligibleEntriesForOpening and only logs "would offer to N" — the
+// actual notification dispatch lands with the BullMQ worker in Epic 8.
+//
+// Tenant scoping: every query passes tenantId. Soft-delete is intentionally
+// omitted (status=cancelled / expired serves the same role and surfaces in
+// reporting). The unique active-entry-per-(client,service) invariant is
+// enforced in the service layer (createWaitlistEntry upserts on conflict).
+model WaitlistEntry {
+  id                   String              @id @default(cuid())
+  tenantId             String              @map("tenant_id")
+  locationId           String              @map("location_id")
+  serviceId            String              @map("service_id")
+  /// Optional preferred staff; null means any eligible staff for the service.
+  staffId              String?             @map("staff_id")
+
+  contactName          String              @map("contact_name")
+  contactEmail         String?             @map("contact_email")
+  contactPhone         String?             @map("contact_phone")
+
+  /// Earliest moment the client would accept (inclusive). Null = any time.
+  preferredStart       DateTime?           @map("preferred_start")       @db.Timestamptz(3)
+  /// Latest moment the client would accept (exclusive). Null = any time.
+  preferredEnd         DateTime?           @map("preferred_end")         @db.Timestamptz(3)
+  /// 'morning' | 'afternoon' | 'evening' | 'any'. Free string to keep
+  /// migrations cheap; Zod constrains values at the API edge.
+  preferredTimeOfDay   String?             @map("preferred_time_of_day")
+
+  smsOptIn             Boolean             @default(false) @map("sms_opt_in")
+  notes                String?
+
+  status               WaitlistEntryStatus @default(active)
+  /// Default created_at + 14d (R2 §10.1). Service layer computes on create.
+  ttlExpiresAt         DateTime            @map("ttl_expires_at")        @db.Timestamptz(3)
+  offeredAt            DateTime?           @map("offered_at")            @db.Timestamptz(3)
+  /// When a manual or worker-driven offer references a concrete appointment.
+  /// No FK — the appointment may not exist yet (worker creates it after claim).
+  offeredAppointmentId String?             @map("offered_appointment_id")
+  claimedAt            DateTime?           @map("claimed_at")            @db.Timestamptz(3)
+
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff    Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status, ttlExpiresAt])
+  @@index([serviceId, status])
+  @@index([staffId, status])
+  @@map("waitlist_entries")
 }

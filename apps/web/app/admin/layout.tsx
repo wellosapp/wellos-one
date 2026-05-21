@@ -111,6 +111,12 @@ export default async function AdminLayout({
             Intake forms
           </Link>
           <Link
+            href="/admin/waitlist"
+            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
+          >
+            Waitlist
+          </Link>
+          <Link
             href="/admin/media"
             className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
           >
