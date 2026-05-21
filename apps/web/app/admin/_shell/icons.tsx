@@ -207,3 +207,91 @@ export function PanelRightIcon(props: IconProps) {
     </Icon>
   );
 }
+
+// Dashboard / overview-specific icons. Ported from the design's icons.jsx.
+
+export function TrendUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 17 9 11l4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </Icon>
+  );
+}
+
+export function TrendDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 7 9 13l4-4 8 8" />
+      <path d="M15 17h6v-6" />
+    </Icon>
+  );
+}
+
+export function WarnIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4 2 20h20z" />
+      <path d="M12 11v4M12 18.5v.01" />
+    </Icon>
+  );
+}
+
+export function DollarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3v18M16 7H10a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H8" />
+    </Icon>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Icon>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4v12M7 11l5 5 5-5M5 20h14" />
+    </Icon>
+  );
+}
+
+export function ZapIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+    </Icon>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </Icon>
+  );
+}
+
+export function MessageIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a8 8 0 0 1-12 7l-5 1 1-4A8 8 0 1 1 21 12z" />
+    </Icon>
+  );
+}
+
+export function UserPlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2 20a7 7 0 0 1 14 0" />
+      <path d="M19 8v6M22 11h-6" />
+    </Icon>
+  );
+}
