@@ -3,6 +3,7 @@ import type {
   Appointment,
   AppointmentStatus,
   ClientIntakeStatus,
+  ClientMatchStrength,
 } from '@prisma/client';
 
 import type {
@@ -345,9 +346,15 @@ export async function createAppointment(
     /** Null when created by the login-free public booking surface (Epic 4). */
     actorUserId: string | null;
     body: CreateAppointmentBody;
+    /**
+     * Returning-client recognition tag (docs/04-booking-flow.md §B). Set by
+     * the public booking-confirm path after ClientMatchResolver runs; staff-
+     * created rows omit this. Persisted as-is on Appointment.matchStrength.
+     */
+    matchStrength?: ClientMatchStrength | null;
   },
 ): Promise<CreateAppointmentResult> {
-  const { tenantId, actorUserId, body } = args;
+  const { tenantId, actorUserId, body, matchStrength } = args;
   const startAt = new Date(body.scheduledStartAt);
 
   return prisma.$transaction(async (tx) => {
@@ -409,6 +416,7 @@ export async function createAppointment(
           createdByUserId: actorUserId,
           bookedBasePriceCents: basePriceCents,
           source: body.source ?? 'staff',
+          matchStrength: matchStrength ?? null,
         },
         select: APPOINTMENT_SAFE_FIELDS,
       });

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { Client } from '@prisma/client';
+import type { Client, ClientMatchStrength } from '@prisma/client';
 
 import type {
   ExtendedPrismaClient,
@@ -10,6 +10,10 @@ import type {
   ListClientsQuery,
   UpdateClientBody,
 } from '../schemas/client.js';
+import {
+  type ClientRecognitionMode,
+  resolveClientMatch,
+} from './clientMatchResolver.js';
 
 // Domain layer for Client admin CRUD.
 //
@@ -43,7 +47,7 @@ import type {
  * Caller wraps in a unique-violation retry to handle the race window
  * between MAX read and INSERT.
  */
-async function getNextClientNumber(
+export async function getNextClientNumber(
   tx: ExtendedTransactionClient,
   tenantId: string,
 ): Promise<number> {
@@ -58,7 +62,7 @@ async function getNextClientNumber(
  * Returns true if the error is a Prisma unique-constraint violation on
  * the (tenant_id, client_number) index — the race we want to retry.
  */
-function isClientNumberRace(err: unknown): boolean {
+export function isClientNumberRace(err: unknown): boolean {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
   if (err.code !== 'P2002') return false;
   const target = err.meta?.target;
@@ -582,51 +586,98 @@ export async function softDeleteClient(
   });
 }
 
-/** Epic 4 — silent duplicate attach by email + create when missing (docs/09-dev-handoff.md). */
+/**
+ * Epic 4 — silent duplicate attach + create when missing (docs/09-dev-handoff.md).
+ *
+ * PR 2 of the "Returning-client recognition" feature wraps this in a tx and
+ * delegates the match decision to ClientMatchResolver. `matchStrength` is
+ * returned to the caller so it can be persisted on the new Appointment row;
+ * it stays null when there was no email candidate at all.
+ */
 export async function resolveOrCreateClientForPublicBooking(
   prisma: ExtendedPrismaClient,
   args: {
     tenantId: string;
+    recognitionMode: ClientRecognitionMode;
     email: string;
     phone: string | undefined;
     firstName: string;
     lastName: string | undefined;
   },
-): Promise<{ clientId: string; created: boolean; banned: boolean }> {
-  const emailTrimmed = args.email.trim();
-
-  const existing = await prisma.client.findFirst({
-    where: {
-      tenantId: args.tenantId,
-      email: { equals: emailTrimmed, mode: 'insensitive' },
-    },
-    select: {
-      id: true,
-      banned: true,
-    },
-  });
-
-  if (existing) {
-    return {
-      clientId: existing.id,
-      created: false,
-      banned: existing.banned,
-    };
-  }
-
-  // Retry once on the (tenantId, clientNumber) unique-constraint race.
+): Promise<{
+  clientId: string;
+  created: boolean;
+  banned: boolean;
+  matchStrength: ClientMatchStrength | null;
+}> {
+  // Retry once on the (tenantId, clientNumber) unique-constraint race —
+  // matches the createClient() pattern. The resolver read + the optional
+  // create both run inside the same $transaction so a concurrent insert
+  // can't slip a duplicate row between them.
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return await runInsertTransaction();
+      return await runResolveTransaction();
     } catch (err) {
       if (attempt === 0 && isClientNumberRace(err)) continue;
       throw err;
     }
   }
-  throw new Error('resolveOrCreateClientForPublicBooking: exhausted retries unexpectedly');
+  throw new Error(
+    'resolveOrCreateClientForPublicBooking: exhausted retries unexpectedly',
+  );
 
-  async function runInsertTransaction() {
+  async function runResolveTransaction(): Promise<{
+    clientId: string;
+    created: boolean;
+    banned: boolean;
+    matchStrength: ClientMatchStrength | null;
+  }> {
     return prisma.$transaction(async (tx) => {
+      const match = await resolveClientMatch(tx, {
+        tenantId: args.tenantId,
+        recognitionMode: args.recognitionMode,
+        email: args.email,
+        phone: args.phone,
+        firstName: args.firstName,
+        lastName: args.lastName,
+      });
+
+      if (match.decision === 'attach' && match.matchedClientId) {
+        // Strength is meaningful only when we actually attached; 'none' is
+        // a resolver-local sentinel that should never reach this branch.
+        const attachStrength: ClientMatchStrength =
+          match.strength === 'none' ? 'strong' : match.strength;
+
+        await tx.auditLog.create({
+          data: {
+            tenantId: args.tenantId,
+            actorUserId: null,
+            actorType: 'system',
+            action: 'client.match_resolved',
+            entityType: 'client',
+            entityId: match.matchedClientId,
+            before: Prisma.JsonNull,
+            after: {
+              clientId: match.matchedClientId,
+              matchStrength: attachStrength,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+
+        return {
+          clientId: match.matchedClientId,
+          created: false,
+          banned: match.matchedClientWasBanned,
+          matchStrength: attachStrength,
+        };
+      }
+
+      // decision === 'create' → record-keeping strength = null for "no email
+      // match at all", or the resolver's tag ('weak' / 'ambiguous') when we
+      // chose to create despite a partial match.
+      const createStrength: ClientMatchStrength | null =
+        match.strength === 'none' ? null : match.strength;
+
       const clientNumber = await getNextClientNumber(tx, args.tenantId);
       const client = await tx.client.create({
         data: {
@@ -634,7 +685,7 @@ export async function resolveOrCreateClientForPublicBooking(
           clientNumber,
           firstName: args.firstName.trim(),
           lastName: args.lastName?.trim() || null,
-          email: emailTrimmed,
+          email: args.email.trim(),
           phone: args.phone?.trim() || null,
         },
         select: CLIENT_SAFE_FIELDS,
@@ -653,7 +704,12 @@ export async function resolveOrCreateClientForPublicBooking(
         },
       });
 
-      return { clientId: client.id, created: true, banned: false };
+      return {
+        clientId: client.id,
+        created: true,
+        banned: false,
+        matchStrength: createStrength,
+      };
     });
   }
 }

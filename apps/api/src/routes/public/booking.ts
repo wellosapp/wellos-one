@@ -18,6 +18,7 @@ import {
   InvalidAvailabilityRequestError,
   listAvailableSlots,
 } from '../../services/availabilityService.js';
+import type { ClientRecognitionMode } from '../../services/clientMatchResolver.js';
 import { resolveOrCreateClientForPublicBooking } from '../../services/clientService.js';
 import {
   getPublicBookingCatalog,
@@ -175,13 +176,21 @@ export default async function publicBookingRoutes(
         // R2 §11 — gate on Service.bookingPolicy before doing any client-side
         // resolution work. staff_only refuses public writes; request_approval
         // lands the appointment in `requested` (staff must approve).
-        const policyService = await app.prisma.service.findFirst({
-          where: {
-            tenantId: tenant.tenantId,
-            id: parsed.data.serviceId,
-          },
-          select: { id: true, bookingPolicy: true, active: true },
-        });
+        // Same query also pulls the tenant's client-recognition mode used by
+        // the returning-client matcher in resolveOrCreateClientForPublicBooking.
+        const [policyService, tenantRow] = await Promise.all([
+          app.prisma.service.findFirst({
+            where: {
+              tenantId: tenant.tenantId,
+              id: parsed.data.serviceId,
+            },
+            select: { id: true, bookingPolicy: true, active: true },
+          }),
+          app.prisma.tenant.findUnique({
+            where: { id: tenant.tenantId },
+            select: { bookingClientRecognitionMode: true },
+          }),
+        ]);
         if (!policyService) {
           return {
             status: 400,
@@ -210,16 +219,32 @@ export default async function publicBookingRoutes(
             ? ('requested' as const)
             : ('confirmed' as const);
 
-        const { clientId, banned } = await resolveOrCreateClientForPublicBooking(
-          app.prisma,
-          {
+        // Recognition mode comes from the tenant row (Zod-validated set on
+        // write; defaults to the hybrid 'email_phone_or_name' at the schema
+        // level). Fall back to the hybrid default if the column drifts to
+        // something unexpected so the resolver still runs.
+        const recognitionMode = ((): ClientRecognitionMode => {
+          const raw = tenantRow?.bookingClientRecognitionMode;
+          if (
+            raw === 'email_only' ||
+            raw === 'email_phone' ||
+            raw === 'email_name' ||
+            raw === 'email_phone_or_name'
+          ) {
+            return raw;
+          }
+          return 'email_phone_or_name';
+        })();
+
+        const { clientId, banned, matchStrength } =
+          await resolveOrCreateClientForPublicBooking(app.prisma, {
             tenantId: tenant.tenantId,
+            recognitionMode,
             email: guest.email,
             phone: guest.phone,
             firstName: guest.firstName,
             lastName: guest.lastName,
-          },
-        );
+          });
 
         if (banned) {
           return {
@@ -246,6 +271,7 @@ export default async function publicBookingRoutes(
               source: 'web',
               state: targetState,
             },
+            matchStrength,
           });
 
           return {

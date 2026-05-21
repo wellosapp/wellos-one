@@ -8,11 +8,17 @@ import { z } from 'zod';
 // Service.basePriceCents, Staff.hourlyRateCents). The web layer converts
 // dollars ↔ cents on submit/load.
 
-// "email_only" | "email_phone" | "email_name" per R2 §12.1.
+// Booking-flow client recognition (R2 §12.1 + docs/04-booking-flow.md §B):
+//   email_only           — first email match wins (loosest; opt-in)
+//   email_phone          — require email + phone match for silent attach
+//   email_name           — require email + first/last name match for silent attach
+//   email_phone_or_name  — hybrid: try email+phone first; fall back to email+name
+//                          when no phone given or no phone match (Tenant default)
 export const ClientRecognitionMode = z.enum([
   'email_only',
   'email_phone',
   'email_name',
+  'email_phone_or_name',
 ]);
 export type ClientRecognitionMode = z.infer<typeof ClientRecognitionMode>;
 
