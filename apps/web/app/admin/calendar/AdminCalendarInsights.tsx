@@ -10,6 +10,7 @@ function countByState(
   appointments: Appointment[],
 ): Record<AppointmentState, number> {
   const base: Record<AppointmentState, number> = {
+    requested: 0,
     scheduled: 0,
     confirmed: 0,
     checked_in: 0,
@@ -29,7 +30,11 @@ export function AdminCalendarInsights({
 }: AdminCalendarInsightsProps) {
   const counts = countByState(appointments);
   const actionable =
-    counts.scheduled + counts.confirmed + counts.checked_in + counts.in_progress;
+    counts.requested +
+    counts.scheduled +
+    counts.confirmed +
+    counts.checked_in +
+    counts.in_progress;
 
   return (
     <section

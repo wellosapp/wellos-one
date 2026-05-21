@@ -4,6 +4,7 @@ import type { AppointmentStatus } from '@prisma/client';
 // Service layer + transition route both call assertTransition().
 //
 // Transitions:
+//   requested    → confirmed | cancelled         (request-approval flow, R2 §11.2)
 //   scheduled    → confirmed | cancelled
 //   confirmed    → checked_in | cancelled | no_show
 //   checked_in   → in_progress | cancelled
@@ -18,6 +19,7 @@ import type { AppointmentStatus } from '@prisma/client';
 // an availability one" — once it's set, the appointment is part of history.
 
 const ALLOWED: Record<AppointmentStatus, ReadonlyArray<AppointmentStatus>> = {
+  requested:   ['confirmed', 'cancelled'],
   scheduled:   ['confirmed', 'cancelled'],
   confirmed:   ['checked_in', 'cancelled', 'no_show'],
   checked_in:  ['in_progress', 'cancelled'],

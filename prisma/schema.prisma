@@ -47,12 +47,28 @@ enum ClientIntakeStatus {
 // in apps/api/src/services/appointmentStateMachine.ts.
 enum AppointmentStatus {
   scheduled
+  // `requested` — created via public booking when the Service's bookingPolicy
+  // is `request_approval`. Occupies the slot for double-book purposes (the
+  // EXCLUDE constraint filter is `state NOT IN (cancelled, no_show)`), but
+  // staff must approve to move it to `confirmed`. See R2 §11.2.
+  requested
   confirmed
   checked_in   @map("checked_in")
   in_progress  @map("in_progress")
   completed
   cancelled
   no_show      @map("no_show")
+}
+
+// How a Service may be booked publicly. Drives the public confirm flow:
+//   instant          — client confirm creates state=confirmed appointment
+//   request_approval — client confirm creates state=requested, awaits staff
+//   staff_only       — public booking refused; calendar shows it but contact-to-book
+// See R2 §11 (Booking policies) for the spec.
+enum BookingPolicy {
+  instant
+  request_approval @map("request_approval")
+  staff_only       @map("staff_only")
 }
 
 // ---------- Tier A: Client memory + triage enums (Epic 3) ----------
@@ -654,6 +670,8 @@ model Service {
   // Hex color for calendar rendering (e.g. "#7B9E89"). UI maps to design tokens.
   color              String?
   active             Boolean   @default(true)
+  // Public booking policy. Defaults to instant (existing services). See R2 §11.
+  bookingPolicy      BookingPolicy @default(instant) @map("booking_policy")
 
   // Prep / aftercare / what-to-expect content lives in R2 as markdown docs
   // per the R2 UI/UX buildout spec §2.4 + §13.2 (services/{serviceId}/docs/

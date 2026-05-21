@@ -9,7 +9,9 @@ import {
   type Client,
 } from '@/lib/api/clients';
 import {
+  approveAppointment,
   createAppointment,
+  declineAppointment,
   logRequiredFormsBookingAcknowledgment,
   transitionAppointment,
   updateAppointment,
@@ -91,6 +93,7 @@ function apiErrorToState(err: ApiError): ActionState {
 // ---- Status transition (drawer Overview tab buttons) ----
 
 const TRANSITION_STATES: AppointmentState[] = [
+  'requested',
   'scheduled',
   'confirmed',
   'checked_in',
@@ -116,6 +119,36 @@ export async function transitionAppointmentAction(
     throw err;
   }
 
+  revalidatePath(PAGE);
+  return { ok: true };
+}
+
+// R2 §11.2 — approve / decline a request_approval booking. Thin wrappers
+// over the dedicated /approve and /decline endpoints; UI calls these from
+// the appointment drawer's Overview tab when state==='requested'.
+export async function approveAppointmentAction(
+  appointmentId: string,
+): Promise<ActionState> {
+  try {
+    await approveAppointment(appointmentId);
+  } catch (err) {
+    if (err instanceof ApiError) return apiErrorToState(err);
+    throw err;
+  }
+  revalidatePath(PAGE);
+  return { ok: true };
+}
+
+export async function declineAppointmentAction(
+  appointmentId: string,
+  reason?: string,
+): Promise<ActionState> {
+  try {
+    await declineAppointment(appointmentId, { reason });
+  } catch (err) {
+    if (err instanceof ApiError) return apiErrorToState(err);
+    throw err;
+  }
   revalidatePath(PAGE);
   return { ok: true };
 }

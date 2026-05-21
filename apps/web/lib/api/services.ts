@@ -11,6 +11,12 @@ export type ServicePriceDisplayMode =
   | 'hidden'
   | 'consultation';
 
+/** R2 §11 — booking policy for the public catalog. */
+export type BookingPolicy =
+  | 'instant'
+  | 'request_approval'
+  | 'staff_only';
+
 export type ServiceCategorySummary = {
   id: string;
   name: string;
@@ -32,6 +38,7 @@ export type Service = {
   bufferAfterMinutes: number;
   color: string | null;
   active: boolean;
+  bookingPolicy: BookingPolicy;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -51,6 +58,7 @@ export type ServiceWriteBody = {
   priceDisplayMode?: ServicePriceDisplayMode;
   color?: string;
   active?: boolean;
+  bookingPolicy?: BookingPolicy;
   staffIds?: string[];
 };
 

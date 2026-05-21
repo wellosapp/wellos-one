@@ -8,7 +8,7 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/ui';
 
 import type { ActionState, ServiceFormValues } from './_actions';
-import type { ServicePriceDisplayMode } from '@/lib/api/services';
+import type { BookingPolicy, ServicePriceDisplayMode } from '@/lib/api/services';
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -39,6 +39,29 @@ const PRICE_MODES: { value: ServicePriceDisplayMode; label: string }[] = [
   { value: 'consultation', label: 'Consultation' },
 ];
 
+// R2 §11 — public booking policy options. Default is `instant` (matches DB).
+const BOOKING_POLICIES: {
+  value: BookingPolicy;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: 'instant',
+    label: 'Instant booking',
+    hint: 'Confirmed the moment the client books.',
+  },
+  {
+    value: 'request_approval',
+    label: 'Request approval',
+    hint: 'Client submits a request; staff approves to confirm.',
+  },
+  {
+    value: 'staff_only',
+    label: 'Staff-only',
+    hint: 'Hidden from public booking. Staff book directly.',
+  },
+];
+
 type Props = {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   initial?: ServiceFormValues;
@@ -66,6 +89,9 @@ export function ServiceForm({
     values.priceDisplayMode ??
     initial?.priceDisplayMode ??
     'fixed';
+
+  const bookingPolicy: BookingPolicy =
+    values.bookingPolicy ?? initial?.bookingPolicy ?? 'instant';
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-s5">
@@ -155,6 +181,26 @@ export function ServiceForm({
           />
           <span className="t-body-md text-ink-soft">Visible on public booking</span>
         </label>
+      </FormField>
+
+      <FormField
+        label="Booking policy"
+        error={fieldErrors.bookingPolicy}
+        hint={
+          BOOKING_POLICIES.find((p) => p.value === bookingPolicy)?.hint ?? ''
+        }
+      >
+        <Select
+          name="bookingPolicy"
+          defaultValue={bookingPolicy}
+          className="w-full max-w-md"
+        >
+          {BOOKING_POLICIES.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
       </FormField>
 
       <FormField
