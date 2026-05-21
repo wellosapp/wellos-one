@@ -3,6 +3,7 @@ import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import type { ExtendedPrismaClient } from '../db/client.js';
 import type { ListAvailabilityQuery } from '../schemas/appointment.js';
 import { stateOccupiesSlot } from './appointmentStateMachine.js';
+import { loadActiveHoldsForStaff } from './slotHoldService.js';
 
 // Availability computation for E3-S1.
 //
@@ -92,6 +93,14 @@ export async function listAvailableSlots(
   args: {
     tenantId: string;
     query: ListAvailabilityQuery;
+    /**
+     * Optional browser fingerprint of the requesting public booker. When
+     * provided, active slot holds created by THIS fingerprint are NOT
+     * subtracted from candidate slots — so the user holding a slot still
+     * sees it in their own picker. All OTHER active holds (held by other
+     * concurrent bookers) are subtracted per R2 §9.
+     */
+    excludeHoldsForFingerprint?: string;
   },
 ): Promise<{ slots: AvailableSlot[] }> {
   const { tenantId, query } = args;
@@ -205,6 +214,21 @@ export async function listAvailableSlots(
   });
   for (const b of scheduleBlocks) {
     blocked.push({ startAt: b.startsAt, endAt: b.endsAt });
+  }
+
+  // Subtract active slot holds (R2 §9). A hold owned by THIS booker's
+  // fingerprint stays out of the blocked list so they can see their own
+  // held time as available — every other active hold is treated identically
+  // to a confirmed appointment for picker purposes.
+  const activeHolds = await loadActiveHoldsForStaff(prisma, {
+    tenantId,
+    staffId: query.staffId,
+    windowStart: dayStartUtc,
+    windowEnd: dayEndUtc,
+    excludeFingerprint: args.excludeHoldsForFingerprint,
+  });
+  for (const h of activeHolds) {
+    blocked.push({ startAt: h.startsAt, endAt: h.endsAt });
   }
 
   // Generate candidate slots and filter against blocked ranges.

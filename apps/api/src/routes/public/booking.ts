@@ -113,10 +113,20 @@ export default async function publicBookingRoutes(
       return reply.send({ slots: [], bookingPolicy: 'staff_only' as const });
     }
 
+    // Optional public-booker fingerprint per R2 §9. Lets the availability
+    // engine hide the requesting client's own active holds from their own
+    // slot picker. Untrusted; never used for authorization.
+    const fpHeader = request.headers['x-wellos-booking-fingerprint'];
+    const fingerprint =
+      typeof fpHeader === 'string' && fpHeader.trim().length >= 8
+        ? fpHeader.trim().slice(0, 128)
+        : undefined;
+
     try {
       const result = await listAvailableSlots(app.prisma, {
         tenantId: tenant.tenantId,
         query: toListAvailabilityQuery(parsed.data),
+        excludeHoldsForFingerprint: fingerprint,
       });
       return reply.send({
         ...result,

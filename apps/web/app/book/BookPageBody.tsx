@@ -29,11 +29,19 @@ import {
   type CalendarViewMode,
   weekDayDates,
 } from '@/lib/calendar-view';
+import {
+  SlotHoldApiError,
+  acquireSlotHold,
+  getOrCreateBookingFingerprint,
+  releaseSlotHold,
+  type SlotHoldResponse,
+} from '@/lib/api/slot-holds';
 
 import {
   loadPublicAvailabilityAction,
   submitPublicBookingAction,
 } from './_actions';
+import { SlotHoldTimer } from './SlotHoldTimer';
 
 const BOOK = '/book';
 
@@ -149,6 +157,14 @@ export function BookPageBody({
 
   const [pendingBook, startBookTransition] = useTransition();
 
+  // R2 §9 slot hold. While the user is on step 3+ (time picked, filling
+  // details), we hold the slot server-side for 7 minutes. The hold expires
+  // on its own; we also explicitly release when the user picks a different
+  // time, navigates away, or the timer fires.
+  const [activeHold, setActiveHold] = useState<SlotHoldResponse | null>(null);
+  const [holdMessage, setHoldMessage] = useState<string | null>(null);
+  const [acquiringHold, setAcquiringHold] = useState(false);
+
   useEffect(() => {
     if (!catalog?.locations.length) {
       setSelectedLocationId(null);
@@ -233,6 +249,88 @@ export function BookPageBody({
     catalog,
   ]);
 
+  // Pick-a-time handler. Acquires a server-side hold; on conflict, surfaces
+  // a banner and keeps the previous selection cleared so the user picks again.
+  const handlePickSlot = useCallback(
+    async (slotStart: string) => {
+      setHoldMessage(null);
+      if (!tenantSlug || !selectedLocationId || !selectedStaffId || !selectedServiceId) {
+        // Should be unreachable — the slot button only renders once these
+        // are set — but guard anyway to keep the hold call well-formed.
+        setSelectedSlotStart(slotStart);
+        return;
+      }
+
+      // Release any previous hold before reserving a new one.
+      const prior = activeHold;
+      setActiveHold(null);
+      if (prior) {
+        void releaseSlotHold(prior.holdId);
+      }
+
+      setAcquiringHold(true);
+      try {
+        const fingerprint = getOrCreateBookingFingerprint();
+        const hold = await acquireSlotHold({
+          tenantSlug,
+          locationId: selectedLocationId,
+          serviceId: selectedServiceId,
+          staffId: selectedStaffId,
+          startsAt: slotStart,
+          fingerprint,
+        });
+        setActiveHold(hold);
+        setSelectedSlotStart(slotStart);
+      } catch (err) {
+        setSelectedSlotStart(null);
+        if (err instanceof SlotHoldApiError && err.isConflict()) {
+          setHoldMessage(
+            'This time was just taken. Refresh the list and pick a nearby opening.',
+          );
+        } else if (err instanceof SlotHoldApiError) {
+          setHoldMessage(err.message);
+        } else {
+          setHoldMessage(
+            'Could not reserve this time. Check your connection and try again.',
+          );
+        }
+      } finally {
+        setAcquiringHold(false);
+      }
+    },
+    [tenantSlug, selectedLocationId, selectedStaffId, selectedServiceId, activeHold],
+  );
+
+  const handleHoldExpired = useCallback(() => {
+    // Server already moved the row to `expired` via TTL — local cleanup only.
+    setActiveHold(null);
+    setSelectedSlotStart(null);
+    setHoldMessage('This time was released. Pick a new opening.');
+  }, []);
+
+  // Best-effort release on page unload so concurrent bookers see the slot
+  // free up immediately instead of waiting on TTL.
+  useEffect(() => {
+    if (!activeHold) return undefined;
+    const holdId = activeHold.holdId;
+    const onUnload = () => {
+      void releaseSlotHold(holdId);
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, [activeHold]);
+
+  // If the upstream selection (service/staff/location/date) changes and
+  // clears the selected slot, the hold is now pointing at a stale slot —
+  // release it so the table doesn't fill up with orphaned active rows.
+  useEffect(() => {
+    if (selectedSlotStart) return;
+    if (!activeHold) return;
+    const holdId = activeHold.holdId;
+    setActiveHold(null);
+    void releaseSlotHold(holdId);
+  }, [selectedSlotStart, activeHold]);
+
   const onSubmitBooking = () => {
     setBookingMessage(null);
     if (
@@ -282,6 +380,15 @@ export function BookPageBody({
               res.result.appointment.state === 'requested',
           });
           setBookingMessage(null);
+          // The appointment row now holds the DB-level exclusion, so the
+          // hold is redundant. Release it so the row doesn't linger in
+          // `active` until TTL. (A future PR can wire holdId into the
+          // confirm endpoint and mark it `consumed` server-side.)
+          const finishedHold = activeHold;
+          setActiveHold(null);
+          if (finishedHold) {
+            void releaseSlotHold(finishedHold.holdId);
+          }
           return;
         }
         setBookingMessage(res.message);
@@ -717,13 +824,30 @@ export function BookPageBody({
                             ? 'rounded-xl border-2 border-accent bg-accent-pale py-s3 t-body-sm font-semibold text-accent'
                             : 'rounded-xl border border-surface-3 bg-white py-s3 t-body-sm font-semibold text-ink shadow-sm'
                         }
-                        onClick={() => setSelectedSlotStart(slot.startAt)}
+                        disabled={acquiringHold && !active}
+                        onClick={() => void handlePickSlot(slot.startAt)}
                       >
                         {formatSlotLabel(slot.startAt)}
                       </button>
                     );
                   })}
                 </div>
+                {activeHold ? (
+                  <div className="mt-s4">
+                    <SlotHoldTimer
+                      expiresAt={activeHold.expiresAt}
+                      onExpire={handleHoldExpired}
+                    />
+                  </div>
+                ) : null}
+                {holdMessage ? (
+                  <p
+                    className="mt-s3 rounded-xl border border-amber-200 bg-amber-50 px-s3 py-s3 t-body-sm text-ink"
+                    role="alert"
+                  >
+                    {holdMessage}
+                  </p>
+                ) : null}
                 {!loadingSlots && slots.length === 0 && tenantSlug && catalog ? (
                   <p className="mt-s3 t-body-sm text-ink-soft">
                     No open slots this day — try another date or provider.

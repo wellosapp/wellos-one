@@ -267,6 +267,17 @@ enum IntakeFormSubmissionAuditAction {
   submitted
 }
 
+// Slot hold lifecycle per R2 §9.4. `active` is reserved until either the
+// booking confirms (→ consumed), the TTL elapses (→ expired), or the user
+// abandons (→ released). Only `active` rows participate in availability
+// conflict checks.
+enum SlotHoldStatus {
+  active
+  consumed
+  expired
+  released
+}
+
 // Tenant-editable file folder taxonomy. Used by ClientFile.folder.
 // Per the master spec §5.2.4 default folders. Free string (not enum) on
 // the column so tenants can add custom folders, but these are the
@@ -313,6 +324,7 @@ model Tenant {
   intakeFormDefinitions     IntakeFormDefinition[]
   intakeFormSubmissions     IntakeFormSubmission[]
   intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
+  slotHolds                 SlotHold[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -331,6 +343,7 @@ model Location {
   appointments Appointment[]
   mediaAssets  MediaAsset[]  @relation("MediaAssetLocation")
   staffScheduleBlocks StaffScheduleBlock[]
+  slotHolds    SlotHold[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -601,6 +614,8 @@ model Staff {
   /// Epic 7 — optional hashed ICS subscribe secret (plain token never persisted).
   calendarFeedToken StaffCalendarFeedToken?
 
+  slotHolds SlotHold[]
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -691,6 +706,7 @@ model Service {
   mediaAssets       MediaAsset[]             @relation("MediaAssetService")
   bookingQuestions  ServiceBookingQuestion[]
   contentDeliveries ServiceContentDelivery[]
+  slotHolds         SlotHold[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1344,4 +1360,40 @@ model IntakeFormSubmissionAudit {
   @@index([tenantId])
   @@index([submissionId, createdAt])
   @@map("intake_form_submission_audits")
+}
+
+// ---------- Slot holds (R2 §9) ----------
+//
+// Short-lived reservations that block a (staff, time) tuple while a client
+// works through the booking flow. Default TTL is 7 minutes (see services/
+// slotHoldService.ts). Lifecycle: active → consumed | expired | released.
+//
+// Conflict semantics mirror Appointment overlap (half-open ranges) but live
+// in a separate table so an expired/released hold can be ignored cheaply and
+// so we never have to GC them from the appointments table. The availability
+// engine subtracts active hold ranges from candidate slots (minus holds
+// owned by the requesting client, identified by `created_by_fingerprint`).
+model SlotHold {
+  id                   String         @id @default(cuid())
+  tenantId             String         @map("tenant_id")
+  locationId           String         @map("location_id")
+  serviceId            String         @map("service_id")
+  staffId              String         @map("staff_id")
+  resourceId           String?        @map("resource_id")
+  startsAt             DateTime       @map("starts_at")    @db.Timestamptz(3)
+  endsAt               DateTime       @map("ends_at")      @db.Timestamptz(3)
+  expiresAt            DateTime       @map("expires_at")   @db.Timestamptz(3)
+  status               SlotHoldStatus @default(active)
+  idempotencyKey       String?        @map("idempotency_key")
+  createdByFingerprint String?        @map("created_by_fingerprint")
+  createdAt            DateTime       @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status, expiresAt])
+  @@index([staffId, startsAt, endsAt, status])
+  @@map("slot_holds")
 }
