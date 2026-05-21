@@ -1,19 +1,25 @@
 import type { Metadata } from 'next';
-import { DM_Sans, Sora } from 'next/font/google';
+import { Instrument_Serif, Manrope } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
-const sora = Sora({
+// Editorial serif display face. Used by every heading + the t-display-*
+// utility classes. Variable name `--font-display` is intentionally font-
+// agnostic so a future face swap doesn't require touching every component
+// that references it.
+const instrumentSerif = Instrument_Serif({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-sora',
+  weight: ['400'],
+  style: ['normal', 'italic'],
+  variable: '--font-display',
   display: 'swap',
 });
 
-const dmSans = DM_Sans({
+// Sans body face. Manrope's geometric warmth pairs with the serif display.
+const manrope = Manrope({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-dm-sans',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
   display: 'swap',
 });
 
@@ -34,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
+    <html lang="en" className={`${instrumentSerif.variable} ${manrope.variable}`}>
       <body>
         <Providers>{children}</Providers>
       </body>

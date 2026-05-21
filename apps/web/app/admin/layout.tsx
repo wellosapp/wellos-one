@@ -1,11 +1,12 @@
-import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
+import { currentUser } from '@clerk/nextjs/server';
 
 import { ApiError } from '@/lib/api/client';
 import { getImpersonationActive } from '@/lib/api/impersonate';
 import { getOnboardingStatus } from '@/lib/api/onboarding';
 
 import { ImpersonationBanner } from './ImpersonationBanner';
+import { AdminShell } from './_shell/AdminShell';
+import { AdminTopbar } from './_shell/AdminTopbar';
 
 export default async function AdminLayout({
   children,
@@ -42,98 +43,56 @@ export default async function AdminLayout({
     }
   }
 
+  // Greeting bits resolved server-side so the markup is stable on first paint.
+  // currentUser() is the dashboard's pattern (apps/web/app/dashboard/page.tsx).
+  let firstName: string | null = null;
+  try {
+    const user = await currentUser();
+    firstName = user?.firstName ?? null;
+  } catch {
+    // Auth race in render — fall through to a generic greeting.
+  }
+
+  const now = new Date();
+  const serverHour = now.getHours();
+  // "Wednesday · May 20" — kept short to read as a calm eyebrow. The
+  // visitor's browser TZ may differ from the server's; this is the
+  // server-resolved date which is good enough for the eyebrow chrome
+  // (the precise time-of-day clock is not surfaced here).
+  const todayLabel = `${now.toLocaleDateString('en-US', { weekday: 'long' })} · ${now.toLocaleDateString(
+    'en-US',
+    { month: 'long', day: 'numeric' },
+  )}`;
+
   return (
-    <div className="flex min-h-screen flex-col bg-surface">
-      {impersonation?.active && (
+    <>
+      {impersonation?.active ? (
         <ImpersonationBanner
           actor={{ email: impersonation.actor.email }}
           subject={{ email: impersonation.subject.email }}
         />
-      )}
+      ) : null}
       {devOnboardingHint ? (
         <div
-          className="border-b border-amber/30 bg-amber-pale/80 px-s8 py-s2 t-caption text-amber-950"
+          className="border-b border-amber/30 bg-amber-pale/80 px-s8 py-s2 t-caption text-ink-2"
           role="status"
         >
           <span className="font-semibold">Dev</span> —{' '}
-          <code className="rounded bg-white/60 px-s1">GET /admin/onboarding/status</code>
+          <code className="rounded-sm bg-white/60 px-s1">GET /admin/onboarding/status</code>
           : {devOnboardingHint}
         </div>
       ) : null}
-      <header className="flex items-center justify-between border-b border-surface-3 bg-white/70 px-s8 py-s4 backdrop-blur">
-        <nav className="flex items-center gap-s8">
-          <Link
-            href="/admin"
-            className="t-display-sm font-display text-ink no-underline"
-          >
-            Wellos Admin
-          </Link>
-          <Link
-            href="/admin/calendar"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Calendar
-          </Link>
-          <Link
-            href="/admin/clients"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Clients
-          </Link>
-          <Link
-            href="/admin/client-tags"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Tags
-          </Link>
-          <Link
-            href="/admin/services"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Services
-          </Link>
-          <Link
-            href="/admin/service-categories"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Categories
-          </Link>
-          <Link
-            href="/admin/staff"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Staff
-          </Link>
-          <Link
-            href="/admin/intake-forms"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Intake forms
-          </Link>
-          <Link
-            href="/admin/waitlist"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Waitlist
-          </Link>
-          <Link
-            href="/admin/media"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Media
-          </Link>
-          <Link
-            href="/admin/settings"
-            className="t-body-md text-ink-soft no-underline transition-colors duration-fast hover:text-ink"
-          >
-            Settings
-          </Link>
-        </nav>
-        <UserButton afterSignOutUrl="/" />
-      </header>
-      <main className="mx-auto w-full max-w-[1320px] flex-1 px-s8 py-s8">
+      <AdminShell
+        topbar={
+          <AdminTopbar
+            firstName={firstName}
+            serverHour={serverHour}
+            todayLabel={todayLabel}
+          />
+        }
+      >
         {children}
-      </main>
-    </div>
+      </AdminShell>
+    </>
   );
 }

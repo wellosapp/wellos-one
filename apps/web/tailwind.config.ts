@@ -9,17 +9,51 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: 'var(--ink)',
+        ink: {
+          DEFAULT: 'var(--ink)',
+          // Numeric tone scale (2/3/4) follows the design's editorial naming.
+          2: 'var(--ink-2)',
+          3: 'var(--ink-3)',
+          4: 'var(--ink-4)',
+          inv: 'var(--ink-inv)',
+        },
+        // `ink-soft` kept as a legacy alias of --ink-2 so existing className
+        // strings like `text-ink-soft` continue to resolve.
         'ink-soft': 'var(--ink-soft)',
         surface: {
           DEFAULT: 'var(--surface)',
           2: 'var(--surface-2)',
           3: 'var(--surface-3)',
+          sunk: 'var(--surface-sunk)',
+        },
+        canvas: 'var(--canvas)',
+        line: {
+          DEFAULT: 'var(--line)',
+          soft: 'var(--line-soft)',
+          strong: 'var(--line-strong)',
         },
         accent: {
           DEFAULT: 'var(--accent)',
           mid: 'var(--accent-mid)',
           pale: 'var(--accent-pale)',
+        },
+        sage: {
+          DEFAULT: 'var(--sage)',
+          deep: 'var(--sage-deep)',
+          soft: 'var(--sage-soft)',
+          tint: 'var(--sage-tint)',
+          'tint-2': 'var(--sage-tint-2)',
+        },
+        sand: {
+          DEFAULT: 'var(--sand)',
+          soft: 'var(--sand-soft)',
+        },
+        terracotta: 'var(--terracotta)',
+        rose: 'var(--rose)',
+        plum: 'var(--plum)',
+        sky: {
+          DEFAULT: 'var(--sky)',
+          soft: 'var(--sky-soft)',
         },
         red: {
           DEFAULT: 'var(--red)',
@@ -59,8 +93,8 @@ const config: Config = {
         focus: 'var(--focus-ring)',
       },
       fontFamily: {
-        sans: ['var(--font-dm-sans)', 'system-ui', 'sans-serif'],
-        display: ['var(--font-sora)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Georgia', 'Times New Roman', 'serif'],
       },
       transitionDuration: {
         fast: '150ms',
