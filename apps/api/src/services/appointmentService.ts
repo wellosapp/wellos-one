@@ -184,7 +184,7 @@ function appointmentAllowsCalendarReschedule(state: AppointmentStatus): boolean 
 // Postgres exclusion-constraint violations surface as P2010 in Prisma 5.
 // We sniff the constraint name to be sure — other P2010s (e.g. raw query
 // failures) must NOT be misclassified as slot conflicts.
-function isExclusionViolation(err: unknown): boolean {
+export function isExclusionViolation(err: unknown): boolean {
   if (
     err instanceof Prisma.PrismaClientKnownRequestError &&
     err.code === 'P2010'
