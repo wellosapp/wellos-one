@@ -56,6 +56,10 @@ const APPOINTMENT_SAFE_FIELDS = {
   cancelledByUserId: true,
   cancelReason: true,
   bookedBasePriceCents: true,
+  // Tier B — recurring series (docs/04-booking-flow.md / coverage matrix §3).
+  // Non-null when this row was generated as one occurrence of an
+  // AppointmentSeries; null for one-off bookings.
+  seriesId: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
