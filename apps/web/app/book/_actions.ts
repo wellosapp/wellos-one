@@ -9,6 +9,12 @@ import {
   type AvailableSlotWire,
   type CreatePublicAppointmentResult,
 } from '@/lib/api/public-booking-server';
+import {
+  PublicWaitlistApiError,
+  createPublicWaitlistEntry,
+  type CreatePublicWaitlistBody,
+  type CreatePublicWaitlistResult,
+} from '@/lib/api/waitlist';
 
 export async function loadPublicBookingCatalogAction(
   tenantSlug: string,
@@ -102,6 +108,38 @@ export async function submitPublicBookingAction(args: {
         ok: false,
         message,
         issues: body?.issues,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function submitPublicWaitlistAction(
+  body: CreatePublicWaitlistBody,
+): Promise<
+  | { ok: true; result: CreatePublicWaitlistResult }
+  | {
+      ok: false;
+      message: string;
+      issues?: Array<{ path: string; message: string }>;
+    }
+> {
+  try {
+    const result = await createPublicWaitlistEntry(body);
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof PublicWaitlistApiError) {
+      const errBody = err.body as {
+        message?: string;
+        issues?: Array<{ path: string; message: string }>;
+      } | null;
+      return {
+        ok: false,
+        message:
+          typeof errBody?.message === 'string'
+            ? errBody.message
+            : 'Could not join the waitlist. Try again.',
+        issues: errBody?.issues,
       };
     }
     throw err;

@@ -21,6 +21,7 @@ import staffCalendarSyncRoutes from './staff-calendar-sync.js';
 import staffScheduleBlocksRoutes from './staff-schedule-blocks.js';
 import staffRoutes from './staff.js';
 import triageRoutes from './triage.js';
+import waitlistRoutes from './waitlist.js';
 import whoamiRoutes from './whoami.js';
 
 // Admin-only API surface. All routes registered under /admin/* and behind
@@ -48,5 +49,6 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(mediaRoutes, { prefix: '/admin' });
   await app.register(onboardingRoutes, { prefix: '/admin' });
   await app.register(intakeFormsRoutes, { prefix: '/admin' });
+  await app.register(waitlistRoutes, { prefix: '/admin' });
   await app.register(impersonateRoutes, { prefix: '/admin' });
 }

@@ -18,6 +18,7 @@ import {
   InvalidStateTransitionError,
   assertTransition,
 } from './appointmentStateMachine.js';
+import { findEligibleEntriesForOpening } from './waitlistService.js';
 
 // Domain layer for Appointment admin CRUD (E3-S1).
 //
@@ -655,7 +656,7 @@ export async function transitionAppointmentState(
 ): Promise<TransitionAppointmentResult | null> {
   const { tenantId, actorUserId, id, to, reason } = args;
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.appointment.findFirst({
       where: { tenantId, id },
       select: APPOINTMENT_SAFE_FIELDS,
@@ -695,6 +696,42 @@ export async function transitionAppointmentState(
 
     return { appointment: after };
   });
+
+  // R2 §10.2 — waitlist match on cancellation. Run AFTER the state-change tx
+  // commits so a slow read on waitlist_entries can't block the appointment
+  // update. Epic 8 wires SMS/email dispatch via BullMQ; this PR only logs
+  // eligibility so the matching engine can be smoke-tested end-to-end.
+  if (result && to === 'cancelled') {
+    try {
+      const eligible = await findEligibleEntriesForOpening(prisma, {
+        tenantId,
+        serviceId: result.appointment.serviceId,
+        staffId: result.appointment.staffId,
+        startsAt: result.appointment.scheduledStartAt,
+        endsAt: result.appointment.scheduledEndAt,
+      });
+      // Service-layer logging convention is `console.info` — Fastify's Pino
+      // logger captures stdout in Railway. Move to request.log when this
+      // path lands behind the Epic 8 BullMQ worker.
+      // eslint-disable-next-line no-console
+      console.info(
+        '[waitlist] would offer slot to %d eligible entries on appointment cancellation %s',
+        eligible.length,
+        result.appointment.id,
+      );
+    } catch (err) {
+      // Never let a waitlist-lookup failure escape the cancellation flow —
+      // the appointment is already cancelled in the DB.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[waitlist] eligibility lookup failed after cancellation %s: %s',
+        result.appointment.id,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  return result;
 }
 
 export async function softDeleteAppointment(

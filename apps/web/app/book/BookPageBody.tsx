@@ -42,6 +42,7 @@ import {
   submitPublicBookingAction,
 } from './_actions';
 import { SlotHoldTimer } from './SlotHoldTimer';
+import { WaitlistSignupSheet } from './WaitlistSignupSheet';
 
 const BOOK = '/book';
 
@@ -154,6 +155,7 @@ export function BookPageBody({
   } | null>(null);
 
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
 
   const [pendingBook, startBookTransition] = useTransition();
 
@@ -849,9 +851,22 @@ export function BookPageBody({
                   </p>
                 ) : null}
                 {!loadingSlots && slots.length === 0 && tenantSlug && catalog ? (
-                  <p className="mt-s3 t-body-sm text-ink-soft">
-                    No open slots this day — try another date or provider.
-                  </p>
+                  <div className="mt-s3 flex flex-col gap-s3 rounded-2xl border border-surface-3 bg-surface px-s4 py-s4">
+                    <p className="t-body-sm text-ink-soft">
+                      No open slots this day — try another date or provider.
+                    </p>
+                    {selectedServiceId ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        className="self-start border border-surface-3 bg-white shadow-sm"
+                        onClick={() => setWaitlistOpen(true)}
+                      >
+                        Join the waitlist
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 <h3 className="mt-s8 t-display-sm text-ink">Notes</h3>
@@ -986,6 +1001,18 @@ export function BookPageBody({
           </p>
         </section>
       </main>
+
+      <WaitlistSignupSheet
+        open={waitlistOpen}
+        onClose={() => setWaitlistOpen(false)}
+        tenantSlug={tenantSlug}
+        locationId={selectedLocationId}
+        serviceId={selectedServiceId}
+        serviceName={summaryServiceName}
+        staffId={selectedStaffId}
+        staffName={summaryStaffName}
+        defaultPreferredDate={dateParam}
+      />
     </div>
   );
 }
