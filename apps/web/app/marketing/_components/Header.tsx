@@ -1,10 +1,12 @@
-import Link from 'next/link';
-
 import { Button } from '@/components/ui';
 
 import { SIGN_IN_URL, SIGN_UP_URL } from './links';
 import { Wordmark } from './Wordmark';
 
+// Anchor-only nav (intra-page jumps) — using plain <a> rather than Next's <Link>
+// because Next 14's typedRoutes mode rejects untyped string hrefs like
+// `/#features`. Anchor links don't need client-side navigation prefetching
+// anyway, so a plain anchor is cheaper and matches behavior.
 const NAV_ITEMS: Array<{ label: string; href: string }> = [
   { label: 'Features', href: '/#features' },
   { label: 'How it works', href: '/#how' },
@@ -15,19 +17,19 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-surface-3/70 bg-surface/80 backdrop-blur supports-[backdrop-filter]:bg-surface/65">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-s4 px-s6 py-s4">
-        <Link href="/" aria-label="Wellos home" className="rounded-sm focus-visible:shadow-focus focus-visible:outline-none">
+        <a href="/" aria-label="Wellos home" className="rounded-sm focus-visible:shadow-focus focus-visible:outline-none">
           <Wordmark size="md" />
-        </Link>
+        </a>
 
         <nav className="hidden items-center gap-s6 md:flex" aria-label="Primary">
           {NAV_ITEMS.map((item) => (
-            <Link
+            <a
               key={item.href}
               href={item.href}
               className="t-body-md text-ink-soft transition-colors duration-fast hover:text-ink"
             >
               {item.label}
-            </Link>
+            </a>
           ))}
         </nav>
 
