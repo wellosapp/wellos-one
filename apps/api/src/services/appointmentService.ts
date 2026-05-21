@@ -56,6 +56,10 @@ const APPOINTMENT_SAFE_FIELDS = {
   cancelledByUserId: true,
   cancelReason: true,
   bookedBasePriceCents: true,
+  // Returning-client recognition (docs/04-booking-flow.md §B). Set by
+  // ClientMatchResolver on public booking attach; null for staff-created rows.
+  matchStrength: true,
+  clientMatchDisputed: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,

@@ -53,11 +53,11 @@ enum AppointmentStatus {
   // staff must approve to move it to `confirmed`. See R2 §11.2.
   requested
   confirmed
-  checked_in   @map("checked_in")
-  in_progress  @map("in_progress")
+  checked_in  @map("checked_in")
+  in_progress @map("in_progress")
   completed
   cancelled
-  no_show      @map("no_show")
+  no_show     @map("no_show")
 }
 
 // How a Service may be booked publicly. Drives the public confirm flow:
@@ -149,10 +149,10 @@ enum MediaAssetVisibility {
 // Access class per the R2 spec §2.5. Drives which bucket the object sits in
 // and how URLs are generated (CDN-direct vs signed-and-short-lived).
 enum MediaAccessClass {
-  public_booking    @map("public_booking")
-  tenant_staff      @map("tenant_staff")
-  client_owned      @map("client_owned")
-  protected_medspa  @map("protected_medspa")
+  public_booking   @map("public_booking")
+  tenant_staff     @map("tenant_staff")
+  client_owned     @map("client_owned")
+  protected_medspa @map("protected_medspa")
   generated
 }
 
@@ -229,7 +229,7 @@ enum WaitlistEntryStatus {
 // Public catalog / booking UI price presentation (Services & Catalog MVP).
 enum ServicePriceDisplayMode {
   fixed
-  starting_at @map("starting_at")
+  starting_at  @map("starting_at")
   range
   hidden
   consultation
@@ -247,6 +247,21 @@ enum AppointmentSource {
   walk_in       @map("walk_in")
   quick_book    @map("quick_book")
   calendar_drag @map("calendar_drag")
+}
+
+// Returning-client recognition outcome on public booking attach.
+// strong     — email + phone matched same client (silent attach)
+// weak       — email matched but phone differed (treated as new; see ClientMatchResolver)
+// name_only  — email matched, phone not provided, first+last name matched (attach)
+// ambiguous  — email + phone matched multiple records (staff resolves manually)
+//
+// Stored on the Appointment for audit + the "Client matches to review" admin
+// queue. Null for staff-created bookings (no public match path).
+enum ClientMatchStrength {
+  strong
+  weak
+  name_only @map("name_only")
+  ambiguous
 }
 
 // Staff / calendar block time (calendar-area-features.md §9 — Tier B core).
@@ -314,53 +329,54 @@ model Tenant {
   // enum + Service.bookingPolicy). These are tenant-wide knobs that resolve
   // down to appointments unless overridden — see bookingSettingsService.
   bookingDepositsEnabled         Boolean @default(false) @map("booking_deposits_enabled")
-  bookingDepositAmountCents      Int     @default(5000)  @map("booking_deposit_amount_cents")
-  bookingCancellationWindowHours Int     @default(24)    @map("booking_cancellation_window_hours")
-  bookingCancellationFeeCents    Int     @default(0)     @map("booking_cancellation_fee_cents")
-  bookingNoShowFeeCents          Int     @default(0)     @map("booking_no_show_fee_cents")
-  bookingMinNoticeHours          Int     @default(2)     @map("booking_min_notice_hours")
-  bookingMaxWindowDays           Int     @default(90)    @map("booking_max_window_days")
-  bookingDefaultBufferMinutes    Int     @default(0)     @map("booking_default_buffer_minutes")
-  bookingWalkInsAllowed          Boolean @default(true)  @map("booking_walk_ins_allowed")
-  bookingTipsEnabled             Boolean @default(true)  @map("booking_tips_enabled")
-  /// "email_only" | "email_phone" | "email_name" — validated by Zod at the API edge.
-  bookingClientRecognitionMode   String  @default("email_phone")    @map("booking_client_recognition_mode")
+  bookingDepositAmountCents      Int     @default(5000) @map("booking_deposit_amount_cents")
+  bookingCancellationWindowHours Int     @default(24) @map("booking_cancellation_window_hours")
+  bookingCancellationFeeCents    Int     @default(0) @map("booking_cancellation_fee_cents")
+  bookingNoShowFeeCents          Int     @default(0) @map("booking_no_show_fee_cents")
+  bookingMinNoticeHours          Int     @default(2) @map("booking_min_notice_hours")
+  bookingMaxWindowDays           Int     @default(90) @map("booking_max_window_days")
+  bookingDefaultBufferMinutes    Int     @default(0) @map("booking_default_buffer_minutes")
+  bookingWalkInsAllowed          Boolean @default(true) @map("booking_walk_ins_allowed")
+  bookingTipsEnabled             Boolean @default(true) @map("booking_tips_enabled")
+  /// "email_only" | "email_phone" | "email_name" | "email_phone_or_name" — validated by Zod at the API edge.
+  /// Default is the spec's hybrid mode: silent attach when email + phone match, fall back to email + name.
+  bookingClientRecognitionMode   String  @default("email_phone_or_name") @map("booking_client_recognition_mode")
   /// Comma-separated role names allowed to override double-book (e.g. "admin,manager").
-  bookingOverrideRoles           String  @default("admin,manager")  @map("booking_override_roles")
+  bookingOverrideRoles           String  @default("admin,manager") @map("booking_override_roles")
 
-  locations                 Location[]
-  users                     User[]
-  roleAssignments           RoleAssignment[]
-  tenantFeatureFlags        TenantFeatureFlag[]
-  idempotencyKeys           IdempotencyKey[]
-  auditEntries              AuditLog[]
-  clients                   Client[]
-  staff                     Staff[]
-  services                  Service[]
-  serviceCategories         ServiceCategory[]
-  clientTags                ClientTag[]
-  appointments              Appointment[]
+  locations          Location[]
+  users              User[]
+  roleAssignments    RoleAssignment[]
+  tenantFeatureFlags TenantFeatureFlag[]
+  idempotencyKeys    IdempotencyKey[]
+  auditEntries       AuditLog[]
+  clients            Client[]
+  staff              Staff[]
+  services           Service[]
+  serviceCategories  ServiceCategory[]
+  clientTags         ClientTag[]
+  appointments       Appointment[]
 
   // Tier A
-  clientNotes               ClientNote[]
+  clientNotes                ClientNote[]
   // Multi-tenant ownership (every MediaAsset has a tenantId).
-  mediaAssets               MediaAsset[]              @relation("MediaAssetTenantScope")
+  mediaAssets                MediaAsset[]                @relation("MediaAssetTenantScope")
   // Tenant as polymorphic owner (brand assets, booking-page hero, policies).
-  brandMediaAssets          MediaAsset[]              @relation("MediaAssetTenant")
-  tenantMediaRoot           TenantMediaRoot?
-  soapNotes                 SoapNote[]
-  soapNoteRevisions         SoapNoteRevision[]
-  clientNoteAcks            ClientNoteAcknowledgment[]
-  serviceBookingQuestions   ServiceBookingQuestion[]
-  appointmentBookingAnswers AppointmentBookingAnswer[]
-  serviceContentDeliveries  ServiceContentDelivery[]
-  staffCalendarFeedTokens   StaffCalendarFeedToken[]
-  staffScheduleBlocks       StaffScheduleBlock[]
-  intakeFormDefinitions     IntakeFormDefinition[]
-  intakeFormSubmissions     IntakeFormSubmission[]
+  brandMediaAssets           MediaAsset[]                @relation("MediaAssetTenant")
+  tenantMediaRoot            TenantMediaRoot?
+  soapNotes                  SoapNote[]
+  soapNoteRevisions          SoapNoteRevision[]
+  clientNoteAcks             ClientNoteAcknowledgment[]
+  serviceBookingQuestions    ServiceBookingQuestion[]
+  appointmentBookingAnswers  AppointmentBookingAnswer[]
+  serviceContentDeliveries   ServiceContentDelivery[]
+  staffCalendarFeedTokens    StaffCalendarFeedToken[]
+  staffScheduleBlocks        StaffScheduleBlock[]
+  intakeFormDefinitions      IntakeFormDefinition[]
+  intakeFormSubmissions      IntakeFormSubmission[]
   intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
-  slotHolds                 SlotHold[]
-  waitlistEntries           WaitlistEntry[]
+  slotHolds                  SlotHold[]
+  waitlistEntries            WaitlistEntry[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -375,12 +391,12 @@ model Location {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  appointments Appointment[]
-  mediaAssets  MediaAsset[]  @relation("MediaAssetLocation")
+  tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  appointments        Appointment[]
+  mediaAssets         MediaAsset[]         @relation("MediaAssetLocation")
   staffScheduleBlocks StaffScheduleBlock[]
-  slotHolds    SlotHold[]
-  waitlistEntries WaitlistEntry[]
+  slotHolds           SlotHold[]
+  waitlistEntries     WaitlistEntry[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -575,39 +591,39 @@ model Client {
   /// application-side via getNextClientNumber (MAX + 1 within the tenant);
   /// the @@unique([tenantId, clientNumber]) constraint catches race-window
   /// collisions so the service layer can retry once.
-  clientNumber          Int                @map("client_number")
+  clientNumber Int @map("client_number")
 
   // Tier A — Communication preferences (Client CRM #2 from feature matrix).
   // Used by Epic 8 notification dispatch to gate SMS/email sends. Default
   // false so newly-created clients receive both until they opt out.
-  smsOptedOut           Boolean            @default(false) @map("sms_opted_out")
-  emailOptedOut         Boolean            @default(false) @map("email_opted_out")
+  smsOptedOut      Boolean @default(false) @map("sms_opted_out")
+  emailOptedOut    Boolean @default(false) @map("email_opted_out")
   // Optional channel preference. Null = system picks based on booking spec
   // (typically SMS for confirmation, email for receipts). Not stored as an
   // enum yet — values: 'sms' | 'email' | 'both'. Promote to enum when we
   // add the second client-facing notification surface.
-  preferredChannel      String?            @map("preferred_channel")
+  preferredChannel String? @map("preferred_channel")
 
   // Tier A — Banned client flag (Client CRM #9). Booking surfaces (public
   // and staff) check this before allowing creation. `bannedAt` lets us
   // scope reporting; `bannedReason` is internal-only (never shown to
   // banned clients themselves).
-  banned                Boolean            @default(false)
-  bannedReason          String?            @map("banned_reason")
-  bannedAt              DateTime?          @map("banned_at")     @db.Timestamptz(3)
+  banned       Boolean   @default(false)
+  bannedReason String?   @map("banned_reason")
+  bannedAt     DateTime? @map("banned_at") @db.Timestamptz(3)
 
-  createdAt             DateTime           @default(now()) @map("created_at")
-  updatedAt             DateTime           @updatedAt @map("updated_at")
-  deletedAt             DateTime?          @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
-  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  tagAssignments ClientTagAssignment[]
-  appointments   Appointment[]
-  notes_         ClientNote[]          @relation("ClientNoteClient")
-  authoredNotes  ClientNote[]          @relation("ClientNoteAuthorClient")
-  mediaAssets    MediaAsset[]          @relation("MediaAssetClient")
-  soapNotes              SoapNote[]
-  intakeFormSubmissions  IntakeFormSubmission[]
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tagAssignments        ClientTagAssignment[]
+  appointments          Appointment[]
+  notes_                ClientNote[]           @relation("ClientNoteClient")
+  authoredNotes         ClientNote[]           @relation("ClientNoteAuthorClient")
+  mediaAssets           MediaAsset[]           @relation("MediaAssetClient")
+  soapNotes             SoapNote[]
+  intakeFormSubmissions IntakeFormSubmission[]
 
   @@unique([tenantId, clientNumber])
   @@index([tenantId])
@@ -620,53 +636,53 @@ model Client {
 }
 
 model Staff {
-  id                String    @id @default(cuid())
-  tenantId          String    @map("tenant_id")
-  firstName         String    @map("first_name")
-  lastName          String?   @map("last_name")
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  firstName         String   @map("first_name")
+  lastName          String?  @map("last_name")
   email             String?
   phone             String?
   // Free-text job title (e.g. "Massage Therapist", "Esthetician"). RBAC roles
   // live separately in RoleAssignment — this is presentation, not authorization.
-  jobTitle          String?   @map("job_title")
+  jobTitle          String?  @map("job_title")
   // Day-of-week → array of { start, end } shifts. Validated at the API layer
   // via Zod when CRUD lands in E2-S5; stored as JSONB for MVP.
   // Example: { "mon": [{ "start": "09:00", "end": "17:00" }], ... }
-  workingHours      Json?     @map("working_hours")
+  workingHours      Json?    @map("working_hours")
   // Hourly rate stored in cents (integer) to dodge floating-point money math.
-  hourlyRateCents   Int?      @map("hourly_rate_cents")
+  hourlyRateCents   Int?     @map("hourly_rate_cents")
   // Commission as a percentage (0-100). Decimal column for precision.
-  commissionRatePct Decimal?  @map("commission_rate_pct") @db.Decimal(5, 2)
-  active            Boolean   @default(true)
+  commissionRatePct Decimal? @map("commission_rate_pct") @db.Decimal(5, 2)
+  active            Boolean  @default(true)
 
   // ---------- Per-staff booking override fields (R2 §12) ----------
   // Nullable: null falls through to the tenant-level default at resolution time.
   // See bookingSettingsService.resolveBookingSetting for the two-tier order.
-  bookingBufferMinutesOverride  Int?     @map("booking_buffer_minutes_override")
-  bookingMinNoticeHoursOverride Int?     @map("booking_min_notice_hours_override")
+  bookingBufferMinutesOverride  Int?    @map("booking_buffer_minutes_override")
+  bookingMinNoticeHoursOverride Int?    @map("booking_min_notice_hours_override")
   /// Spec: tenant enables calendar sync, staff opts in. Non-nullable boolean
   /// because the staff member always has an explicit yes/no — there is no
   /// "fall through to tenant" semantic for this field.
-  bookingCalendarSyncOptedIn    Boolean  @default(false) @map("booking_calendar_sync_opted_in")
+  bookingCalendarSyncOptedIn    Boolean @default(false) @map("booking_calendar_sync_opted_in")
 
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  deletedAt         DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  services     StaffService[]
-  appointments Appointment[]
-  scheduleBlocks StaffScheduleBlock[]
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services        StaffService[]
+  appointments    Appointment[]
+  scheduleBlocks  StaffScheduleBlock[]
   waitlistEntries WaitlistEntry[]
 
   // Tier A inverse relations.
-  authoredNotes        ClientNote[]               @relation("ClientNoteAuthorStaff")
-  uploadedMediaAssets  MediaAsset[]               @relation("MediaAssetUploadedByStaff")
-  ownedMediaAssets     MediaAsset[]               @relation("MediaAssetStaff")
-  authoredSoapNotes    SoapNote[]                 @relation("SoapNoteAuthorStaff")
-  lockedSoapNotes      SoapNote[]                 @relation("SoapNoteLockedByStaff")
-  soapNoteRevisions    SoapNoteRevision[]         @relation("SoapNoteRevisionAuthor")
-  noteAcknowledgments  ClientNoteAcknowledgment[] @relation("ClientNoteAckStaff")
+  authoredNotes       ClientNote[]               @relation("ClientNoteAuthorStaff")
+  uploadedMediaAssets MediaAsset[]               @relation("MediaAssetUploadedByStaff")
+  ownedMediaAssets    MediaAsset[]               @relation("MediaAssetStaff")
+  authoredSoapNotes   SoapNote[]                 @relation("SoapNoteAuthorStaff")
+  lockedSoapNotes     SoapNote[]                 @relation("SoapNoteLockedByStaff")
+  soapNoteRevisions   SoapNoteRevision[]         @relation("SoapNoteRevisionAuthor")
+  noteAcknowledgments ClientNoteAcknowledgment[] @relation("ClientNoteAckStaff")
 
   /// Epic 7 — optional hashed ICS subscribe secret (plain token never persisted).
   calendarFeedToken StaffCalendarFeedToken?
@@ -717,33 +733,33 @@ model ServiceCategory {
 }
 
 model Service {
-  id                 String    @id @default(cuid())
-  tenantId           String    @map("tenant_id")
-  categoryId         String?   @map("category_id")
-  name               String
-  description        String?
+  id                  String                  @id @default(cuid())
+  tenantId            String                  @map("tenant_id")
+  categoryId          String?                 @map("category_id")
+  name                String
+  description         String?
   // Short blurb for catalog cards / SEO-adjacent surfaces (optional).
-  descriptionShort   String?   @map("description_short")
+  descriptionShort    String?                 @map("description_short")
   // Service duration in minutes. The booking engine snaps to this grid.
-  durationMinutes    Int       @map("duration_minutes")
+  durationMinutes     Int                     @map("duration_minutes")
   // Base price in cents.
-  basePriceCents     Int       @map("base_price_cents")
+  basePriceCents      Int                     @map("base_price_cents")
   // How the public catalog surfaces price (fixed amount vs range vs hidden).
-  priceDisplayMode   ServicePriceDisplayMode @default(fixed) @map("price_display_mode")
+  priceDisplayMode    ServicePriceDisplayMode @default(fixed) @map("price_display_mode")
   // Sort order within category / catalog admin lists.
-  displayOrder       Int       @default(0) @map("display_order")
+  displayOrder        Int                     @default(0) @map("display_order")
   // When false, hide from public booking catalog (staff calendar may still use).
-  publicVisible      Boolean   @default(true) @map("public_visible")
+  publicVisible       Boolean                 @default(true) @map("public_visible")
   // Buffer BEFORE this service starts on the same staff member's calendar.
-  bufferBeforeMinutes Int      @default(0) @map("buffer_before_minutes")
+  bufferBeforeMinutes Int                     @default(0) @map("buffer_before_minutes")
   // Buffer applied AFTER each appointment of this service for the same staff
   // member, in minutes. Per-staff and per-service-pair buffers are Phase 2.
-  bufferAfterMinutes Int       @default(0) @map("buffer_after_minutes")
+  bufferAfterMinutes  Int                     @default(0) @map("buffer_after_minutes")
   // Hex color for calendar rendering (e.g. "#7B9E89"). UI maps to design tokens.
-  color              String?
-  active             Boolean   @default(true)
+  color               String?
+  active              Boolean                 @default(true)
   // Public booking policy. Defaults to instant (existing services). See R2 §11.
-  bookingPolicy      BookingPolicy @default(instant) @map("booking_policy")
+  bookingPolicy       BookingPolicy           @default(instant) @map("booking_policy")
 
   // Prep / aftercare / what-to-expect content lives in R2 as markdown docs
   // per the R2 UI/UX buildout spec §2.4 + §13.2 (services/{serviceId}/docs/
@@ -751,9 +767,9 @@ model Service {
   // MediaAsset rows with owner_type='service' + folder='docs'. No DB columns
   // for the content itself.
 
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  deletedAt          DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   category          ServiceCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
@@ -825,19 +841,19 @@ model ClientTagAssignment {
 // Stored in UTC; UI renders in Location.timezone. Availability + booking creation
 // both respect overlaps with these intervals.
 model StaffScheduleBlock {
-  id           String                     @id @default(cuid())
-  tenantId     String                     @map("tenant_id")
-  staffId      String                     @map("staff_id")
+  id         String                     @id @default(cuid())
+  tenantId   String                     @map("tenant_id")
+  staffId    String                     @map("staff_id")
   /// When set, block applies only when booking at this location; null = all locations for this staff.
-  locationId   String?                    @map("location_id")
-  title        String
-  category     StaffScheduleBlockCategory
-  startsAt     DateTime                   @map("starts_at") @db.Timestamptz(3)
-  endsAt       DateTime                   @map("ends_at")   @db.Timestamptz(3)
-  visibility   ScheduleBlockVisibility    @default(internal)
-  createdAt    DateTime                   @default(now()) @map("created_at")
-  updatedAt    DateTime                   @updatedAt @map("updated_at")
-  deletedAt    DateTime?                  @map("deleted_at")
+  locationId String?                    @map("location_id")
+  title      String
+  category   StaffScheduleBlockCategory
+  startsAt   DateTime                   @map("starts_at") @db.Timestamptz(3)
+  endsAt     DateTime                   @map("ends_at") @db.Timestamptz(3)
+  visibility ScheduleBlockVisibility    @default(internal)
+  createdAt  DateTime                   @default(now()) @map("created_at")
+  updatedAt  DateTime                   @updatedAt @map("updated_at")
+  deletedAt  DateTime?                  @map("deleted_at")
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   staff    Staff     @relation(fields: [staffId], references: [id], onDelete: Restrict)
@@ -866,36 +882,44 @@ model StaffScheduleBlock {
 // PATCH does not allow editing the time/duration triple (cancel + recreate).
 
 model Appointment {
-  id                String            @id @default(cuid())
-  tenantId          String            @map("tenant_id")
-  locationId        String            @map("location_id")
-  clientId          String            @map("client_id")
-  staffId           String            @map("staff_id")
-  serviceId         String            @map("service_id")
+  id         String @id @default(cuid())
+  tenantId   String @map("tenant_id")
+  locationId String @map("location_id")
+  clientId   String @map("client_id")
+  staffId    String @map("staff_id")
+  serviceId  String @map("service_id")
 
-  scheduledStartAt  DateTime          @map("scheduled_start_at") @db.Timestamptz(3)
-  scheduledEndAt    DateTime          @map("scheduled_end_at")   @db.Timestamptz(3)
+  scheduledStartAt DateTime @map("scheduled_start_at") @db.Timestamptz(3)
+  scheduledEndAt   DateTime @map("scheduled_end_at") @db.Timestamptz(3)
 
-  state             AppointmentStatus @default(confirmed)
+  state AppointmentStatus @default(confirmed)
 
   // Tier A — Where the appointment was created from. Reporting + abuse
   // detection. Nullable so existing rows pre-Tier-A migrate cleanly; new
   // rows must always set this from the route layer.
-  source            AppointmentSource?
+  source AppointmentSource?
+
+  // Returning-client recognition (docs/04-booking-flow.md §B + Client
+  // Recognition). Set by ClientMatchResolver on public booking attach.
+  // matchStrength is null for staff-created bookings. clientMatchDisputed
+  // flips to true when the client taps "This isn't me" on the confirmation
+  // card — staff resolves via the admin disputed-matches queue.
+  matchStrength       ClientMatchStrength? @map("match_strength")
+  clientMatchDisputed Boolean              @default(false) @map("client_match_disputed")
 
   notes             String?
-  createdByUserId   String?           @map("created_by_user_id")
-  cancelledAt       DateTime?         @map("cancelled_at")       @db.Timestamptz(3)
-  cancelledByUserId String?           @map("cancelled_by_user_id")
-  cancelReason      String?           @map("cancel_reason")
+  createdByUserId   String?   @map("created_by_user_id")
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelledByUserId String?   @map("cancelled_by_user_id")
+  cancelReason      String?   @map("cancel_reason")
 
   // Price locked at booking time (Services & Catalog spec). Service price edits
   // do not change historical appointments.
-  bookedBasePriceCents Int            @map("booked_base_price_cents")
+  bookedBasePriceCents Int @map("booked_base_price_cents")
 
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt      @map("updated_at")
-  deletedAt         DateTime?         @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
@@ -904,11 +928,11 @@ model Appointment {
   service  Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
   // Tier A inverse relations.
-  notes_              ClientNote[]
-  mediaAssets         MediaAsset[]               @relation("MediaAssetAppointment")
-  soapNotes           SoapNote[]
-  bookingAnswers      AppointmentBookingAnswer[]
-  noteAcknowledgments ClientNoteAcknowledgment[]
+  notes_                ClientNote[]
+  mediaAssets           MediaAsset[]               @relation("MediaAssetAppointment")
+  soapNotes             SoapNote[]
+  bookingAnswers        AppointmentBookingAnswer[]
+  noteAcknowledgments   ClientNoteAcknowledgment[]
   intakeFormSubmissions IntakeFormSubmission[]
 
   @@index([tenantId, scheduledStartAt])
@@ -931,42 +955,42 @@ model Appointment {
 // array per Q1), pinned/archived/expires, author tri-type
 // (customer/staff/admin/system) with three nullable FKs (Q5).
 model ClientNote {
-  id             String                   @id @default(cuid())
-  tenantId       String                   @map("tenant_id")
-  clientId       String                   @map("client_id")
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  clientId String @map("client_id")
 
-  category       ClientNoteCategory
-  priority       ClientNotePriority       @default(normal)
-  title          String?
-  body           String
+  category ClientNoteCategory
+  priority ClientNotePriority @default(normal)
+  title    String?
+  body     String
 
   // Optional links — a note may attach to an appointment, a service, both, or neither.
-  appointmentId  String?                  @map("appointment_id")
-  serviceId      String?                  @map("service_id")
+  appointmentId String? @map("appointment_id")
+  serviceId     String? @map("service_id")
 
-  authorType     ClientNoteAuthorType     @map("author_type")
-  authorStaffId  String?                  @map("author_staff_id")
-  authorClientId String?                  @map("author_client_id")
-  authorUserId   String?                  @map("author_user_id")
+  authorType     ClientNoteAuthorType @map("author_type")
+  authorStaffId  String?              @map("author_staff_id")
+  authorClientId String?              @map("author_client_id")
+  authorUserId   String?              @map("author_user_id")
 
-  sourceSurface  ClientNoteSourceSurface  @map("source_surface")
-  visibility     ClientNoteVisibility
+  sourceSurface ClientNoteSourceSurface @map("source_surface")
+  visibility    ClientNoteVisibility
 
   // Even a 'location'-visible note is internal-only unless this is true.
-  customerVisible Boolean                 @default(false) @map("customer_visible")
+  customerVisible Boolean @default(false) @map("customer_visible")
 
   // Postgres enum array (Q1). Empty array means the note does not surface
   // as alert. @default([]) so Prisma always emits the DB DEFAULT and
   // future migrations don't regress to NOT NULL without default.
-  alertTriggers  ClientNoteAlertTrigger[] @default([]) @map("alert_triggers")
+  alertTriggers ClientNoteAlertTrigger[] @default([]) @map("alert_triggers")
 
-  pinned         Boolean                  @default(false)
-  expiresAt      DateTime?                @map("expires_at")  @db.Timestamptz(3)
-  archivedAt     DateTime?                @map("archived_at") @db.Timestamptz(3)
+  pinned     Boolean   @default(false)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(3)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
 
-  createdAt      DateTime                 @default(now()) @map("created_at")
-  updatedAt      DateTime                 @updatedAt      @map("updated_at")
-  deletedAt      DateTime?                @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant          Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   client          Client                     @relation("ClientNoteClient", fields: [clientId], references: [id], onDelete: Cascade)
@@ -1009,88 +1033,88 @@ model ClientNote {
 // with archivedAt set still appear in reports but are hidden from active
 // surfaces. Both can be set; archived ⊆ active rows in normal queries.
 model MediaAsset {
-  id              String           @id @default(cuid())
-  tenantId        String           @map("tenant_id")
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
 
   // Bucket name (e.g. wellos-prod-public-media). Used by signed-URL
   // generation. Resolved from access_class + tenant_media_roots config.
-  bucket          String
+  bucket String
 
   // R2 object key. Convention: tenants/{tenantId}/{ownerType}/{ownerId}/{folder}/{id}-{safeFileName}
   // EXIF stripping happens at upload time (backend job).
-  objectKey       String           @map("object_key")
+  objectKey String @map("object_key")
 
-  accessClass     MediaAccessClass @map("access_class")
+  accessClass MediaAccessClass @map("access_class")
 
-  ownerType       MediaOwnerType   @map("owner_type")
+  ownerType          MediaOwnerType @map("owner_type")
   // Polymorphic owner FKs — exactly one non-null per row matching ownerType.
   // No @relation on ownerType column itself; per-owner FK is below.
-  tenantOwnerId      String? @map("tenant_owner_id")
-  locationOwnerId    String? @map("location_owner_id")
-  serviceOwnerId     String? @map("service_owner_id")
-  staffOwnerId       String? @map("staff_owner_id")
-  clientOwnerId      String? @map("client_owner_id")
-  appointmentOwnerId String? @map("appointment_owner_id")
-  campaignOwnerId    String? @map("campaign_owner_id")
+  tenantOwnerId      String?        @map("tenant_owner_id")
+  locationOwnerId    String?        @map("location_owner_id")
+  serviceOwnerId     String?        @map("service_owner_id")
+  staffOwnerId       String?        @map("staff_owner_id")
+  clientOwnerId      String?        @map("client_owner_id")
+  appointmentOwnerId String?        @map("appointment_owner_id")
+  campaignOwnerId    String?        @map("campaign_owner_id")
 
   // Optional link to a specific ClientNote — when a note "carries" attached
   // photos. Null when the asset is a free-floating attachment on the
   // appointment / client / service / etc.
-  noteId          String?          @map("note_id")
+  noteId String? @map("note_id")
 
   // Folder taxonomy under the owner (e.g. 'gallery', 'docs', 'before-after',
   // 'avatar', 'intro-video', 'reference-uploads', 'qr', 'thumbnails').
   // Free string so tenants can add custom folders.
-  folder          String
+  folder String
 
-  fileName        String           @map("file_name")
-  mimeType        String           @map("mime_type")
-  sizeBytes       BigInt           @map("size_bytes")
-  checksumSha256  String?          @map("checksum_sha256")
+  fileName       String  @map("file_name")
+  mimeType       String  @map("mime_type")
+  sizeBytes      BigInt  @map("size_bytes")
+  checksumSha256 String? @map("checksum_sha256")
 
   // Image/video metadata.
   width           Int?
   height          Int?
-  durationSeconds Int?             @map("duration_seconds")
+  durationSeconds Int? @map("duration_seconds")
 
-  altText         String?          @map("alt_text")
-  caption         String?
+  altText String? @map("alt_text")
+  caption String?
 
   // Worker-generated variant URLs/keys. Shape: { thumb: { key, width, height }, w600: {...}, w1200: {...}, optimized: {...} }
-  variants        Json             @default("{}")
+  variants Json @default("{}")
 
   // Free-form metadata (e.g. EXIF data we kept, source camera model, etc.)
-  metadata        Json             @default("{}")
+  metadata Json @default("{}")
 
-  visibility      MediaAssetVisibility @default(location)
+  visibility MediaAssetVisibility @default(location)
 
   // Booking spec uses 'protected' boolean independent of access_class for
   // future medspa partition. Set to true for medspa-protected records;
   // worker uses this to migrate to the protected bucket later.
-  protected       Boolean          @default(false)
+  protected Boolean @default(false)
 
-  uploadedByUserId  String?        @map("uploaded_by_user_id")
-  uploadedByStaffId String?        @map("uploaded_by_staff_id")
-  uploadedByClient  Boolean        @default(false) @map("uploaded_by_client")
+  uploadedByUserId  String? @map("uploaded_by_user_id")
+  uploadedByStaffId String? @map("uploaded_by_staff_id")
+  uploadedByClient  Boolean @default(false) @map("uploaded_by_client")
 
-  uploadedAt      DateTime         @default(now()) @map("uploaded_at") @db.Timestamptz(3)
-  archivedAt      DateTime?        @map("archived_at") @db.Timestamptz(3)
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt      @map("updated_at")
-  deletedAt       DateTime?        @map("deleted_at")
+  uploadedAt DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
 
-  tenant            Tenant       @relation("MediaAssetTenantScope", fields: [tenantId], references: [id], onDelete: Restrict)
+  tenant           Tenant       @relation("MediaAssetTenantScope", fields: [tenantId], references: [id], onDelete: Restrict)
   // Polymorphic owner relations — only the matching one is populated per row.
-  tenantOwner       Tenant?      @relation("MediaAssetTenant",      fields: [tenantOwnerId],      references: [id], onDelete: SetNull, map: "media_assets_tenant_owner_fkey")
-  locationOwner     Location?    @relation("MediaAssetLocation",    fields: [locationOwnerId],    references: [id], onDelete: SetNull)
-  serviceOwner      Service?     @relation("MediaAssetService",     fields: [serviceOwnerId],     references: [id], onDelete: SetNull)
-  staffOwner        Staff?       @relation("MediaAssetStaff",       fields: [staffOwnerId],       references: [id], onDelete: SetNull)
-  clientOwner       Client?      @relation("MediaAssetClient",      fields: [clientOwnerId],     references: [id], onDelete: SetNull)
-  appointmentOwner  Appointment? @relation("MediaAssetAppointment", fields: [appointmentOwnerId], references: [id], onDelete: SetNull)
+  tenantOwner      Tenant?      @relation("MediaAssetTenant", fields: [tenantOwnerId], references: [id], onDelete: SetNull, map: "media_assets_tenant_owner_fkey")
+  locationOwner    Location?    @relation("MediaAssetLocation", fields: [locationOwnerId], references: [id], onDelete: SetNull)
+  serviceOwner     Service?     @relation("MediaAssetService", fields: [serviceOwnerId], references: [id], onDelete: SetNull)
+  staffOwner       Staff?       @relation("MediaAssetStaff", fields: [staffOwnerId], references: [id], onDelete: SetNull)
+  clientOwner      Client?      @relation("MediaAssetClient", fields: [clientOwnerId], references: [id], onDelete: SetNull)
+  appointmentOwner Appointment? @relation("MediaAssetAppointment", fields: [appointmentOwnerId], references: [id], onDelete: SetNull)
   // campaignOwner intentionally has no Prisma relation — Campaign table is Tier C.
 
-  note              ClientNote?  @relation("MediaAssetNote",        fields: [noteId], references: [id], onDelete: SetNull)
-  uploadedByStaff   Staff?       @relation("MediaAssetUploadedByStaff", fields: [uploadedByStaffId], references: [id], onDelete: SetNull)
+  note            ClientNote? @relation("MediaAssetNote", fields: [noteId], references: [id], onDelete: SetNull)
+  uploadedByStaff Staff?      @relation("MediaAssetUploadedByStaff", fields: [uploadedByStaffId], references: [id], onDelete: SetNull)
 
   @@unique([bucket, objectKey])
   @@index([tenantId])
@@ -1111,17 +1135,17 @@ model MediaAsset {
 // Per-tenant R2 bucket configuration. Provisioned at tenant signup.
 // One row per tenant.
 model TenantMediaRoot {
-  id               String    @id @default(cuid())
-  tenantId         String    @unique @map("tenant_id")
-  publicBucket     String    @map("public_bucket")
-  privateBucket    String    @map("private_bucket")
+  id              String   @id @default(cuid())
+  tenantId        String   @unique @map("tenant_id")
+  publicBucket    String   @map("public_bucket")
+  privateBucket   String   @map("private_bucket")
   // Reserved for medspa-protected partition in a later PR.
-  protectedBucket  String?   @map("protected_bucket")
-  rootPrefix       String    @map("root_prefix")
-  cdnBaseUrl       String?   @map("cdn_base_url")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  protectedBucket String?  @map("protected_bucket")
+  rootPrefix      String   @map("root_prefix")
+  cdnBaseUrl      String?  @map("cdn_base_url")
+  createdAt       DateTime @default(now()) @map("created_at")
 
-  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("tenant_media_roots")
 }
@@ -1129,14 +1153,14 @@ model TenantMediaRoot {
 // Onboarding seed data: which folders to provision per owner type.
 // Used by the admin media manager + the tenant signup function.
 model MediaFolderTemplate {
-  id                  String           @id @default(cuid())
-  productScope        String           @map("product_scope") // 'wellos' | 'studio' | 'both'
-  ownerType           MediaOwnerType   @map("owner_type")
-  folderKey           String           @map("folder_key")
-  label               String
-  defaultAccessClass  MediaAccessClass @map("default_access_class")
-  required            Boolean          @default(false)
-  displayOrder        Int              @default(0) @map("display_order")
+  id                 String           @id @default(cuid())
+  productScope       String           @map("product_scope") // 'wellos' | 'studio' | 'both'
+  ownerType          MediaOwnerType   @map("owner_type")
+  folderKey          String           @map("folder_key")
+  label              String
+  defaultAccessClass MediaAccessClass @map("default_access_class")
+  required           Boolean          @default(false)
+  displayOrder       Int              @default(0) @map("display_order")
 
   @@unique([ownerType, folderKey])
   @@index([ownerType, displayOrder])
@@ -1147,30 +1171,30 @@ model MediaFolderTemplate {
 // long appointment may generate multiple SOAP entries (e.g. multi-stage
 // medspa procedure).
 model SoapNote {
-  id              String             @id @default(cuid())
-  tenantId        String             @map("tenant_id")
-  clientId        String             @map("client_id")
-  appointmentId   String             @map("appointment_id")
-  authorStaffId   String             @map("author_staff_id")
+  id            String @id @default(cuid())
+  tenantId      String @map("tenant_id")
+  clientId      String @map("client_id")
+  appointmentId String @map("appointment_id")
+  authorStaffId String @map("author_staff_id")
 
-  subjective      String?
-  objective       String?
-  assessment      String?
-  plan            String?
+  subjective String?
+  objective  String?
+  assessment String?
+  plan       String?
 
-  additionalNotes String?            @map("additional_notes")
-  templateId      String?            @map("template_id")
+  additionalNotes String? @map("additional_notes")
+  templateId      String? @map("template_id")
 
-  icdCodes        String[]           @default([]) @map("icd_codes")
-  cptCodes        String[]           @default([]) @map("cpt_codes")
+  icdCodes String[] @default([]) @map("icd_codes")
+  cptCodes String[] @default([]) @map("cpt_codes")
 
-  locked          Boolean            @default(false)
-  lockedAt        DateTime?          @map("locked_at")  @db.Timestamptz(3)
-  lockedByStaffId String?            @map("locked_by_staff_id")
+  locked          Boolean   @default(false)
+  lockedAt        DateTime? @map("locked_at") @db.Timestamptz(3)
+  lockedByStaffId String?   @map("locked_by_staff_id")
 
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt      @map("updated_at")
-  deletedAt       DateTime?          @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   client        Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -1188,16 +1212,16 @@ model SoapNote {
 
 // Append-only revision history when a locked SoapNote is edited.
 model SoapNoteRevision {
-  id               String   @id @default(cuid())
-  tenantId         String   @map("tenant_id")
-  noteId           String   @map("note_id")
-  revisionNumber   Int      @map("revision_number")
+  id             String @id @default(cuid())
+  tenantId       String @map("tenant_id")
+  noteId         String @map("note_id")
+  revisionNumber Int    @map("revision_number")
 
-  subjective       String?
-  objective        String?
-  assessment       String?
-  plan             String?
-  additionalNotes  String?  @map("additional_notes")
+  subjective      String?
+  objective       String?
+  assessment      String?
+  plan            String?
+  additionalNotes String? @map("additional_notes")
 
   revisedByStaffId String   @map("revised_by_staff_id")
   revisionReason   String   @map("revision_reason")
@@ -1238,31 +1262,31 @@ model ClientNoteAcknowledgment {
 // Per-service triage question template. Per 05-booking-enhancements.md §2.
 // is_gating + gating_rule support medspa contraindication blocking.
 model ServiceBookingQuestion {
-  id            String                     @id @default(cuid())
-  tenantId      String                     @map("tenant_id")
-  serviceId     String                     @map("service_id")
+  id        String @id @default(cuid())
+  tenantId  String @map("tenant_id")
+  serviceId String @map("service_id")
 
-  questionKey   String                     @map("question_key")
-  questionLabel String                     @map("question_label")
-  helperText    String?                    @map("helper_text")
+  questionKey   String  @map("question_key")
+  questionLabel String  @map("question_label")
+  helperText    String? @map("helper_text")
 
-  questionType  ServiceBookingQuestionType @map("question_type")
+  questionType ServiceBookingQuestionType @map("question_type")
 
   // For chips_*: array of { value, label }. For slider: { min, max, step }.
   // For photo_upload: { maxCount }. JSONB.
-  options       Json                       @default("[]")
+  options Json @default("[]")
 
-  isRequired    Boolean                    @default(false) @map("is_required")
-  isGating      Boolean                    @default(false) @map("is_gating")
+  isRequired Boolean @default(false) @map("is_required")
+  isGating   Boolean @default(false) @map("is_gating")
 
   // { if_value, block_with, block_action } JSONB. Null when isGating = false.
-  gatingRule    Json?                      @map("gating_rule")
+  gatingRule Json? @map("gating_rule")
 
-  displayOrder  Int                        @default(0) @map("display_order")
+  displayOrder Int @default(0) @map("display_order")
 
-  createdAt     DateTime                   @default(now()) @map("created_at")
-  updatedAt     DateTime                   @updatedAt      @map("updated_at")
-  deletedAt     DateTime?                  @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant  Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   service Service                    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -1278,20 +1302,20 @@ model ServiceBookingQuestion {
 // Per-appointment triage answers with denormalized question snapshot so
 // answers survive question edits/deletes.
 model AppointmentBookingAnswer {
-  id                    String                     @id @default(cuid())
-  tenantId              String                     @map("tenant_id")
-  appointmentId         String                     @map("appointment_id")
-  questionId            String                     @map("question_id")
+  id            String @id @default(cuid())
+  tenantId      String @map("tenant_id")
+  appointmentId String @map("appointment_id")
+  questionId    String @map("question_id")
 
   questionKeySnapshot   String                     @map("question_key_snapshot")
   questionLabelSnapshot String                     @map("question_label_snapshot")
   questionTypeSnapshot  ServiceBookingQuestionType @map("question_type_snapshot")
 
   // String, array, number, or { urls } for photo_upload. JSONB.
-  answerValue           Json                       @map("answer_value")
+  answerValue Json @map("answer_value")
 
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  updatedAt             DateTime                   @updatedAt      @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   appointment Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
@@ -1308,25 +1332,25 @@ model AppointmentBookingAnswer {
 // before-appointment, positive for after. Bounds enforced via Zod at the
 // API edge (Q7), not at DB level.
 model ServiceContentDelivery {
-  id                       String                        @id @default(cuid())
-  tenantId                 String                        @map("tenant_id")
-  serviceId                String                        @map("service_id")
+  id        String @id @default(cuid())
+  tenantId  String @map("tenant_id")
+  serviceId String @map("service_id")
 
-  deliveryType             ServiceContentDeliveryType    @map("delivery_type")
-  channel                  ServiceContentDeliveryChannel
+  deliveryType ServiceContentDeliveryType    @map("delivery_type")
+  channel      ServiceContentDeliveryChannel
 
-  scheduleOffsetMinutes    Int                           @map("schedule_offset_minutes")
+  scheduleOffsetMinutes Int @map("schedule_offset_minutes")
 
-  isEnabled                Boolean                       @default(true) @map("is_enabled")
+  isEnabled Boolean @default(true) @map("is_enabled")
 
   // Null falls back to the service's R2 markdown docs (services/{id}/docs/
   // prep.md or aftercare.md). Override is a per-delivery template that
   // takes precedence over the default service doc.
-  templateOverrideMarkdown String?                       @map("template_override_markdown")
+  templateOverrideMarkdown String? @map("template_override_markdown")
 
-  createdAt                DateTime                      @default(now()) @map("created_at")
-  updatedAt                DateTime                      @updatedAt      @map("updated_at")
-  deletedAt                DateTime?                     @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
@@ -1343,16 +1367,16 @@ model ServiceContentDelivery {
 // Only one `published` row per group at a time (enforced in the service layer).
 
 model IntakeFormDefinition {
-  id        String                     @id @default(cuid())
-  tenantId  String                     @map("tenant_id")
-  groupId   String                     @map("group_id")
-  title     String
+  id       String                     @id @default(cuid())
+  tenantId String                     @map("tenant_id")
+  groupId  String                     @map("group_id")
+  title    String
   /// Field templates: array of { key, type, label, ... } — validated at API layer.
-  schema    Json
-  version   Int
-  status    IntakeFormDefinitionStatus @default(draft)
+  schema   Json
+  version  Int
+  status   IntakeFormDefinitionStatus @default(draft)
   /// Tenant can hide a form from pickers without deleting history.
-  isActive  Boolean                    @default(true) @map("is_active")
+  isActive Boolean                    @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1368,25 +1392,25 @@ model IntakeFormDefinition {
 }
 
 model IntakeFormSubmission {
-  id             String                   @id @default(cuid())
-  tenantId       String                   @map("tenant_id")
-  definitionId   String                   @map("definition_id")
+  id            String                     @id @default(cuid())
+  tenantId      String                     @map("tenant_id")
+  definitionId  String                     @map("definition_id")
   /// Nullable for future magic-link flows that start before client linkage.
-  clientId       String?                  @map("client_id")
-  appointmentId  String?                  @map("appointment_id")
-  answers        Json                     @default("{}")
-  status         IntakeFormSubmissionStatus @default(draft)
+  clientId      String?                    @map("client_id")
+  appointmentId String?                    @map("appointment_id")
+  answers       Json                       @default("{}")
+  status        IntakeFormSubmissionStatus @default(draft)
 
-  submittedAt    DateTime?                @map("submitted_at") @db.Timestamptz(3)
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
 
-  createdAt      DateTime                 @default(now()) @map("created_at")
-  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant     Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  definition IntakeFormDefinition       @relation(fields: [definitionId], references: [id], onDelete: Restrict)
-  client     Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  appointment Appointment?              @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  audits     IntakeFormSubmissionAudit[]
+  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  definition  IntakeFormDefinition        @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  client      Client?                     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  appointment Appointment?                @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  audits      IntakeFormSubmissionAudit[]
 
   @@index([tenantId])
   @@index([tenantId, clientId])
@@ -1397,20 +1421,20 @@ model IntakeFormSubmission {
 
 // Append-only compliance trail (Epic 5 — IP, UA, version evidence). No updatedAt.
 model IntakeFormSubmissionAudit {
-  id               String                        @id @default(cuid())
-  tenantId         String                        @map("tenant_id")
-  submissionId     String                        @map("submission_id")
-  action           IntakeFormSubmissionAuditAction
-  definitionId     String                        @map("definition_id")
-  definitionVersion Int                          @map("definition_version")
+  id                String                          @id @default(cuid())
+  tenantId          String                          @map("tenant_id")
+  submissionId      String                          @map("submission_id")
+  action            IntakeFormSubmissionAuditAction
+  definitionId      String                          @map("definition_id")
+  definitionVersion Int                             @map("definition_version")
   /// Snapshot of the JSON schema the client signed against.
-  schemaSnapshot   Json                          @map("schema_snapshot")
-  answersSnapshot  Json                          @map("answers_snapshot")
+  schemaSnapshot    Json                            @map("schema_snapshot")
+  answersSnapshot   Json                            @map("answers_snapshot")
 
-  ip              String?
-  userAgent       String?                       @map("user_agent")
+  ip        String?
+  userAgent String? @map("user_agent")
 
-  createdAt       DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   submission IntakeFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
@@ -1438,9 +1462,9 @@ model SlotHold {
   serviceId            String         @map("service_id")
   staffId              String         @map("staff_id")
   resourceId           String?        @map("resource_id")
-  startsAt             DateTime       @map("starts_at")    @db.Timestamptz(3)
-  endsAt               DateTime       @map("ends_at")      @db.Timestamptz(3)
-  expiresAt            DateTime       @map("expires_at")   @db.Timestamptz(3)
+  startsAt             DateTime       @map("starts_at") @db.Timestamptz(3)
+  endsAt               DateTime       @map("ends_at") @db.Timestamptz(3)
+  expiresAt            DateTime       @map("expires_at") @db.Timestamptz(3)
   status               SlotHoldStatus @default(active)
   idempotencyKey       String?        @map("idempotency_key")
   createdByFingerprint String?        @map("created_by_fingerprint")
@@ -1471,39 +1495,39 @@ model SlotHold {
 // reporting). The unique active-entry-per-(client,service) invariant is
 // enforced in the service layer (createWaitlistEntry upserts on conflict).
 model WaitlistEntry {
-  id                   String              @id @default(cuid())
-  tenantId             String              @map("tenant_id")
-  locationId           String              @map("location_id")
-  serviceId            String              @map("service_id")
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  locationId String  @map("location_id")
+  serviceId  String  @map("service_id")
   /// Optional preferred staff; null means any eligible staff for the service.
-  staffId              String?             @map("staff_id")
+  staffId    String? @map("staff_id")
 
-  contactName          String              @map("contact_name")
-  contactEmail         String?             @map("contact_email")
-  contactPhone         String?             @map("contact_phone")
+  contactName  String  @map("contact_name")
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
 
   /// Earliest moment the client would accept (inclusive). Null = any time.
-  preferredStart       DateTime?           @map("preferred_start")       @db.Timestamptz(3)
+  preferredStart     DateTime? @map("preferred_start") @db.Timestamptz(3)
   /// Latest moment the client would accept (exclusive). Null = any time.
-  preferredEnd         DateTime?           @map("preferred_end")         @db.Timestamptz(3)
+  preferredEnd       DateTime? @map("preferred_end") @db.Timestamptz(3)
   /// 'morning' | 'afternoon' | 'evening' | 'any'. Free string to keep
   /// migrations cheap; Zod constrains values at the API edge.
-  preferredTimeOfDay   String?             @map("preferred_time_of_day")
+  preferredTimeOfDay String?   @map("preferred_time_of_day")
 
-  smsOptIn             Boolean             @default(false) @map("sms_opt_in")
-  notes                String?
+  smsOptIn Boolean @default(false) @map("sms_opt_in")
+  notes    String?
 
   status               WaitlistEntryStatus @default(active)
   /// Default created_at + 14d (R2 §10.1). Service layer computes on create.
-  ttlExpiresAt         DateTime            @map("ttl_expires_at")        @db.Timestamptz(3)
-  offeredAt            DateTime?           @map("offered_at")            @db.Timestamptz(3)
+  ttlExpiresAt         DateTime            @map("ttl_expires_at") @db.Timestamptz(3)
+  offeredAt            DateTime?           @map("offered_at") @db.Timestamptz(3)
   /// When a manual or worker-driven offer references a concrete appointment.
   /// No FK — the appointment may not exist yet (worker creates it after claim).
   offeredAppointmentId String?             @map("offered_appointment_id")
-  claimedAt            DateTime?           @map("claimed_at")            @db.Timestamptz(3)
+  claimedAt            DateTime?           @map("claimed_at") @db.Timestamptz(3)
 
-  createdAt            DateTime            @default(now()) @map("created_at")
-  updatedAt            DateTime            @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
