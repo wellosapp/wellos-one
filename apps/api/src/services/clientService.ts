@@ -31,10 +31,45 @@ import type {
 // surface. Both writes happen in the same $transaction as the parent
 // client write. Cross-tenant tag IDs raise INVALID_TAG_IDS (mirrors
 // serviceService.validateStaffIds).
+//
+// clientNumber: per-tenant sequential integer required by the schema's
+// (tenantId, clientNumber) unique constraint. Computed inside the create
+// transaction via MAX(clientNumber) + 1; the unique constraint catches
+// race-window collisions and the service retries once.
+
+/**
+ * Compute the next sequential clientNumber for a tenant inside an
+ * already-open transaction. Returns `1` for the first client of a tenant.
+ * Caller wraps in a unique-violation retry to handle the race window
+ * between MAX read and INSERT.
+ */
+async function getNextClientNumber(
+  tx: ExtendedTransactionClient,
+  tenantId: string,
+): Promise<number> {
+  const result = await tx.client.aggregate({
+    where: { tenantId },
+    _max: { clientNumber: true },
+  });
+  return (result._max.clientNumber ?? 0) + 1;
+}
+
+/**
+ * Returns true if the error is a Prisma unique-constraint violation on
+ * the (tenant_id, client_number) index — the race we want to retry.
+ */
+function isClientNumberRace(err: unknown): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (err.code !== 'P2002') return false;
+  const target = err.meta?.target;
+  const targetStr = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return targetStr.includes('client_number') || targetStr.includes('clientNumber');
+}
 
 const CLIENT_SAFE_FIELDS = {
   id: true,
   tenantId: true,
+  clientNumber: true,
   firstName: true,
   lastName: true,
   preferredName: true,
@@ -256,6 +291,21 @@ export async function createClient(
 ): Promise<CreateClientResult> {
   const { tenantId, actorUserId, body } = args;
 
+  // Retry once on the (tenantId, clientNumber) unique-constraint race. Two
+  // concurrent creates can both read MAX+1 = N before either inserts; one
+  // wins, the other gets P2002 and retries with the now-incremented MAX.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await runCreateClientTransaction();
+    } catch (err) {
+      if (attempt === 0 && isClientNumberRace(err)) continue;
+      throw err;
+    }
+  }
+  // unreachable — loop either returns or throws
+  throw new Error('createClient: exhausted retries unexpectedly');
+
+  async function runCreateClientTransaction(): Promise<CreateClientResult> {
   return prisma.$transaction(async (tx) => {
     const validatedTagIds = body.tagIds
       ? await validateTagIds(tx, { tenantId, tagIds: body.tagIds })
@@ -267,9 +317,11 @@ export async function createClient(
       phone: body.phone,
     });
 
+    const clientNumber = await getNextClientNumber(tx, tenantId);
     const client = await tx.client.create({
       data: {
         tenantId,
+        clientNumber,
         firstName: body.firstName,
         lastName: body.lastName,
         preferredName: body.preferredName,
@@ -316,6 +368,7 @@ export async function createClient(
 
     return { client: withTags, duplicateWarning };
   });
+  }
 }
 
 export async function listClients(
@@ -561,31 +614,46 @@ export async function resolveOrCreateClientForPublicBooking(
     };
   }
 
-  return prisma.$transaction(async (tx) => {
-    const client = await tx.client.create({
-      data: {
-        tenantId: args.tenantId,
-        firstName: args.firstName.trim(),
-        lastName: args.lastName?.trim() || null,
-        email: emailTrimmed,
-        phone: args.phone?.trim() || null,
-      },
-      select: CLIENT_SAFE_FIELDS,
-    });
+  // Retry once on the (tenantId, clientNumber) unique-constraint race.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await runInsertTransaction();
+    } catch (err) {
+      if (attempt === 0 && isClientNumberRace(err)) continue;
+      throw err;
+    }
+  }
+  throw new Error('resolveOrCreateClientForPublicBooking: exhausted retries unexpectedly');
 
-    await tx.auditLog.create({
-      data: {
-        tenantId: args.tenantId,
-        actorUserId: null,
-        actorType: 'system',
-        action: 'client.created',
-        entityType: 'client',
-        entityId: client.id,
-        before: Prisma.JsonNull,
-        after: client as unknown as Prisma.InputJsonValue,
-      },
-    });
+  async function runInsertTransaction() {
+    return prisma.$transaction(async (tx) => {
+      const clientNumber = await getNextClientNumber(tx, args.tenantId);
+      const client = await tx.client.create({
+        data: {
+          tenantId: args.tenantId,
+          clientNumber,
+          firstName: args.firstName.trim(),
+          lastName: args.lastName?.trim() || null,
+          email: emailTrimmed,
+          phone: args.phone?.trim() || null,
+        },
+        select: CLIENT_SAFE_FIELDS,
+      });
 
-    return { clientId: client.id, created: true, banned: false };
-  });
+      await tx.auditLog.create({
+        data: {
+          tenantId: args.tenantId,
+          actorUserId: null,
+          actorType: 'system',
+          action: 'client.created',
+          entityType: 'client',
+          entityId: client.id,
+          before: Prisma.JsonNull,
+          after: client as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { clientId: client.id, created: true, banned: false };
+    });
+  }
 }
