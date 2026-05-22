@@ -242,6 +242,7 @@ Migrations landed so far (per filename):
 12. **Provider SDK calls (Stripe, Postmark, TextLink, Clerk) live behind interfaces** in `packages/notifications` or `apps/api/src/integrations`. Do not inline SDK calls in business logic.
 13. **Webhook handlers must verify provider signatures before doing anything else.** Stripe, Clerk, TextLink use HMAC; Postmark uses Basic Auth on webhook calls (we set the user/pass).
 14. **Ask before substituting any stack choice in §3.** Those choices are intentional.
+15. **ONE PATH PER ROUTE.** Every URL on the production site corresponds to exactly ONE component tree in the repo. Do NOT create parallel "V2", "New", "experimental", or alternate-route versions of existing components. Redesigns update the live files in place, on a feature branch that merges back into the same paths. If a redesign is too large for one PR, ship it as multiple PRs against the SAME files. The branch is temporary; the file path is permanent.
 
 ---
 
