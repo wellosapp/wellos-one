@@ -96,3 +96,29 @@ export async function acknowledgeClientNote(
     body,
   });
 }
+
+// Pin / unpin — backend exposes these as two distinct POST endpoints
+// (`/pin` and `/unpin`) with no body. Caller passes the desired pinned
+// state and we pick the right path. Returns the updated note row.
+export async function pinClientNote(
+  clientId: string,
+  noteId: string,
+  body: { pinned: boolean },
+): Promise<{ note: ClientNoteSummary }> {
+  const suffix = body.pinned ? 'pin' : 'unpin';
+  return apiFetch(`/admin/clients/${clientId}/notes/${noteId}/${suffix}`, {
+    method: 'POST',
+  });
+}
+
+// Soft-delete a note (admin-only on the API side).
+// Returns 204 with no body on success — the apiFetch wrapper resolves to
+// undefined for 204, so callers just await this for the side effect.
+export async function deleteClientNote(
+  clientId: string,
+  noteId: string,
+): Promise<void> {
+  await apiFetch<void>(`/admin/clients/${clientId}/notes/${noteId}`, {
+    method: 'DELETE',
+  });
+}
