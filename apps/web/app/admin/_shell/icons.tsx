@@ -295,3 +295,60 @@ export function UserPlusIcon(props: IconProps) {
     </Icon>
   );
 }
+
+// Three horizontal dots — filled circles so the dock dock reads as a glyph,
+// not three stroked rings. Stroke is dropped to 0 on the inner svg via
+// strokeWidth=0 on each circle so currentColor fills only.
+export function MoreIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="6" cy="12" r="1.6" fill="currentColor" strokeWidth="0" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" strokeWidth="0" />
+      <circle cx="18" cy="12" r="1.6" fill="currentColor" strokeWidth="0" />
+    </Icon>
+  );
+}
+
+export function StarIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2.5l2.8 6.4 6.7.6-5 4.6 1.5 6.7-6-3.4-6 3.4 1.5-6.7-5-4.6 6.7-.6z" />
+    </Icon>
+  );
+}
+
+// Single-user head + shoulders. Visually identical to StaffIcon — exported
+// under a separate semantic name for use in the Contact section header so
+// the import reads as intent ("user") rather than role ("staff").
+export function UserIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Icon>
+  );
+}
+
+export function XIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Icon>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 12l4 4 10-10" />
+    </Icon>
+  );
+}
+
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" />
+    </Icon>
+  );
+}

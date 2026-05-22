@@ -62,12 +62,23 @@ function CalendarIcon({ className }: { className?: string }) {
 export function ClientProfileHero({
   summary,
   hero,
+  visitTotal,
   quickBookSlot,
 }: {
   summary: ClientQuickBookSummary;
   hero: ClientProfileHeroMeta;
+  /** Lifetime visit count, used to surface a First-time badge for new clients. */
+  visitTotal: number;
   quickBookSlot: ReactNode;
 }) {
+  // Pronouns isn't yet on the Client schema — silent gate stays falsy until
+  // the migration lands; the chip then renders without any further change.
+  const pronouns =
+    'pronouns' in summary && typeof (summary as { pronouns?: unknown }).pronouns === 'string'
+      ? ((summary as { pronouns?: string }).pronouns ?? '').trim()
+      : '';
+  const isFirstTime =
+    visitTotal === 0 && !summary.banned && !summary.deletedAt;
   const displayName =
     [summary.firstName, summary.lastName].filter(Boolean).join(' ').trim() ||
     'Client';
@@ -156,6 +167,26 @@ export function ClientProfileHero({
               <Badge tone="neutral">
                 Inactive · {new Date(summary.deletedAt).toLocaleDateString()}
               </Badge>
+            )}
+            {isFirstTime && (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full px-s3 py-[2px]',
+                  'bg-sand-soft text-ink-2 text-[12px] font-medium',
+                )}
+              >
+                First-time
+              </span>
+            )}
+            {pronouns && (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full border border-line px-s3 py-[2px]',
+                  'bg-surface-2 text-ink-2 text-[12px] font-medium',
+                )}
+              >
+                {pronouns}
+              </span>
             )}
             {summary.tags.map((t) => (
               <Badge key={t.id} tone="neutral">

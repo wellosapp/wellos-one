@@ -15,6 +15,8 @@ import {
   TrendUpIcon,
 } from '@/app/admin/_shell/icons';
 
+import { ClientProfileRailDock } from './ClientProfileRailDock';
+
 // Left section menu for the client profile. Reads its own active state
 // from `usePathname()` so the parent layout (a server component) doesn't
 // need to thread an `activeKey` prop. Same pattern as the previous
@@ -220,6 +222,7 @@ export function ClientProfileLeftMenu({
           </Link>
         );
       })}
+      <ClientProfileRailDock />
     </nav>
   );
 }
