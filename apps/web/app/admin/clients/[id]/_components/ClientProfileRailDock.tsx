@@ -18,11 +18,9 @@ export function ClientProfileRailDock() {
   ];
 
   return (
-    <div
-      className={cn(
-        'mt-s3 flex items-center gap-s2 border-t border-line pt-s3',
-      )}
-    >
+    // Layout-agnostic — parent provides the divider/spacing chrome
+    // (border-top + margin-top in sidebar; border-left in pills).
+    <div className={cn('flex items-center gap-s1')}>
       {buttons.map((b) => (
         <button
           key={b.key}

@@ -8,7 +8,6 @@ import { ClientForm } from '../ClientForm';
 import { deleteClientAction, updateClientAction } from '../_actions';
 import { ClientTagsCard } from './_components/ClientTagsCard';
 import { SectionHeader } from './_components/SectionHeader';
-import { SectionSaveFooter } from './_components/SectionSaveFooter';
 import { loadClientDetail } from './_data';
 
 const OVERVIEW_FORM_ID = 'overview-client-form';
@@ -63,8 +62,6 @@ export default async function ClientDetailPage({
         hideInlineSubmit
         hideTagsFieldset
       />
-
-      <SectionSaveFooter formId={OVERVIEW_FORM_ID} />
 
       <ClientTagsCard
         clientId={client.id}

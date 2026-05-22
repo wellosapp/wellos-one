@@ -126,6 +126,10 @@ export function ClientProfileLeftMenu({
           'border border-line bg-surface p-s2 shadow-sm',
         )}
       >
+        {/* Pills row + the 3-icon dock pinned to the right edge — the
+            dock is also rendered at the bottom of the sidebar variant for
+            screens ≥xl. Showing it here means narrow-screen users still
+            see the More / Message / Favorite shortcuts. */}
         {items.map((item) => {
           const isActive = active === item.key;
           return (
@@ -162,6 +166,9 @@ export function ClientProfileLeftMenu({
             </Link>
           );
         })}
+        <div className="ml-auto flex shrink-0 items-center border-l border-line pl-s2">
+          <ClientProfileRailDock />
+        </div>
       </nav>
     );
   }
@@ -222,7 +229,9 @@ export function ClientProfileLeftMenu({
           </Link>
         );
       })}
-      <ClientProfileRailDock />
+      <div className="mt-s3 border-t border-line pt-s3">
+        <ClientProfileRailDock />
+      </div>
     </nav>
   );
 }

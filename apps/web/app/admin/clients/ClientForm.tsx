@@ -12,6 +12,7 @@ import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
 
 import { BellIcon, UserIcon } from '@/app/admin/_shell/icons';
 
+import { SectionSaveFooter } from './[id]/_components/SectionSaveFooter';
 import type { ActionState } from './_actions';
 import { MailingAddressField } from './_components/MailingAddressField';
 import { composeMailingAddress } from './_components/composeMailingAddress';
@@ -199,7 +200,68 @@ export function ClientForm({
                 error={Boolean(fieldErrors.dateOfBirth)}
               />
             </FormField>
-            <FormField label="Intake status" error={fieldErrors.intakeStatus}>
+            {/* Mailing address sits next to Date of birth per the design.
+                Collapsed: single composed-address field. Expanded:
+                col-span-2 takes the full grid row so the 6 inputs fit. */}
+            <MailingAddressField composedAddress={composedAddress}>
+              <FormField label="Line 1" error={fieldErrors.addressLine1}>
+                <Input
+                  type="text"
+                  name="addressLine1"
+                  defaultValue={values.addressLine1 ?? ''}
+                  error={Boolean(fieldErrors.addressLine1)}
+                />
+              </FormField>
+              <FormField label="Line 2" error={fieldErrors.addressLine2}>
+                <Input
+                  type="text"
+                  name="addressLine2"
+                  defaultValue={values.addressLine2 ?? ''}
+                  error={Boolean(fieldErrors.addressLine2)}
+                />
+              </FormField>
+              <div className="grid grid-cols-1 gap-s3 md:grid-cols-[2fr_1fr_1fr]">
+                <FormField label="City" error={fieldErrors.city}>
+                  <Input
+                    type="text"
+                    name="city"
+                    defaultValue={values.city ?? ''}
+                    error={Boolean(fieldErrors.city)}
+                  />
+                </FormField>
+                <FormField label="State" error={fieldErrors.state}>
+                  <Input
+                    type="text"
+                    name="state"
+                    defaultValue={values.state ?? ''}
+                    error={Boolean(fieldErrors.state)}
+                  />
+                </FormField>
+                <FormField label="Postal code" error={fieldErrors.postalCode}>
+                  <Input
+                    type="text"
+                    name="postalCode"
+                    defaultValue={values.postalCode ?? ''}
+                    error={Boolean(fieldErrors.postalCode)}
+                  />
+                </FormField>
+              </div>
+              <FormField label="Country" error={fieldErrors.country}>
+                <Input
+                  type="text"
+                  name="country"
+                  defaultValue={values.country ?? ''}
+                  error={Boolean(fieldErrors.country)}
+                />
+              </FormField>
+            </MailingAddressField>
+            {/* Intake status moves to its own row below now that Mailing
+                address occupies the right column of the dateOfBirth row. */}
+            <FormField
+              label="Intake status"
+              error={fieldErrors.intakeStatus}
+              className="md:col-span-2"
+            >
               <Select
                 name="intakeStatus"
                 defaultValue={values.intakeStatus ?? 'pending'}
@@ -214,59 +276,6 @@ export function ClientForm({
             </FormField>
           </div>
 
-          <MailingAddressField composedAddress={composedAddress}>
-            <FormField label="Line 1" error={fieldErrors.addressLine1}>
-              <Input
-                type="text"
-                name="addressLine1"
-                defaultValue={values.addressLine1 ?? ''}
-                error={Boolean(fieldErrors.addressLine1)}
-              />
-            </FormField>
-            <FormField label="Line 2" error={fieldErrors.addressLine2}>
-              <Input
-                type="text"
-                name="addressLine2"
-                defaultValue={values.addressLine2 ?? ''}
-                error={Boolean(fieldErrors.addressLine2)}
-              />
-            </FormField>
-            <div className="grid grid-cols-1 gap-s3 md:grid-cols-[2fr_1fr_1fr]">
-              <FormField label="City" error={fieldErrors.city}>
-                <Input
-                  type="text"
-                  name="city"
-                  defaultValue={values.city ?? ''}
-                  error={Boolean(fieldErrors.city)}
-                />
-              </FormField>
-              <FormField label="State" error={fieldErrors.state}>
-                <Input
-                  type="text"
-                  name="state"
-                  defaultValue={values.state ?? ''}
-                  error={Boolean(fieldErrors.state)}
-                />
-              </FormField>
-              <FormField label="Postal code" error={fieldErrors.postalCode}>
-                <Input
-                  type="text"
-                  name="postalCode"
-                  defaultValue={values.postalCode ?? ''}
-                  error={Boolean(fieldErrors.postalCode)}
-                />
-              </FormField>
-            </div>
-            <FormField label="Country" error={fieldErrors.country}>
-              <Input
-                type="text"
-                name="country"
-                defaultValue={values.country ?? ''}
-                error={Boolean(fieldErrors.country)}
-              />
-            </FormField>
-          </MailingAddressField>
-
           <FormField label="Notes" error={fieldErrors.notes}>
             <Textarea
               name="notes"
@@ -277,6 +286,15 @@ export function ClientForm({
           </FormField>
         </div>
       </section>
+
+      {/* Auto-save indicator + Revert + Save changes — design places this
+          BETWEEN the Contact card and the Emergency Contact card. The
+          buttons target the parent form natively (since they're inside the
+          form element), so no form="<id>" attribute is needed. The footer
+          only renders on the Overview tab (where `id` is passed); the
+          create page leaves `id` undefined and falls back to the inline
+          submit button below. */}
+      {id ? <SectionSaveFooter formId={id} /> : null}
 
       {/* Emergency contact section — same form, separate visual card. */}
       <section

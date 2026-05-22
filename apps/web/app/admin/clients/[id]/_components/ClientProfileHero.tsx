@@ -178,16 +178,23 @@ export function ClientProfileHero({
                 First-time
               </span>
             )}
-            {pronouns && (
-              <span
-                className={cn(
-                  'inline-flex items-center rounded-full border border-line px-s3 py-[2px]',
-                  'bg-surface-2 text-ink-2 text-[12px] font-medium',
-                )}
-              >
-                {pronouns}
-              </span>
-            )}
+            {/* Pronouns chip — design's third hero badge. When the schema
+                lands the chip shows the actual value; until then, render a
+                dimmed Coming-soon placeholder so the row visually matches
+                the design's three-chip composition. */}
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full border border-line px-s3 py-[2px]',
+                'bg-surface-2 text-[12px] font-medium',
+                pronouns
+                  ? 'text-ink-2'
+                  : 'cursor-not-allowed text-ink-4 opacity-70',
+              )}
+              title={pronouns ? undefined : 'Coming soon — pronouns chip lights up once the schema migration lands.'}
+              aria-disabled={pronouns ? undefined : 'true'}
+            >
+              {pronouns || 'Pronouns'}
+            </span>
             {summary.tags.map((t) => (
               <Badge key={t.id} tone="neutral">
                 {t.name}
