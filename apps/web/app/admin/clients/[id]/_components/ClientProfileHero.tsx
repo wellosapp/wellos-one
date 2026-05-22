@@ -59,13 +59,21 @@ function CalendarIcon({ className }: { className?: string }) {
   );
 }
 
+// Hero `summary` accepts an optional `pronouns` field. The Prisma schema
+// doesn't carry it yet, so `summary.pronouns` is always `undefined` for
+// now and the chip stays silent — see the corresponding follow-up ticket
+// noted in the plan. Once the column lands the chip lights up automatically.
+type HeroSummary = ClientQuickBookSummary & { pronouns?: string | null };
+
 export function ClientProfileHero({
   summary,
   hero,
+  visitTotal,
   quickBookSlot,
 }: {
-  summary: ClientQuickBookSummary;
+  summary: HeroSummary;
   hero: ClientProfileHeroMeta;
+  visitTotal: number;
   quickBookSlot: ReactNode;
 }) {
   const displayName =
@@ -151,12 +159,32 @@ export function ClientProfileHero({
             {!summary.deletedAt && !summary.banned && (
               <Badge tone="green">Active</Badge>
             )}
+            {!summary.deletedAt && !summary.banned && visitTotal === 0 && (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full bg-sand-soft px-s2',
+                  'py-[2px] text-[11.5px] font-medium text-ink-2',
+                )}
+              >
+                First-time
+              </span>
+            )}
             {summary.banned && <Badge tone="red">Banned</Badge>}
             {summary.deletedAt && (
               <Badge tone="neutral">
                 Inactive · {new Date(summary.deletedAt).toLocaleDateString()}
               </Badge>
             )}
+            {'pronouns' in summary && summary.pronouns ? (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full bg-sand-soft px-s2',
+                  'py-[2px] text-[11.5px] font-medium text-ink-2',
+                )}
+              >
+                {summary.pronouns}
+              </span>
+            ) : null}
             {summary.tags.map((t) => (
               <Badge key={t.id} tone="neutral">
                 {t.name}

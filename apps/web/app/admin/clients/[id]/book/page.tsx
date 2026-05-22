@@ -1,6 +1,8 @@
+import { CalendarIcon } from '@/app/admin/_shell/icons';
 import { cn } from '@/lib/cn';
 
 import { loadClientDetail, loadQuickBookCatalog } from '../_data';
+import { SectionHeader } from '../_components/SectionHeader';
 import { BookTabClient } from './BookTabClient';
 
 export default async function ClientBookTabPage({
@@ -31,15 +33,13 @@ export default async function ClientBookTabPage({
         'overflow-hidden rounded-md border border-line bg-surface shadow-sm',
       )}
     >
-      <header className="border-b border-line bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
-        <div className="t-eyebrow text-sage">Book</div>
-        <h2 className="mt-s2 font-display text-[26px] text-ink">
-          Schedule an appointment.
-        </h2>
-        <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-3">
-          Same booking flow as Quick Book — optimized layout for the
-          dedicated Book section.
-        </p>
+      <header className="border-b border-line/70 bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
+        <SectionHeader
+          icon={CalendarIcon}
+          eyebrow="BOOK"
+          headline="Schedule an appointment."
+          subtitle="Same booking flow as Quick Book — optimized layout for the dedicated Book tab."
+        />
       </header>
       <div className="p-s6 lg:p-s8">
         <BookTabClient
