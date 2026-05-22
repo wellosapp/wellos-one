@@ -4,12 +4,9 @@ import { notFound } from 'next/navigation';
 
 import { ClientVisitTimeline } from '@/components/admin/ClientVisitTimeline';
 import { Badge, Button } from '@/components/ui';
-import { CalendarIcon } from '@/app/admin/_shell/icons';
 import { ApiError } from '@/lib/api/client';
 import { getClientTimeline } from '@/lib/api/timeline';
 import { cn } from '@/lib/cn';
-
-import { SectionHeader } from '../_components/SectionHeader';
 
 // /admin/clients/:id/timeline — server-rendered client visit timeline.
 // Backed by GET /admin/clients/:clientId/timeline (E3-S4b). Per
@@ -70,17 +67,17 @@ export default async function ClientTimelinePage({
         'overflow-hidden rounded-md border border-line bg-surface shadow-sm',
       )}
     >
-      <header className="border-b border-line/70 bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
-        <SectionHeader
-          icon={CalendarIcon}
-          eyebrow="VISITS"
-          headline={
-            total === 0
-              ? 'No visits yet.'
-              : `Showing ${showingFrom}–${showingTo} of ${total} visits.`
-          }
-          subtitle="History of every booking with this client — confirmed, completed, or cancelled."
-        />
+      <header className="border-b border-line bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
+        <div className="t-eyebrow text-sage">Visits</div>
+        <h2 className="mt-s2 font-display text-[26px] text-ink">
+          {total === 0
+            ? 'No visits yet.'
+            : `Showing ${showingFrom}–${showingTo} of ${total} visits.`}
+        </h2>
+        <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-3">
+          History of every booking with this client — confirmed, completed,
+          or cancelled.
+        </p>
       </header>
 
       <div className="flex flex-col gap-s6 p-s6 lg:p-s8">

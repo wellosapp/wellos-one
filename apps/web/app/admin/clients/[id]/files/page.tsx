@@ -1,9 +1,7 @@
-import { ImageIcon } from '@/app/admin/_shell/icons';
 import { ApiError } from '@/lib/api/client';
 import { listMediaAssets } from '@/lib/api/media';
 import { cn } from '@/lib/cn';
 
-import { SectionHeader } from '../_components/SectionHeader';
 import { FilesDropzone } from './FilesDropzone';
 import { FilesGrid } from './FilesGrid';
 
@@ -36,13 +34,16 @@ export default async function ClientFilesTabPage({
         'overflow-hidden rounded-md border border-line bg-surface shadow-sm',
       )}
     >
-      <header className="border-b border-line/70 bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
-        <SectionHeader
-          icon={ImageIcon}
-          eyebrow="FILES"
-          headline="Documents & media for this client."
-          subtitle="Photos, paperwork, and attachments shared with this profile. Anything uploaded here is stored in tenant-scoped Cloudflare R2 and only visible to staff."
-        />
+      <header className="border-b border-line bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
+        <div className="t-eyebrow text-sage">Files</div>
+        <h2 className="mt-s2 font-display text-[26px] text-ink">
+          Documents & media for this client.
+        </h2>
+        <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-3">
+          Photos, paperwork, and attachments shared with this profile. Anything
+          uploaded here is stored in tenant-scoped Cloudflare R2 and only
+          visible to staff.
+        </p>
       </header>
 
       <div className="flex flex-col gap-s5 p-s6 lg:p-s8">
