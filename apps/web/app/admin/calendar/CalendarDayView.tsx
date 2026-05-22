@@ -26,13 +26,16 @@ import {
   weekDayDates,
 } from '@/lib/calendar-view';
 
-import { AdminCalendarInsights } from './AdminCalendarInsights';
 import { AppointmentDrawer } from './AppointmentDrawer';
 import { BlockTimeSheet } from './BlockTimeSheet';
 import { deleteStaffScheduleBlockAction } from './_actions';
 import { selectNextUpAppointmentId } from './calendar-selection';
-import { CalendarGrid } from './CalendarGrid';
+import { CalendarDensityWave } from './CalendarDensityWave';
+import { CalendarInsightsPanel } from './CalendarInsightsPanel';
+import { CalendarLeftRail } from './CalendarLeftRail';
 import { CalendarMonthView } from './CalendarMonthView';
+import { CalendarRiverGrid, RIVER_LAYOUT } from './CalendarRiverGrid';
+import type { StaffLoadRow } from './CalendarStaffLoadStrip';
 import { CalendarToolbar } from './CalendarToolbar';
 import { CalendarWeekView } from './CalendarWeekView';
 import { QuickBookPanel } from './QuickBookPanel';
@@ -60,6 +63,9 @@ interface CalendarDayViewProps {
   activeTab: string;
   quickBookOpen: boolean;
   blockTimeOpen: boolean;
+  pulseOpen: boolean;
+  densityBins: { hour: number; count: number }[];
+  staffLoad: StaffLoadRow[];
 }
 
 export function CalendarDayView({
@@ -77,6 +83,9 @@ export function CalendarDayView({
   activeTab,
   quickBookOpen,
   blockTimeOpen,
+  pulseOpen,
+  densityBins,
+  staffLoad,
 }: CalendarDayViewProps) {
   const router = useRouter();
   const qb = quickBookOpen ? '1' : undefined;
@@ -146,6 +155,19 @@ export function CalendarDayView({
       }),
     [dateParam, view, qb],
   );
+
+  const hrefTogglePulse = useMemo(() => {
+    // Toggling ?pulse via buildCalendarUrl — when open, drop the flag.
+    const url = buildCalendarUrl(ADMIN_CAL, {
+      date: dateParam,
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+    if (pulseOpen) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}pulse=1`;
+  }, [dateParam, view, qb, bt, pulseOpen]);
 
   const visibleDayAppointments = useMemo(() => {
     return appointments.filter((a) => {
@@ -270,55 +292,115 @@ export function CalendarDayView({
 
   const sidePanelsOpen = quickBookOpen || blockTimeOpen;
 
-  const mainCol = (
-    <div className="flex min-w-0 flex-col gap-s5">
-      <CalendarToolbar
-        date={date}
-        view={view}
-        dateParam={dateParam}
-        periodTitle={periodTitle}
-        prevNav={prevNav}
-        nextNav={nextNav}
-        jumpTodayNav={jumpTodayNav}
-        dayJumpPrev={dayJumpPrev}
-        dayJumpNext={dayJumpNext}
-        hrefQuickBook={hrefQuickBook}
-        quickBookOpen={quickBookOpen}
-        hrefOpenBlockTime={hrefOpenBlockTime}
-        hrefCloseBlockTime={hrefCloseBlockTime}
-        blockTimeOpen={blockTimeOpen}
-      />
+  const selectedStaffForRail = selected
+    ? (staffById.get(selected.appointment.staffId) ?? null)
+    : null;
+  const selectedServiceForRail = selected
+    ? (serviceById.get(selected.appointment.serviceId) ?? null)
+    : null;
+  const selectedClientName = selected
+    ? [selected.client.firstName, selected.client.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || undefined
+    : undefined;
 
+  const toolbar = (
+    <CalendarToolbar
+      date={date}
+      view={view}
+      dateParam={dateParam}
+      periodTitle={periodTitle}
+      prevNav={prevNav}
+      nextNav={nextNav}
+      jumpTodayNav={jumpTodayNav}
+      dayJumpPrev={dayJumpPrev}
+      dayJumpNext={dayJumpNext}
+      hrefQuickBook={hrefQuickBook}
+      quickBookOpen={quickBookOpen}
+      hrefOpenBlockTime={hrefOpenBlockTime}
+      hrefCloseBlockTime={hrefCloseBlockTime}
+      blockTimeOpen={blockTimeOpen}
+      hrefTogglePulse={hrefTogglePulse}
+      pulseOpen={pulseOpen}
+    />
+  );
+
+  const emptyStaff = (
+    <Card padding="lg">
+      <p className="t-body-md text-ink-soft">
+        No active staff yet. Add a staff member to start booking appointments.
+      </p>
+      <div className="mt-s3">
+        <Link href="/admin/staff/new" className="no-underline">
+          <Button variant="primary" size="sm">
+            Add staff
+          </Button>
+        </Link>
+      </div>
+    </Card>
+  );
+
+  // Day-view centre column: toolbar + insights panel + density wave + river.
+  const dayCentre = (
+    <div className="flex min-w-0 flex-1 flex-col gap-s5">
+      {toolbar}
       {selectedError && <Alert tone="error">{selectedError}</Alert>}
-
+      <CalendarInsightsPanel
+        appointments={insightAppointments}
+        open={pulseOpen}
+      />
       {staff.length === 0 ? (
-        <Card padding="lg">
+        emptyStaff
+      ) : (
+        <>
+          <CalendarDensityWave
+            bins={densityBins}
+            startHour={RIVER_LAYOUT.ANCHOR_HOUR}
+            pxPerHour={RIVER_LAYOUT.PX_PER_HOUR}
+            nameColumnWidth={RIVER_LAYOUT.NAME_COL_WIDTH}
+          />
+          <CalendarRiverGrid
+            date={date}
+            staff={staff}
+            serviceById={serviceById}
+            appointments={visibleDayAppointments}
+            scheduleBlocksByStaff={scheduleBlocksByStaff}
+            hrefSelected={hrefSelected}
+            selectedAppointmentId={selected?.appointment.id ?? null}
+            clientDisplayNames={clientDisplayNames}
+            hrefQuickBook={hrefQuickBook}
+            nextAppointmentId={nextAppointmentId}
+            onDeleteScheduleBlock={handleDeleteBlock}
+          />
+        </>
+      )}
+
+      {visibleDayAppointments.length === 0 && staff.length > 0 && (
+        <Card padding="md">
           <p className="t-body-md text-ink-soft">
-            No active staff yet. Add a staff member to start booking
-            appointments.
+            No appointments on this day yet. Bookings from Quick Book and the
+            public portal appear here once scheduled.
           </p>
           <div className="mt-s3">
-            <Link href="/admin/staff/new" className="no-underline">
-              <Button variant="primary" size="sm">
-                Add staff
+            <Link href={hrefQuickBook as Route} className="no-underline">
+              <Button variant="accent" size="sm">
+                Open Quick Book
               </Button>
             </Link>
           </div>
         </Card>
-      ) : view === 'day' ? (
-        <CalendarGrid
-          date={date}
-          staff={staff}
-          serviceById={serviceById}
-          appointments={visibleDayAppointments}
-          scheduleBlocksByStaff={scheduleBlocksByStaff}
-          hrefSelected={hrefSelected}
-          selectedAppointmentId={selected?.appointment.id ?? null}
-          clientDisplayNames={clientDisplayNames}
-          hrefQuickBook={hrefQuickBook}
-          nextAppointmentId={nextAppointmentId}
-          onDeleteScheduleBlock={handleDeleteBlock}
-        />
+      )}
+    </div>
+  );
+
+  // Week/Month centre column — unchanged shape; no rail, no density wave.
+  const weekOrMonthCentre = (
+    <div className="flex min-w-0 flex-col gap-s5">
+      {toolbar}
+      {selectedError && <Alert tone="error">{selectedError}</Alert>}
+      {staff.length === 0 ? (
+        emptyStaff
       ) : view === 'week' ? (
         <CalendarWeekView
           weekDays={weekDays}
@@ -347,33 +429,69 @@ export function CalendarDayView({
           scheduleBlocksByStaff={scheduleBlocksByStaff}
         />
       )}
-
-      {view === 'day' &&
-        visibleDayAppointments.length === 0 &&
-        staff.length > 0 && (
-          <Card padding="md">
-            <p className="t-body-md text-ink-soft">
-              No appointments on this day yet. Bookings from Quick Book and the
-              public portal appear here once scheduled.
-            </p>
-            <div className="mt-s3">
-              <Link href={hrefQuickBook as Route} className="no-underline">
-                <Button variant="accent" size="sm">
-                  Open Quick Book
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        )}
-
-      <div id="calendar-insights" className="scroll-mt-s8 pt-s2">
-        <span className="t-eyebrow text-accent">Overview</span>
-        <h2 className="sr-only">Calendar insights</h2>
-        <AdminCalendarInsights appointments={insightAppointments} />
-      </div>
     </div>
   );
 
+  const sidePanels = sidePanelsOpen ? (
+    <div className="flex flex-col gap-s5 lg:max-w-[360px]">
+      {quickBookOpen && (
+        <QuickBookPanel
+          staff={staff}
+          services={services}
+          locations={locations}
+          dateParam={dateParam}
+          onClose={handleCloseQuickBook}
+          variant="admin"
+        />
+      )}
+      {blockTimeOpen && (
+        <BlockTimeSheet
+          staff={staff}
+          locations={locations}
+          dateParam={dateParam}
+          hrefClose={hrefCloseBlockTime}
+        />
+      )}
+    </div>
+  ) : null;
+
+  const drawer =
+    drawerOpen && selected ? (
+      <AppointmentDrawer
+        appointment={selected.appointment}
+        client={selected.client}
+        notes={selected.notes}
+        bookingAnswers={selected.bookingAnswers}
+        staff={staffById.get(selected.appointment.staffId) ?? null}
+        service={serviceById.get(selected.appointment.serviceId) ?? null}
+        activeTab={activeTab}
+        dateParam={dateParam}
+        onClose={handleCloseDrawer}
+        view={view}
+        quickbook={qb}
+      />
+    ) : null;
+
+  if (view === 'day') {
+    return (
+      <div className="flex flex-col gap-s5">
+        <div className="flex flex-col gap-s5 lg:flex-row lg:items-start">
+          <CalendarLeftRail
+            staffLoad={staffLoad}
+            selectedAppointment={selected?.appointment}
+            selectedClientFirstName={selectedClientName}
+            selectedServiceName={selectedServiceForRail?.name}
+            selectedStaffFirstName={selectedStaffForRail?.firstName}
+          />
+          {dayCentre}
+          {sidePanels}
+        </div>
+        {drawer}
+      </div>
+    );
+  }
+
+  // Week / month layout stays the same — no rail, no density wave.
   return (
     <div
       className={
@@ -382,46 +500,9 @@ export function CalendarDayView({
           : 'flex flex-col gap-s5'
       }
     >
-      {mainCol}
-
-      {sidePanelsOpen && (
-        <div className="flex flex-col gap-s5 lg:max-w-[360px]">
-          {quickBookOpen && (
-            <QuickBookPanel
-              staff={staff}
-              services={services}
-              locations={locations}
-              dateParam={dateParam}
-              onClose={handleCloseQuickBook}
-              variant="admin"
-            />
-          )}
-          {blockTimeOpen && (
-            <BlockTimeSheet
-              staff={staff}
-              locations={locations}
-              dateParam={dateParam}
-              hrefClose={hrefCloseBlockTime}
-            />
-          )}
-        </div>
-      )}
-
-      {drawerOpen && selected && (
-        <AppointmentDrawer
-          appointment={selected.appointment}
-          client={selected.client}
-          notes={selected.notes}
-          bookingAnswers={selected.bookingAnswers}
-          staff={staffById.get(selected.appointment.staffId) ?? null}
-          service={serviceById.get(selected.appointment.serviceId) ?? null}
-          activeTab={activeTab}
-          dateParam={dateParam}
-          onClose={handleCloseDrawer}
-          view={view}
-          quickbook={qb}
-        />
-      )}
+      {weekOrMonthCentre}
+      {sidePanels}
+      {drawer}
     </div>
   );
 }

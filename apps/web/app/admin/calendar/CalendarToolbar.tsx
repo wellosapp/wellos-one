@@ -8,6 +8,7 @@ import { Badge, Button } from '@/components/ui';
 import { addDays, formatDateShort, isToday } from '@/lib/calendar';
 import type { CalendarViewMode } from '@/lib/calendar-view';
 
+import { CalendarFilterPills } from './CalendarFilterPills';
 import { CalendarViewToggle } from './CalendarViewToggle';
 
 export interface CalendarToolbarProps {
@@ -25,6 +26,9 @@ export interface CalendarToolbarProps {
   hrefOpenBlockTime: string;
   hrefCloseBlockTime: string;
   blockTimeOpen: boolean;
+  /** Toggles the collapsible "Today's pulse" panel (?pulse=1). */
+  hrefTogglePulse: string;
+  pulseOpen: boolean;
 }
 
 /**
@@ -46,6 +50,8 @@ export function CalendarToolbar({
   hrefOpenBlockTime,
   hrefCloseBlockTime,
   blockTimeOpen,
+  hrefTogglePulse,
+  pulseOpen,
 }: CalendarToolbarProps) {
   const titleWithBadge: ReactNode =
     view === 'day' && isToday(date) ? (
@@ -60,7 +66,8 @@ export function CalendarToolbar({
     );
 
   return (
-    <header className="flex flex-col gap-s4 md:flex-row md:items-end md:justify-between">
+    <header className="flex flex-col gap-s4">
+      <div className="flex flex-col gap-s4 md:flex-row md:items-end md:justify-between">
       <div className="flex flex-col gap-s1">
         <span className="t-eyebrow text-accent">Calendar</span>
         <h1 className="t-display-lg flex flex-wrap items-baseline gap-s3">
@@ -141,6 +148,28 @@ export function CalendarToolbar({
           </Link>
         )}
       </div>
+      </div>
+
+      {view === 'day' && (
+        <div className="flex flex-wrap items-center justify-between gap-s3">
+          <CalendarFilterPills variant="toolbar" />
+          <div className="flex flex-wrap items-center gap-s2">
+            <Link href={hrefTogglePulse as Route} className="no-underline">
+              <Button variant="ghost" size="sm">
+                {pulseOpen ? 'Hide today’s pulse' : 'Today’s pulse'}
+              </Button>
+            </Link>
+            <button
+              type="button"
+              disabled
+              title="Coming soon"
+              className="cursor-not-allowed rounded-sm border border-surface-3 bg-white px-s4 py-[7px] t-caption font-semibold text-ink-soft opacity-60"
+            >
+              Send booking link
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 }
