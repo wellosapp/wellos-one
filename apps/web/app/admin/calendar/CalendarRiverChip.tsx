@@ -66,19 +66,17 @@ const STATUS_TONE: Record<
 
 // Service color palette — keyed by a deterministic hash of Service.id so each
 // service is a stable color across reloads, but new services don't require
-// schema work to render. The first four use existing *-pale tokens; the
-// warm/plum/sky variants reference arbitrary bg-[#…] values that map to the
-// expanded palette landing with the shell PR.
+// schema work to render. All seven map to design tokens; warm-pale,
+// plum-pale, and sky-pale land alongside this PR's chip update because
+// the shell PR's palette didn't include those specific pale variants yet.
 const SERVICE_PALETTE = [
   'bg-accent-pale', // sage
   'bg-amber-pale', // amber
   'bg-red-pale', // red
   'bg-green-pale', // green
-  // TODO(shell-pr): swap to token classes (bg-warm-pale, bg-plum-pale, bg-sky-pale)
-  // when the expanded palette merges. Hex values are the design's warm/plum/sky variants.
-  'bg-[#f6dfd2]', // warm (candlelight)
-  'bg-[#ece4f0]', // plum (restorative)
-  'bg-[#e7eef8]', // sky (reformer/ocean)
+  'bg-warm-pale', // warm (candlelight)
+  'bg-plum-pale', // plum (restorative)
+  'bg-sky-pale', // sky (reformer/ocean)
 ] as const;
 
 function serviceBgClass(serviceId: string | undefined): string {
