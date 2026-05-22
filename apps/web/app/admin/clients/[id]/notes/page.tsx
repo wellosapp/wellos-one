@@ -1,7 +1,9 @@
+import { ClipboardIcon } from '@/app/admin/_shell/icons';
 import { ApiError } from '@/lib/api/client';
 import { listClientNotes } from '@/lib/api/client-notes';
 import { cn } from '@/lib/cn';
 
+import { SectionHeader } from '../_components/SectionHeader';
 import { NotesComposer } from './NotesComposer';
 import { NotesList } from './NotesList';
 
@@ -30,14 +32,13 @@ export default async function ClientNotesTabPage({
         'overflow-hidden rounded-md border border-line bg-surface shadow-sm',
       )}
     >
-      <header className="border-b border-line bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
-        <div className="t-eyebrow text-sage">Notes</div>
-        <h2 className="mt-s2 font-display text-[26px] text-ink">
-          Internal notes & observations.
-        </h2>
-        <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-3">
-          Visible to staff only. Pinned notes always appear at the top.
-        </p>
+      <header className="border-b border-line/70 bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
+        <SectionHeader
+          icon={ClipboardIcon}
+          eyebrow="NOTES"
+          headline="Internal notes & observations."
+          subtitle="Visible to staff only. Pinned notes always appear at the top."
+        />
       </header>
 
       <div className="flex flex-col gap-s4 p-s6 lg:p-s8">

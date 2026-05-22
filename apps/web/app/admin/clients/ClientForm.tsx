@@ -11,6 +11,8 @@ import { cn } from '@/lib/cn';
 import type { ClientWriteBody, ClientIntakeStatus } from '@/lib/api/clients';
 
 import type { ActionState } from './_actions';
+import { MailingAddressField } from './_components/MailingAddressField';
+import { composeMailingAddress } from './_components/composeMailingAddress';
 
 const INTAKE_STATUS_LABELS: Record<ClientIntakeStatus, string> = {
   pending: 'Pending',
@@ -42,6 +44,17 @@ type Props = {
   successMessage?: string;
   /** Merged onto the root form element (e.g. drop max-width on wide layouts). */
   formClassName?: string;
+  /**
+   * Optional DOM id on the form element. Used by `SectionSaveFooter` on
+   * the client detail Overview page to drive the form's submit/reset via
+   * the `form="<id>"` attribute on out-of-tree buttons.
+   */
+  id?: string;
+  /**
+   * When true, hides the inline submit button at the bottom of the form
+   * because the caller is rendering its own footer (e.g. SectionSaveFooter).
+   */
+  hideInlineSubmit?: boolean;
 };
 
 export function ClientForm({
@@ -51,6 +64,8 @@ export function ClientForm({
   submitLabel = 'Save',
   successMessage = 'Saved.',
   formClassName,
+  id,
+  hideInlineSubmit = false,
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
@@ -62,8 +77,18 @@ export function ClientForm({
   const showAcknowledge = Boolean(state.duplicateWarning);
   const initialTagIds = new Set(values.tagIds ?? []);
 
+  const composedAddress = composeMailingAddress({
+    addressLine1: values.addressLine1,
+    addressLine2: values.addressLine2,
+    city: values.city,
+    state: values.state,
+    postalCode: values.postalCode,
+    country: values.country,
+  });
+
   return (
     <form
+      id={id}
       action={formAction}
       className={cn('flex max-w-3xl flex-col gap-s5', formClassName)}
     >
@@ -120,6 +145,23 @@ export function ClientForm({
             error={Boolean(fieldErrors.preferredName)}
           />
         </FormField>
+        {/* Pronouns ships as a Coming-soon dimmed field — the column
+            doesn't exist on Client yet. Once the schema migration lands
+            (see plan §Coming-soon items) remove `disabled` + the helper
+            text and wire `name="pronouns"` into ClientWriteBody. */}
+        <FormField
+          label="Pronouns"
+          hint="Coming soon — pronouns field not on main yet."
+        >
+          <Input
+            type="text"
+            disabled
+            aria-disabled="true"
+            placeholder="she/her"
+            title="Coming soon — backing data not on main yet"
+            className="opacity-60 cursor-not-allowed"
+          />
+        </FormField>
         <FormField label="Email" error={fieldErrors.email}>
           <Input
             type="email"
@@ -161,60 +203,81 @@ export function ClientForm({
 
       <fieldset className="flex flex-col gap-s3 rounded-xl border border-surface-3 bg-surface/40 px-s5 pb-s5 pt-s3">
         <legend className="t-eyebrow px-s2 text-ink-soft">Address</legend>
-        <FormField label="Line 1" error={fieldErrors.addressLine1}>
-          <Input
-            type="text"
-            name="addressLine1"
-            defaultValue={values.addressLine1 ?? ''}
-            error={Boolean(fieldErrors.addressLine1)}
-          />
-        </FormField>
-        <FormField label="Line 2" error={fieldErrors.addressLine2}>
-          <Input
-            type="text"
-            name="addressLine2"
-            defaultValue={values.addressLine2 ?? ''}
-            error={Boolean(fieldErrors.addressLine2)}
-          />
-        </FormField>
-        <div className="grid grid-cols-1 gap-s3 md:grid-cols-[2fr_1fr_1fr]">
-          <FormField label="City" error={fieldErrors.city}>
+        <MailingAddressField composedAddress={composedAddress}>
+          <FormField label="Line 1" error={fieldErrors.addressLine1}>
             <Input
               type="text"
-              name="city"
-              defaultValue={values.city ?? ''}
-              error={Boolean(fieldErrors.city)}
+              name="addressLine1"
+              defaultValue={values.addressLine1 ?? ''}
+              error={Boolean(fieldErrors.addressLine1)}
             />
           </FormField>
-          <FormField label="State" error={fieldErrors.state}>
+          <FormField label="Line 2" error={fieldErrors.addressLine2}>
             <Input
               type="text"
-              name="state"
-              defaultValue={values.state ?? ''}
-              error={Boolean(fieldErrors.state)}
+              name="addressLine2"
+              defaultValue={values.addressLine2 ?? ''}
+              error={Boolean(fieldErrors.addressLine2)}
             />
           </FormField>
-          <FormField label="Postal code" error={fieldErrors.postalCode}>
+          <div className="grid grid-cols-1 gap-s3 md:grid-cols-[2fr_1fr_1fr]">
+            <FormField label="City" error={fieldErrors.city}>
+              <Input
+                type="text"
+                name="city"
+                defaultValue={values.city ?? ''}
+                error={Boolean(fieldErrors.city)}
+              />
+            </FormField>
+            <FormField label="State" error={fieldErrors.state}>
+              <Input
+                type="text"
+                name="state"
+                defaultValue={values.state ?? ''}
+                error={Boolean(fieldErrors.state)}
+              />
+            </FormField>
+            <FormField label="Postal code" error={fieldErrors.postalCode}>
+              <Input
+                type="text"
+                name="postalCode"
+                defaultValue={values.postalCode ?? ''}
+                error={Boolean(fieldErrors.postalCode)}
+              />
+            </FormField>
+          </div>
+          <FormField label="Country" error={fieldErrors.country}>
             <Input
               type="text"
-              name="postalCode"
-              defaultValue={values.postalCode ?? ''}
-              error={Boolean(fieldErrors.postalCode)}
+              name="country"
+              defaultValue={values.country ?? ''}
+              error={Boolean(fieldErrors.country)}
             />
           </FormField>
-        </div>
-        <FormField label="Country" error={fieldErrors.country}>
-          <Input
-            type="text"
-            name="country"
-            defaultValue={values.country ?? ''}
-            error={Boolean(fieldErrors.country)}
-          />
-        </FormField>
+        </MailingAddressField>
       </fieldset>
 
       <fieldset className="flex flex-col gap-s3 rounded-xl border border-surface-3 bg-surface/40 px-s5 pb-s5 pt-s3">
-        <legend className="t-eyebrow px-s2 text-ink-soft">Emergency contact</legend>
+        <legend className="t-eyebrow px-s2 text-ink-soft">
+          Emergency contact
+        </legend>
+        {/* Section-header style label inline — visually matches the
+            SectionHeader pattern used on the section cards, but we don't
+            import that component here because it lives under
+            `[id]/_components/` and ClientForm is shared with the create
+            page. Keeping the styling local avoids the cross-surface
+            dependency. */}
+        <div className="flex flex-col gap-s1 px-s2 pt-s1">
+          <div className="t-eyebrow inline-flex items-center gap-s2 text-sage tracking-wide">
+            EMERGENCY CONTACT
+          </div>
+          <p className="t-body-md font-display text-ink leading-tight">
+            Someone to reach in an emergency.
+          </p>
+          <p className="t-body-sm text-ink-3">
+            Used when staff can&apos;t reach the client directly.
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-s3 md:grid-cols-2">
           <FormField label="Name" error={fieldErrors.emergencyContactName}>
             <Input
@@ -222,6 +285,23 @@ export function ClientForm({
               name="emergencyContactName"
               defaultValue={values.emergencyContactName ?? ''}
               error={Boolean(fieldErrors.emergencyContactName)}
+            />
+          </FormField>
+          {/* Relationship ships as a Coming-soon dimmed field — the column
+              doesn't exist on Client yet. Once the schema migration lands
+              remove `disabled` + the helper text and wire
+              `name="emergencyContactRelationship"`. */}
+          <FormField
+            label="Relationship"
+            hint="Coming soon — relationship field not on main yet."
+          >
+            <Input
+              type="text"
+              disabled
+              aria-disabled="true"
+              placeholder="Spouse, parent, friend…"
+              title="Coming soon — backing data not on main yet"
+              className="opacity-60 cursor-not-allowed"
             />
           </FormField>
           <FormField label="Phone" error={fieldErrors.emergencyContactPhone}>
@@ -290,9 +370,11 @@ export function ClientForm({
         )}
       </fieldset>
 
-      <div className="flex gap-s3">
-        <SubmitButton label={submitLabel} />
-      </div>
+      {!hideInlineSubmit && (
+        <div className="flex gap-s3">
+          <SubmitButton label={submitLabel} />
+        </div>
+      )}
     </form>
   );
 }
