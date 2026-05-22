@@ -108,33 +108,38 @@ export function ClientTagsCard({
       subtitle="Tags help with segmentation, mailers, and reporting. Not visible to the client."
     >
       <div className="flex flex-wrap items-center gap-s2">
-        {tags.map((tag) => (
-          <span
-            key={tag.id}
-            className={cn(
-              'group inline-flex items-center gap-s2 rounded-sm border border-line bg-surface',
-              'px-s3 py-s1 text-[13px] font-medium text-ink-2',
-            )}
-            style={{
-              borderLeftColor: tag.color ?? 'var(--line-strong)',
-              borderLeftWidth: '3px',
-            }}
-          >
-            <span>{tag.name}</span>
-            <button
-              type="button"
-              onClick={() => removeTag(tag.id)}
+        {tags.map((tag) => {
+          // Tag.color is a runtime hex string from the DB (the ONE allowed
+          // inline-color exception to hard rule #11). Apply at ~18% alpha
+          // for a soft tint background; border at full saturation; ink-2
+          // text reads cleanly across the palette of tag colors stored.
+          const tint = tag.color ? `${tag.color}2E` : 'var(--surface-2)';
+          const border = tag.color ?? 'var(--line)';
+          return (
+            <span
+              key={tag.id}
               className={cn(
-                'ml-s1 hidden h-4 w-4 items-center justify-center rounded-sm',
-                'text-ink-3 hover:bg-surface-2 hover:text-terracotta',
-                'group-hover:inline-flex',
+                'group inline-flex items-center gap-s2 rounded-full border',
+                'px-s3 py-[5px] text-[13px] font-medium text-ink-2',
               )}
-              aria-label={`Remove ${tag.name} tag`}
+              style={{ backgroundColor: tint, borderColor: border }}
             >
-              <XIcon size={12} />
-            </button>
-          </span>
-        ))}
+              <span>{tag.name}</span>
+              <button
+                type="button"
+                onClick={() => removeTag(tag.id)}
+                className={cn(
+                  'ml-s1 hidden h-4 w-4 items-center justify-center rounded-full',
+                  'text-ink-3 hover:bg-surface hover:text-terracotta',
+                  'group-hover:inline-flex',
+                )}
+                aria-label={`Remove ${tag.name} tag`}
+              >
+                <XIcon size={12} />
+              </button>
+            </span>
+          );
+        })}
 
         <div className="relative">
           <button
@@ -142,8 +147,8 @@ export function ClientTagsCard({
             onClick={() => setDropdownOpen((v) => !v)}
             disabled={availableTags.length === 0}
             className={cn(
-              'inline-flex items-center gap-s2 rounded-sm border border-dashed border-line bg-surface',
-              'px-s3 py-s1 text-[13px] font-medium text-ink-4',
+              'inline-flex items-center gap-s2 rounded-full border border-dashed border-line bg-surface-2',
+              'px-s3 py-[5px] text-[13px] font-medium text-ink-4',
               availableTags.length === 0
                 ? 'cursor-not-allowed opacity-50'
                 : 'cursor-pointer hover:border-sage hover:text-ink-2',

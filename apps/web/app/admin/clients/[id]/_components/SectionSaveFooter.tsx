@@ -78,11 +78,11 @@ export function SectionSaveFooter({
           form={formId}
           disabled={!dirty}
           className={cn(
-            'inline-flex items-center gap-s2 rounded-sm',
-            'bg-sage-deep px-s4 py-s2 text-[13px] font-semibold text-ink-inv',
+            'inline-flex items-center gap-s2 rounded-full',
+            'bg-accent px-s5 py-s2 text-[13px] font-semibold text-ink-inv',
             'transition-colors duration-fast',
             dirty
-              ? 'hover:bg-ink cursor-pointer'
+              ? 'hover:bg-sage-deep cursor-pointer'
               : 'opacity-50 cursor-not-allowed',
           )}
         >

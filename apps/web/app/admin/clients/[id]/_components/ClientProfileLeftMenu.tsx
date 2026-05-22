@@ -150,7 +150,7 @@ export function ClientProfileLeftMenu({
                 <span
                   className={cn(
                     'ml-s1 inline-flex min-w-[22px] items-center justify-center',
-                    'rounded-sm px-s2 t-caption tabular-nums',
+                    'rounded-full px-s2 t-caption tabular-nums',
                     isActive
                       ? 'bg-sage text-ink-inv'
                       : 'bg-surface-sunk text-ink-3',
@@ -201,7 +201,7 @@ export function ClientProfileLeftMenu({
               <span
                 className={cn(
                   'inline-flex min-w-[22px] items-center justify-center',
-                  'rounded-sm px-s2 t-caption tabular-nums',
+                  'rounded-full px-s2 t-caption tabular-nums',
                   isActive
                     ? 'bg-sage text-ink-inv'
                     : 'bg-surface-sunk text-ink-3',
