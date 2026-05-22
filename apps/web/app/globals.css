@@ -2,30 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Wellos design tokens — warm professional, sage + cream editorial palette.
+ *
+ * Token NAMES are intentionally stable across the codebase so existing
+ * className strings (`bg-surface`, `text-ink`, `bg-accent`) keep resolving
+ * after a token-value refresh. Token VALUES were updated to the new
+ * editorial direction in the admin shell redesign (feature/admin-shell
+ * -redesign). Body background switched from `--surface` → `--canvas` so
+ * cards keep their warm cream `--surface` and the underlying canvas reads
+ * as a slightly deeper cream behind them. New tokens added for things the
+ * design needs but the prior set lacked (`--canvas`, `--ink-2/3/4/inv`,
+ * `--line/line-soft/line-strong`, `--sage-deep/soft/tint/tint-2`, etc.).
+ */
 :root {
   /* ==== Color: Core ==== */
-  --ink: #0F0F12;
-  --ink-soft: #1C1C22;
-  --surface: #F7F6F3;
-  --surface-2: #EDECEA;
-  --surface-3: #E2E0DC;
+  --canvas: #EFEAE0;
+  --surface: #FBF8F2;
+  --surface-2: #FFFFFF;
+  --surface-sunk: #E8E2D5;
+  /* Kept for back-compat with existing classNames that referenced --surface-3 as a border-ish neutral. */
+  --surface-3: #E2DBCB;
+
+  --ink: #1B231D;
+  --ink-soft: #3A4339;
+  /* New ink scale — design uses 4 tones below `--ink`. */
+  --ink-2: #3A4339;
+  --ink-3: #6B7269;
+  --ink-4: #98A096;
+  --ink-inv: #F5F1E6;
+
   --white: #FFFFFF;
-  --placeholder: #aaaaaa;
+  --placeholder: #98A096;
 
-  /* ==== Color: Accent ==== */
-  --accent: #3D7A5E;
-  --accent-mid: #4E9A77;
-  --accent-pale: #D4EDE1;
+  /* ==== Color: Lines ==== */
+  --line: #E2DBCB;
+  --line-soft: #EBE5D6;
+  --line-strong: #D3CAB6;
 
-  /* ==== Color: Status ==== */
-  --red: #D64545;
-  --red-pale: #FDEAEA;
-  --amber: #C87C2A;
-  --amber-pale: #FDF3E3;
-  --green: #2D7A4F;
-  --green-pale: #E2F5EC;
+  /* ==== Color: Accent (sage) ====
+   * `--accent` remains the primary accent (anywhere code says bg-accent /
+   * text-accent). It now resolves to the design's `--sage`. Aliases below
+   * surface the design's more nuanced sage tokens for net-new usage. */
+  --accent: #5D7C66;
+  --accent-mid: #36523F;
+  --accent-pale: #E4EBDF;
+  --sage: #5D7C66;
+  --sage-deep: #36523F;
+  --sage-soft: #C8D5C5;
+  --sage-tint: #E4EBDF;
+  --sage-tint-2: #F1F4EB;
 
-  /* ==== Spacing ==== */
+  /* ==== Color: Warm accents ==== */
+  --sand: #C9A36A;
+  --sand-soft: #ECDCC0;
+  --terracotta: #B8634A;
+  --rose: #D8A8A0;
+  --plum: #6B4F66;
+  --sky: #6D8FA8;
+  --sky-soft: #C9D9E3;
+
+  /* ==== Color: Status ====
+   * Status values map onto the warm palette: red → terracotta tone, amber
+   * → sand tone, green → sage. The pale companions stay light backgrounds. */
+  --red: #B8634A;
+  --red-pale: #F4E4DA;
+  --amber: #C9A36A;
+  --amber-pale: #F0E5D0;
+  --green: #5D7C66;
+  --green-pale: #E4EBDF;
+
+  /* ==== Spacing (unchanged token scale) ==== */
   --s1: 4px;
   --s2: 8px;
   --s3: 12px;
@@ -36,16 +83,16 @@
   --s10: 40px;
   --s12: 48px;
 
-  /* ==== Radius ==== */
-  --r-sm: 8px;
+  /* ==== Radius (slightly softer to match the editorial card feel) ==== */
+  --r-sm: 10px;
   --r-md: 14px;
-  --r-lg: 20px;
+  --r-lg: 22px;
   --r-xl: 28px;
 
-  /* ==== Elevation ==== */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.05);
+  /* ==== Elevation — design's three-tier shadow ladder ==== */
+  --shadow-sm: 0 1px 0 rgba(27, 35, 29, 0.04), 0 1px 2px rgba(27, 35, 29, 0.04);
+  --shadow-md: 0 1px 0 rgba(27, 35, 29, 0.04), 0 6px 24px -8px rgba(27, 35, 29, 0.12);
+  --shadow-lg: 0 0 0 0.5px var(--line), 0 12px 32px -16px rgba(27, 35, 29, 0.18);
 
   /* ==== Motion ==== */
   --t-fast: 0.15s ease;
@@ -53,7 +100,7 @@
   --t-slow: 0.35s ease;
 
   /* ==== Focus ring ==== */
-  --focus-ring: 0 0 0 3px rgba(61, 122, 94, 0.12);
+  --focus-ring: 0 0 0 3px rgba(93, 124, 102, 0.18);
 }
 
 @layer base {
@@ -65,14 +112,21 @@
 
   html,
   body {
-    background: var(--surface);
+    background: var(--canvas);
     color: var(--ink);
-    font-family: var(--font-dm-sans), system-ui, sans-serif;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     margin: 0;
     padding: 0;
+  }
+
+  ::selection {
+    background: var(--sage-soft);
+    color: var(--ink);
   }
 
   h1,
@@ -81,41 +135,45 @@
   h4,
   h5,
   h6 {
-    font-family: var(--font-sora), system-ui, sans-serif;
-    line-height: 1.2;
-    letter-spacing: -0.4px;
-    font-weight: 700;
+    font-family: var(--font-display), Georgia, 'Times New Roman', serif;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-weight: 400;
   }
+
+  /* Headings stay an editorial serif. Body / UI labels resolve to Manrope via
+   * --font-sans. Components that explicitly want sans on a heading-level
+   * element can apply `font-sans` directly. */
 }
 
 @layer components {
   .t-display-xl {
-    font-family: var(--font-sora), system-ui, sans-serif;
+    font-family: var(--font-display), Georgia, serif;
     font-size: 34px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.5px;
+    font-weight: 400;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
   }
   .t-display-lg {
-    font-family: var(--font-sora), system-ui, sans-serif;
+    font-family: var(--font-display), Georgia, serif;
     font-size: 28px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.4px;
+    font-weight: 400;
+    line-height: 1.1;
+    letter-spacing: -0.012em;
   }
   .t-display-md {
-    font-family: var(--font-sora), system-ui, sans-serif;
+    font-family: var(--font-display), Georgia, serif;
     font-size: 22px;
-    font-weight: 700;
-    line-height: 1.25;
-    letter-spacing: -0.4px;
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
   }
   .t-display-sm {
-    font-family: var(--font-sora), system-ui, sans-serif;
-    font-size: 17px;
-    font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: -0.3px;
+    font-family: var(--font-display), Georgia, serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: -0.008em;
   }
 
   .t-body-lg {
@@ -144,6 +202,6 @@
     font-weight: 600;
     line-height: 1.3;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 0.12em;
   }
 }
