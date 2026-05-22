@@ -1,80 +1,101 @@
-import Link from 'next/link';
+// Admin overview — the operational dashboard.
+//
+// Server component. Fetches the full snapshot via getOverviewData() (which
+// fans out to the appointments / clients / staff / services lists in
+// parallel and computes every KPI + chart + schedule from raw data) and
+// composes the AlertsStrip → KpiStrip → ScheduleStrip → (RevenueChart |
+// QuickActions) layout from the design package.
+//
+// The legacy 3-card "Tenant resources" page now lives at /admin/resources.
 
-import { Card } from '@/components/ui';
+import {
+  CalendarIcon,
+  DollarIcon,
+  UserPlusIcon,
+  ZapIcon,
+} from './_shell/icons';
+import { AlertsStrip } from './_overview/AlertsStrip';
+import { KpiCard } from './_overview/KpiCard';
+import { KpiStrip } from './_overview/KpiStrip';
+import { NextUp } from './_overview/NextUp';
+import { OutstandingIntake } from './_overview/OutstandingIntake';
+import { QuickActions } from './_overview/QuickActions';
+import { RevenueChart } from './_overview/RevenueChart';
+import { ScheduleStrip } from './_overview/ScheduleStrip';
+import { StaffOnShift } from './_overview/StaffOnShift';
+import { WaitlistPreview } from './_overview/WaitlistPreview';
+import { getOverviewData } from './_overview/data';
 
-type Surface =
-  | {
-      title: string;
-      description: string;
-      status: 'live';
-      href: '/admin/clients' | '/admin/services' | '/admin/staff';
-    }
-  | { title: string; description: string; status: 'soon' };
+export default async function AdminHomePage() {
+  const data = await getOverviewData();
 
-const SURFACES: Surface[] = [
-  {
-    href: '/admin/clients',
-    title: 'Clients',
-    description: 'Create, edit, and soft-delete client records. Search and filter by intake status.',
-    status: 'live',
-  },
-  {
-    href: '/admin/services',
-    title: 'Services',
-    description: 'Service catalog with duration, base price, and eligible staff.',
-    status: 'live',
-  },
-  {
-    href: '/admin/staff',
-    title: 'Staff',
-    description: 'Staff members, working hours, commission rates, and service eligibility.',
-    status: 'live',
-  },
-];
-
-export default function AdminHomePage() {
   return (
-    <div className="flex flex-col gap-s8">
-      <header className="flex flex-col gap-s2">
-        <span className="t-eyebrow text-accent">Admin</span>
-        <h1 className="t-display-lg">Tenant resources</h1>
-        <p className="t-body-md text-ink-soft">
-          Manage tenant-scoped data. Backend at{' '}
-          <code className="rounded-sm bg-surface-2 px-s2 py-[2px] t-body-sm">api.wellos.one</code>.
-        </p>
-      </header>
+    <div className="flex flex-col gap-s5">
+      <AlertsStrip alerts={data.alerts} />
 
-      <div className="grid grid-cols-1 gap-s4 md:grid-cols-2 lg:grid-cols-3">
-        {SURFACES.map((s) => {
-          const isLive = s.status === 'live';
-          const inner = (
-            <Card
-              padding="md"
-              className={
-                isLive
-                  ? 'h-full transition-[transform,box-shadow] duration-fast hover:-translate-y-px hover:shadow-md'
-                  : 'h-full opacity-60'
-              }
-            >
-              <div className="flex h-full flex-col gap-s3">
-                <div className="flex items-baseline justify-between gap-s2">
-                  <h2 className="t-display-sm">{s.title}</h2>
-                  {!isLive && (
-                    <span className="t-eyebrow text-ink-soft">Soon</span>
-                  )}
-                </div>
-                <p className="t-body-md text-ink-soft">{s.description}</p>
-              </div>
-            </Card>
-          );
+      <KpiStrip>
+        <KpiCard
+          id="bookings"
+          label="Bookings today"
+          icon={<CalendarIcon size={14} />}
+          value={data.bookings.value}
+          delta={data.bookings.delta}
+          sparkline={data.bookings.sparkline}
+        />
+        <KpiCard
+          id="revenue"
+          label="Revenue this week"
+          icon={<DollarIcon size={14} />}
+          value={data.revenue.value}
+          unit="$"
+          delta={data.revenue.delta}
+          sparkline={data.revenue.sparkline}
+        />
+        <KpiCard
+          id="clients"
+          label="New clients this week"
+          icon={<UserPlusIcon size={14} />}
+          value={data.newClients.value}
+          delta={data.newClients.delta}
+          sparkline={data.newClients.sparkline}
+        />
+        <KpiCard
+          id="utilization"
+          label="Studio utilization"
+          icon={<ZapIcon size={14} />}
+          value={data.utilization.value}
+          unit="%"
+          delta={data.utilization.delta}
+          sparkline={data.utilization.sparkline}
+        />
+      </KpiStrip>
 
-          if (s.status === 'soon') return <div key={s.title}>{inner}</div>;
-          return (
-            <Link key={s.title} href={s.href} className="no-underline">
-              {inner}
-            </Link>
-          );
-        })}
+      <ScheduleStrip
+        appointments={data.todaysSchedule}
+        dateLabel={data.todayLabel}
+      />
+
+      <div className="grid grid-cols-1 gap-s4 lg:grid-cols-12">
+        <div className="lg:col-span-8">
+          <RevenueChart {...data.revenueChart} />
+        </div>
+        <div className="lg:col-span-4">
+          <QuickActions />
+        </div>
+
+        <div className="lg:col-span-4">
+          <StaffOnShift rows={data.staffOnShift} />
+        </div>
+        <div className="lg:col-span-4">
+          <WaitlistPreview rows={data.waitlist} />
+        </div>
+        <div className="lg:col-span-4">
+          <OutstandingIntake rows={data.outstandingIntake} />
+        </div>
+
+        <div className="lg:col-span-12">
+          <NextUp rows={data.nextUp} />
+        </div>
       </div>
     </div>
   );
