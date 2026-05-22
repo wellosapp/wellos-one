@@ -295,26 +295,3 @@ export function UserPlusIcon(props: IconProps) {
     </Icon>
   );
 }
-
-// 3-dot horizontal — used by the client profile rail dock as a "More
-// actions" affordance. Rendered as filled dots so it reads as a discrete
-// action target, not a stroked icon like the rest of the library.
-export function MoreIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="6" cy="12" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="12" r="1.5" fill="currentColor" stroke="none" />
-    </Icon>
-  );
-}
-
-// Outlined star — used by the client profile rail dock as a "favorite
-// client" affordance. Stroked to match the library's editorial weight.
-export function StarIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M12 2l2.39 7.36H22l-6.19 4.49 2.36 7.27L12 16.77l-6.18 4.35 2.37-7.27L2 9.36h7.61z" />
-    </Icon>
-  );
-}
