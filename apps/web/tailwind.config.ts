@@ -50,10 +50,17 @@ const config: Config = {
         },
         terracotta: 'var(--terracotta)',
         rose: 'var(--rose)',
-        plum: 'var(--plum)',
+        plum: {
+          DEFAULT: 'var(--plum)',
+          pale: 'var(--plum-pale)',
+        },
         sky: {
           DEFAULT: 'var(--sky)',
           soft: 'var(--sky-soft)',
+          pale: 'var(--sky-pale)',
+        },
+        warm: {
+          pale: 'var(--warm-pale)',
         },
         red: {
           DEFAULT: 'var(--red)',

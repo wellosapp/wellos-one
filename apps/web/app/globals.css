@@ -59,8 +59,14 @@
   --terracotta: #B8634A;
   --rose: #D8A8A0;
   --plum: #6B4F66;
+  --plum-pale: #ECE4F0;
   --sky: #6D8FA8;
   --sky-soft: #C9D9E3;
+  --sky-pale: #E7EEF8;
+  /* Warm cream variant used for candlelight-style service chips in the
+     calendar river. Distinct from sand-soft (which is darker, used for
+     stronger sand emphasis). */
+  --warm-pale: #F6DFD2;
 
   /* ==== Color: Status ====
    * Status values map onto the warm palette: red → terracotta tone, amber

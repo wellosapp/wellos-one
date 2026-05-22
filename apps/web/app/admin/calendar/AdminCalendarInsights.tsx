@@ -37,10 +37,7 @@ export function AdminCalendarInsights({
     counts.in_progress;
 
   return (
-    <section
-      aria-label="Calendar insights"
-      className="grid gap-s4 md:grid-cols-3"
-    >
+    <div className="grid gap-s4 md:grid-cols-3">
       <div className="rounded-xl border border-surface-3 bg-white p-s5 shadow-sm">
         <h2 className="t-display-md text-ink">Needs attention</h2>
         <p className="mt-s1 t-body-sm text-ink-soft">
@@ -102,6 +99,6 @@ export function AdminCalendarInsights({
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
