@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import type { Route } from 'next';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -65,10 +67,38 @@ export function ClientDetailShell({
   visitTotal: number;
   children: ReactNode;
 }) {
-  const [quickBookOpen, setQuickBookOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const quickBookOpen = searchParams.get('quickbook') === '1';
   const canQuickBook = !summary.deletedAt && !summary.banned;
 
-  const quickBookButton = (
+  const openHref = (() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set('quickbook', '1');
+    return `${pathname}?${next.toString()}` as Route;
+  })();
+
+  const closeQuickBook = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('quickbook');
+    const qs = next.toString();
+    router.replace((qs ? `${pathname}?${qs}` : pathname) as Route);
+  }, [router, pathname, searchParams]);
+
+  const quickBookButton = canQuickBook ? (
+    <Link
+      href={openHref}
+      className={cn(
+        'inline-flex items-center gap-s2 rounded-md bg-sage-deep px-s5 py-s3',
+        't-body-sm font-semibold text-ink-inv no-underline shadow-md',
+        'transition-colors duration-fast hover:bg-ink',
+      )}
+    >
+      <CalendarIcon />
+      Quick Book
+    </Link>
+  ) : (
     <Button
       type="button"
       variant="primary"
@@ -77,13 +107,8 @@ export function ClientDetailShell({
         'gap-s2 bg-sage-deep text-ink-inv shadow-md',
         'enabled:hover:bg-ink',
       )}
-      disabled={!canQuickBook}
-      title={
-        !canQuickBook
-          ? 'Cannot Quick Book a banned or deleted client.'
-          : undefined
-      }
-      onClick={() => setQuickBookOpen(true)}
+      disabled
+      title="Cannot Quick Book a banned or deleted client."
     >
       <CalendarIcon />
       Quick Book
@@ -124,7 +149,7 @@ export function ClientDetailShell({
 
       <ClientQuickBookDrawer
         open={quickBookOpen}
-        onClose={() => setQuickBookOpen(false)}
+        onClose={closeQuickBook}
         client={summary}
         services={quickBookDirectory.services}
         staff={quickBookDirectory.staff}

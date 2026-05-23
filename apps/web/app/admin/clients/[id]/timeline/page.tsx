@@ -2,6 +2,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { CalendarIcon, FilterIcon, PlusIcon } from '@/app/admin/_shell/icons';
 import { ClientVisitTimeline } from '@/components/admin/ClientVisitTimeline';
 import { Badge, Button } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
@@ -61,6 +62,14 @@ export default async function ClientTimelinePage({
     return (`/admin/clients/${id}/timeline${qs ? `?${qs}` : ''}`) as Route;
   };
 
+  // Preserve existing filter / pagination params when opening Quick Book.
+  const quickBookParams = new URLSearchParams(filterQs);
+  if (skip > 0) quickBookParams.set('skip', String(skip));
+  quickBookParams.set('quickbook', '1');
+  const quickBookHref = (
+    `/admin/clients/${id}/timeline?${quickBookParams.toString()}`
+  ) as Route;
+
   return (
     <section
       className={cn(
@@ -68,7 +77,31 @@ export default async function ClientTimelinePage({
       )}
     >
       <header className="border-b border-line bg-surface-sunk/40 px-s6 py-s5 lg:px-s8 lg:py-s6">
-        <div className="t-eyebrow text-sage">Visits</div>
+        <div className="flex items-start justify-between gap-s4">
+          <div className="flex items-center gap-s2 t-eyebrow tracking-wide text-sage">
+            <CalendarIcon size={14} />
+            <span>VISITS</span>
+          </div>
+          <div className="flex items-center gap-s2">
+            <Link
+              href={quickBookHref}
+              className="inline-flex items-center gap-s2 rounded-full bg-accent px-s5 py-s2 text-[13px] font-semibold text-ink-inv no-underline transition-colors duration-fast hover:bg-sage-deep"
+            >
+              <PlusIcon size={14} />
+              New visit
+            </Link>
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              title="Coming soon — filters land in next release"
+              className="inline-flex items-center gap-s2 rounded-full border border-line bg-surface-2 px-s4 py-s2 text-[13px] font-medium text-ink-3 cursor-not-allowed opacity-60"
+            >
+              <FilterIcon size={14} />
+              Filter
+            </button>
+          </div>
+        </div>
         <h2 className="mt-s2 font-display text-[26px] text-ink">
           {total === 0
             ? 'No visits yet.'

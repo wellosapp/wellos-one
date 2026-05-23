@@ -352,3 +352,11 @@ export function RefreshIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function FilterIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+    </Icon>
+  );
+}

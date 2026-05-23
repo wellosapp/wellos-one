@@ -1,5 +1,5 @@
 import { Badge, Card } from '@/components/ui';
-import type { ClientTimelineVisit } from '@/lib/api/timeline';
+import type { AppointmentSummary, ClientTimelineVisit } from '@/lib/api/timeline';
 
 import { LinkedNotesList } from './LinkedNotesList';
 
@@ -36,6 +36,21 @@ const STATUS_LABEL: Record<ClientTimelineVisit['appointment']['state'], string> 
     cancelled: 'Cancelled',
     no_show: 'No-show',
   };
+
+const SOURCE_LABEL: Record<AppointmentSummary['source'], string> = {
+  web: 'Online',
+  staff: 'Admin',
+  widget: 'Embed',
+  api: 'API',
+  import: 'Import',
+  campaign: 'Campaign',
+  walk_in: 'Walk-in',
+  quick_book: 'Quick Book',
+};
+
+function sourceLabel(source: AppointmentSummary['source']): string | null {
+  return SOURCE_LABEL[source] ?? null;
+}
 
 function formatRange(startIso: string, endIso: string): string {
   const start = new Date(startIso);
@@ -83,12 +98,19 @@ export function TimelineAppointmentCard({
           <span className="t-eyebrow text-accent">
             {formatRange(appointment.scheduledStartAt, appointment.scheduledEndAt)}
           </span>
-          <h3 className="t-display-sm">{service.name}</h3>
+          <h3 className="t-display-sm">
+            {service.name} — {service.durationMinutes} minutes
+          </h3>
           <p className="t-body-sm text-ink-soft">
             with {staff.firstName}
             {staff.lastName ? ` ${staff.lastName}` : ''}
             {staff.jobTitle ? ` · ${staff.jobTitle}` : ''}
           </p>
+          {sourceLabel(appointment.source) ? (
+            <p className="t-body-sm italic text-ink-3">
+              {sourceLabel(appointment.source)}
+            </p>
+          ) : null}
         </div>
         <Badge tone={STATUS_TONE[appointment.state]}>
           {STATUS_LABEL[appointment.state]}
@@ -107,7 +129,7 @@ export function TimelineAppointmentCard({
         </p>
       )}
 
-      <section className="flex flex-col gap-s2">
+      <section className="flex flex-col gap-s2 border-t border-line pt-s4">
         <div className="flex items-center gap-s2">
           <h4 className="t-eyebrow text-ink-soft">Notes</h4>
           {notes.length > 0 && <Badge tone="neutral">{notes.length}</Badge>}
@@ -116,7 +138,7 @@ export function TimelineAppointmentCard({
       </section>
 
       {bookingAnswers.length > 0 && (
-        <section className="flex flex-col gap-s2">
+        <section className="flex flex-col gap-s2 border-t border-line pt-s4">
           <div className="flex items-center gap-s2">
             <h4 className="t-eyebrow text-ink-soft">Triage answers</h4>
             <Badge tone="neutral">{bookingAnswers.length}</Badge>
@@ -140,7 +162,7 @@ export function TimelineAppointmentCard({
       )}
 
       {soapNote && (
-        <section className="flex flex-col gap-s2">
+        <section className="flex flex-col gap-s2 border-t border-line pt-s4">
           <div className="flex flex-wrap items-center gap-s2">
             <h4 className="t-eyebrow text-ink-soft">SOAP note</h4>
             {soapNote.locked ? (
@@ -159,7 +181,7 @@ export function TimelineAppointmentCard({
       )}
 
       {files.length > 0 && (
-        <section className="flex items-center gap-s2">
+        <section className="flex items-center gap-s2 border-t border-line pt-s4">
           <h4 className="t-eyebrow text-ink-soft">Reference files</h4>
           <Badge tone="neutral">{files.length}</Badge>
         </section>
