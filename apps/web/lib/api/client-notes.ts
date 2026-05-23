@@ -122,3 +122,30 @@ export async function deleteClientNote(
     method: 'DELETE',
   });
 }
+
+// PATCH /admin/clients/:clientId/notes/:noteId — partial update (staff-role guarded).
+// Returns the updated note. NOT YET CALLED FROM UI — added for forward-compat
+// to land cleanly when the Edit kebab item lights up in a follow-up.
+export type UpdateClientNoteBody = {
+  category?: NoteCategory;
+  priority?: NotePriority;
+  title?: string | null;
+  body?: string;
+  visibility?: NoteVisibility;
+  customerVisible?: boolean;
+  alertTriggers?: NoteAlertTrigger[];
+  expiresAt?: string | null;
+  appointmentId?: string | null;
+  serviceId?: string | null;
+};
+
+export async function updateClientNote(
+  clientId: string,
+  noteId: string,
+  body: UpdateClientNoteBody,
+): Promise<{ note: ClientNoteSummary }> {
+  return apiFetch(`/admin/clients/${clientId}/notes/${noteId}`, {
+    method: 'PATCH',
+    body,
+  });
+}
