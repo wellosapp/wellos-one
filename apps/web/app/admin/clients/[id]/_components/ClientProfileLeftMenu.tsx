@@ -15,6 +15,8 @@ import {
   TrendUpIcon,
 } from '@/app/admin/_shell/icons';
 
+import { ClientProfileRailDock } from './ClientProfileRailDock';
+
 // Left section menu for the client profile. Reads its own active state
 // from `usePathname()` so the parent layout (a server component) doesn't
 // need to thread an `activeKey` prop. Same pattern as the previous
@@ -124,6 +126,10 @@ export function ClientProfileLeftMenu({
           'border border-line bg-surface p-s2 shadow-sm',
         )}
       >
+        {/* Pills row + the 3-icon dock pinned to the right edge — the
+            dock is also rendered at the bottom of the sidebar variant for
+            screens ≥xl. Showing it here means narrow-screen users still
+            see the More / Message / Favorite shortcuts. */}
         {items.map((item) => {
           const isActive = active === item.key;
           return (
@@ -148,7 +154,7 @@ export function ClientProfileLeftMenu({
                 <span
                   className={cn(
                     'ml-s1 inline-flex min-w-[22px] items-center justify-center',
-                    'rounded-sm px-s2 t-caption tabular-nums',
+                    'rounded-full px-s2 t-caption tabular-nums',
                     isActive
                       ? 'bg-sage text-ink-inv'
                       : 'bg-surface-sunk text-ink-3',
@@ -160,6 +166,9 @@ export function ClientProfileLeftMenu({
             </Link>
           );
         })}
+        <div className="ml-auto flex shrink-0 items-center border-l border-line pl-s2">
+          <ClientProfileRailDock />
+        </div>
       </nav>
     );
   }
@@ -199,7 +208,7 @@ export function ClientProfileLeftMenu({
               <span
                 className={cn(
                   'inline-flex min-w-[22px] items-center justify-center',
-                  'rounded-sm px-s2 t-caption tabular-nums',
+                  'rounded-full px-s2 t-caption tabular-nums',
                   isActive
                     ? 'bg-sage text-ink-inv'
                     : 'bg-surface-sunk text-ink-3',
@@ -220,6 +229,9 @@ export function ClientProfileLeftMenu({
           </Link>
         );
       })}
+      <div className="mt-s3 border-t border-line pt-s3">
+        <ClientProfileRailDock />
+      </div>
     </nav>
   );
 }

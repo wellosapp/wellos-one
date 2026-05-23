@@ -62,12 +62,23 @@ function CalendarIcon({ className }: { className?: string }) {
 export function ClientProfileHero({
   summary,
   hero,
+  visitTotal,
   quickBookSlot,
 }: {
   summary: ClientQuickBookSummary;
   hero: ClientProfileHeroMeta;
+  /** Lifetime visit count, used to surface a First-time badge for new clients. */
+  visitTotal: number;
   quickBookSlot: ReactNode;
 }) {
+  // Pronouns isn't yet on the Client schema — silent gate stays falsy until
+  // the migration lands; the chip then renders without any further change.
+  const pronouns =
+    'pronouns' in summary && typeof (summary as { pronouns?: unknown }).pronouns === 'string'
+      ? ((summary as { pronouns?: string }).pronouns ?? '').trim()
+      : '';
+  const isFirstTime =
+    visitTotal === 0 && !summary.banned && !summary.deletedAt;
   const displayName =
     [summary.firstName, summary.lastName].filter(Boolean).join(' ').trim() ||
     'Client';
@@ -157,6 +168,33 @@ export function ClientProfileHero({
                 Inactive · {new Date(summary.deletedAt).toLocaleDateString()}
               </Badge>
             )}
+            {isFirstTime && (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-full px-s3 py-[2px]',
+                  'bg-sand-soft text-ink-2 text-[12px] font-medium',
+                )}
+              >
+                First-time
+              </span>
+            )}
+            {/* Pronouns chip — design's third hero badge. When the schema
+                lands the chip shows the actual value; until then, render a
+                dimmed Coming-soon placeholder so the row visually matches
+                the design's three-chip composition. */}
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full border border-line px-s3 py-[2px]',
+                'bg-surface-2 text-[12px] font-medium',
+                pronouns
+                  ? 'text-ink-2'
+                  : 'cursor-not-allowed text-ink-4 opacity-70',
+              )}
+              title={pronouns ? undefined : 'Coming soon — pronouns chip lights up once the schema migration lands.'}
+              aria-disabled={pronouns ? undefined : 'true'}
+            >
+              {pronouns || 'Pronouns'}
+            </span>
             {summary.tags.map((t) => (
               <Badge key={t.id} tone="neutral">
                 {t.name}

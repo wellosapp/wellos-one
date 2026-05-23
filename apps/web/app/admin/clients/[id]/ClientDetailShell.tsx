@@ -110,6 +110,7 @@ export function ClientDetailShell({
         <ClientProfileHero
           summary={summary}
           hero={hero}
+          visitTotal={visitTotal}
           quickBookSlot={quickBookButton}
         />
 

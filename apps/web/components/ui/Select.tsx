@@ -18,6 +18,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     <div className="relative">
       <select
         ref={ref}
+        // color-scheme:light forces the option list popup to use the OS light
+        // theme even when the user's system theme is dark — without it, the
+        // browser-native <option> dropdown renders with a dark fill on macOS
+        // and Windows in dark mode, while the closed select stays white. The
+        // visual mismatch was the 'dark Intake status dropdown' bug.
+        style={{ colorScheme: 'light' }}
         className={cn(
           'w-full bg-white text-ink font-sans text-[16px] appearance-none',
           'border-[1.5px] rounded-md',
