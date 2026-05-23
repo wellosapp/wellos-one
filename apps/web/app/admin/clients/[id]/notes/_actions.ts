@@ -8,7 +8,23 @@ import {
   deleteClientNote,
   pinClientNote,
   type CreateClientNoteBody,
+  type NoteCategory,
+  type NotePriority,
 } from '@/lib/api/client-notes';
+
+// The 8 user-facing categories surfaced in the composer dropdown. Other
+// enum values still render as badges on existing notes, but new notes
+// can only be created from this short list.
+const USER_FACING_CATEGORIES = new Set<NoteCategory>([
+  'general',
+  'preference',
+  'formula',
+  'allergy',
+  'medical',
+  'behavioral',
+  'billing',
+  'internal',
+]);
 
 // Server actions for the client profile Notes section. Thin wrappers around
 // the API helpers. Tenant scoping + role enforcement (admin-only DELETE, etc.)
@@ -46,12 +62,32 @@ export async function createClientNoteAction(
 
   const pinned = formData.get('pinned') === '1';
 
-  // The composer is intentionally minimal (per plan §"Out of scope"): we
-  // only collect body + pinned. Other API-supported fields (category,
-  // priority, visibility, etc.) default to admin-internal values.
+  // Category — fall back to 'general' silently if the submitted value isn't
+  // in the user-facing list (forward-compat for future dropdown changes).
+  const categoryRaw = formData.get('category');
+  const categoryCandidate =
+    typeof categoryRaw === 'string' ? (categoryRaw as NoteCategory) : 'general';
+  const category: NoteCategory = USER_FACING_CATEGORIES.has(categoryCandidate)
+    ? categoryCandidate
+    : 'general';
+
+  // Priority — default 'normal' if anything other than 'alert' comes through.
+  const priorityRaw = formData.get('priority');
+  const priority: NotePriority =
+    typeof priorityRaw === 'string' && priorityRaw === 'alert'
+      ? 'alert'
+      : 'normal';
+
+  // Title — optional; empty string normalizes to undefined.
+  const titleRaw = formData.get('title');
+  const titleTrimmed =
+    typeof titleRaw === 'string' ? titleRaw.trim() : '';
+  const title = titleTrimmed.length > 0 ? titleTrimmed : undefined;
+
   const payload: CreateClientNoteBody = {
-    category: 'general',
-    priority: 'normal',
+    category,
+    priority,
+    title,
     body,
     sourceSurface: 'client_profile',
     visibility: 'admin_only',
