@@ -2,11 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
 import { requireRole } from '../../middleware/requireRole.js';
+import { ClientActivityQuerySchema } from '../../schemas/clientActivity.js';
 import {
   AppointmentIdParamsSchema,
   ClientIdParamsSchema,
   ClientTimelineQuerySchema,
 } from '../../schemas/linkedRecords.js';
+import { getClientActivity } from '../../services/clientActivityService.js';
 import {
   getAppointmentLinkedRecords,
   getClientTimeline,
@@ -84,6 +86,39 @@ export default async function linkedRecordsRoutes(
       }
 
       const result = await getClientTimeline(app.prisma, {
+        tenantId,
+        clientId: params.data.clientId,
+        query: query.data,
+      });
+      if (!result) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Client not found.',
+        });
+      }
+      return reply.send(result);
+    },
+  );
+
+  // GET /admin/clients/:clientId/activity — per-client audit-log feed
+  // (cross-entity: client edits + notes + appointments + intake + media).
+  app.get(
+    '/clients/:clientId/activity',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = ClientIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const query = ClientActivityQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return reply.code(400).send(zodErrorBody(query.error));
+      }
+
+      const result = await getClientActivity(app.prisma, {
         tenantId,
         clientId: params.data.clientId,
         query: query.data,
