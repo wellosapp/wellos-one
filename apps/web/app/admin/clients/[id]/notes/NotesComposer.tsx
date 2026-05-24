@@ -282,10 +282,15 @@ export function NotesComposer({
           </span>
         )}
 
-        <Link href={closeHref} className="no-underline">
-          <Button variant="ghost" size="md" type="button">
-            Cancel
-          </Button>
+        <Link
+          href={closeHref}
+          className={cn(
+            'inline-flex items-center rounded-md px-s5 py-[10px]',
+            'text-[14px] font-medium text-ink no-underline',
+            'transition-colors duration-fast hover:bg-surface-2',
+          )}
+        >
+          Cancel
         </Link>
 
         <Button
