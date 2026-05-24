@@ -4,12 +4,16 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  useActionState,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
 } from 'react';
+// useFormState / useFormStatus from react-dom are the React-18 equivalents of
+// useActionState (react), which only exists in React 19. Next.js 14 ships a
+// React 18 canary at runtime; the older hooks are what's actually available.
+// Same pattern as ClientForm.tsx + ServiceForm.tsx etc.
+import { useFormState, useFormStatus } from 'react-dom';
 
 import { PinIcon } from '@/app/admin/_shell/icons';
 import { Button, Input, Select } from '@/components/ui';
@@ -51,7 +55,10 @@ export function NotesComposer({
 }) {
   const router = useRouter();
   const boundAction = createClientNoteAction.bind(null, clientId);
-  const [state, formAction, isPending] = useActionState(boundAction, INITIAL);
+  const [state, formAction] = useFormState<NotesActionState, FormData>(
+    boundAction,
+    INITIAL,
+  );
 
   const [category, setCategory] = useState<string>('general');
   const [priority, setPriority] = useState<'normal' | 'alert'>('normal');
@@ -100,7 +107,6 @@ export function NotesComposer({
             name="category"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            disabled={isPending}
           >
             {CATEGORY_OPTIONS.map((c) => (
               <option key={c.value} value={c.value}>
@@ -160,7 +166,6 @@ export function NotesComposer({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Short headline for this note"
-          disabled={isPending}
         />
       </div>
 
@@ -185,9 +190,7 @@ export function NotesComposer({
             'placeholder:text-placeholder',
             'focus:outline-none focus:border-accent focus:shadow-focus',
             'transition-[border-color,box-shadow] duration-fast',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
           )}
-          disabled={isPending}
           required
         />
       </div>
@@ -293,17 +296,26 @@ export function NotesComposer({
           Cancel
         </Link>
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="md"
-          className={cn('bg-sage-deep text-ink-inv enabled:hover:bg-ink')}
-          disabled={isPending || body.trim().length === 0}
-          loading={isPending}
-        >
-          Add note
-        </Button>
+        <SubmitButton bodyEmpty={body.trim().length === 0} />
       </div>
     </form>
+  );
+}
+
+// useFormStatus must be called from a child of the <form>. Sibling pattern
+// to ClientForm.tsx's SubmitButton.
+function SubmitButton({ bodyEmpty }: { bodyEmpty: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <Button
+      type="submit"
+      variant="primary"
+      size="md"
+      className={cn('bg-sage-deep text-ink-inv enabled:hover:bg-ink')}
+      disabled={pending || bodyEmpty}
+      loading={pending}
+    >
+      Add note
+    </Button>
   );
 }
