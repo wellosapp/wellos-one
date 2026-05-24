@@ -1,10 +1,7 @@
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-
-import { Badge, Button, Card } from '@/components/ui';
-import { ApiError } from '@/lib/api/client';
+import { Button } from '@/components/ui';
+import { UserIcon, WarnIcon } from '@/app/admin/_shell/icons';
 import { listServices } from '@/lib/api/services';
-import { getStaff, DAY_KEYS, type DayKey } from '@/lib/api/staff';
+import { DAY_KEYS, type DayKey } from '@/lib/api/staff';
 
 import { StaffForm } from '../StaffForm';
 import type { StaffFormValues } from '../_actions';
@@ -12,9 +9,11 @@ import { deleteStaffAction, updateStaffAction } from '../_actions';
 import { BookingPreferencesCard } from './BookingPreferencesCard';
 import { updateStaffBookingPrefsAction } from './_booking-preferences-actions';
 import { CalendarFeedCard } from './CalendarFeedCard';
+import { SectionHeader } from './_components/SectionHeader';
+import { loadStaffDetail } from './_components/_data';
 
 function staffToFormDefaults(
-  s: Awaited<ReturnType<typeof getStaff>>['staff'],
+  s: Awaited<ReturnType<typeof loadStaffDetail>>,
 ): StaffFormValues {
   // Working hours JSONB → per-day form rows. Pull the FIRST shift only
   // (UI defers multi-shift; the backend preserves multi-shift data on
@@ -61,24 +60,13 @@ function staffToFormDefaults(
   };
 }
 
-export default async function StaffDetailPage({
+export default async function StaffOverviewPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-
-  let staff;
-  try {
-    const result = await getStaff(id);
-    staff = result.staff;
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      notFound();
-    }
-    throw err;
-  }
-
+  const staff = await loadStaffDetail(id);
   const { services } = await listServices({ active: true, take: 200 });
 
   const updateAction = updateStaffAction.bind(null, id);
@@ -87,38 +75,12 @@ export default async function StaffDetailPage({
 
   return (
     <div className="flex flex-col gap-s6">
-      <div>
-        <Link
-          href="/admin/staff"
-          className="t-body-sm text-accent no-underline hover:underline"
-        >
-          ← Back to staff
-        </Link>
-      </div>
-
-      <header className="flex flex-wrap items-baseline justify-between gap-s4">
-        <div className="flex flex-col gap-s1">
-          <span className="t-eyebrow text-accent">Staff</span>
-          <h1 className="t-display-lg">
-            {staff.firstName}
-            {staff.lastName ? ` ${staff.lastName}` : ''}
-          </h1>
-          {staff.jobTitle && (
-            <span className="t-body-md text-ink-soft">{staff.jobTitle}</span>
-          )}
-        </div>
-        {staff.deletedAt ? (
-          <Badge tone="red">
-            Soft-deleted {new Date(staff.deletedAt).toLocaleString()}
-          </Badge>
-        ) : staff.active ? (
-          <Badge tone="green">Active</Badge>
-        ) : (
-          <Badge tone="neutral">Inactive</Badge>
-        )}
-      </header>
-
-      <Card padding="lg">
+      <SectionHeader
+        icon={UserIcon}
+        eyebrow="OVERVIEW"
+        headline={`Overview for ${staff.firstName}.`}
+        subtitle="Personal information, working hours, services, and booking settings."
+      >
         <StaffForm
           action={updateAction}
           initial={staffToFormDefaults(staff)}
@@ -126,7 +88,7 @@ export default async function StaffDetailPage({
           submitLabel="Save changes"
           successMessage="Staff updated."
         />
-      </Card>
+      </SectionHeader>
 
       {!staff.deletedAt && (
         <BookingPreferencesCard
@@ -148,13 +110,22 @@ export default async function StaffDetailPage({
       {!staff.deletedAt && <CalendarFeedCard staffId={staff.id} />}
 
       {!staff.deletedAt && (
-        <Card padding="md" className="border border-red/20 bg-red-pale/40">
+        <SectionHeader
+          icon={WarnIcon}
+          eyebrow="DANGER ZONE"
+          headline="Soft-delete this staff member."
+          subtitle="Hides from booking and lists; preserves service assignments for the audit trail."
+          tone="danger"
+        >
           <div className="flex flex-wrap items-center justify-between gap-s4">
-            <div className="flex flex-col gap-s1">
-              <h2 className="t-display-sm">Soft-delete staff</h2>
-              <p className="t-body-sm text-ink-soft">
-                Hides from booking and lists; preserves service assignments for the
-                audit trail. Reversible by an admin via DB.
+            <div className="flex max-w-xl flex-col gap-s1">
+              <h3 className="font-display text-[18px] text-ink">
+                Remove from active lists
+              </h3>
+              <p className="t-body-sm leading-relaxed text-ink-3">
+                Soft-delete hides this staff member from booking flows and admin
+                lists while preserving service assignment history. Restoration
+                is a database admin task today.
               </p>
             </div>
             <form action={deleteAction}>
@@ -162,13 +133,13 @@ export default async function StaffDetailPage({
                 type="submit"
                 variant="ghost"
                 size="md"
-                className="text-red hover:bg-red-pale"
+                className="whitespace-nowrap text-red hover:bg-red-pale"
               >
-                Soft-delete
+                Soft-delete staff
               </Button>
             </form>
           </div>
-        </Card>
+        </SectionHeader>
       )}
     </div>
   );
