@@ -9,6 +9,7 @@ import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/
 
 import type { ActionState, ServiceFormValues } from './_actions';
 import type { BookingPolicy, ServicePriceDisplayMode } from '@/lib/api/services';
+import type { BrandColor } from './_constants/colors';
 import { ServiceColorPicker } from './ServiceColorPicker';
 
 function SubmitButton({ label }: { label: string }) {
@@ -70,6 +71,9 @@ type Props = {
   categories: CategoryOption[];
   submitLabel?: string;
   successMessage?: string;
+  /** Tenant brand-color palette. Defaults via ServiceColorPicker to the
+   *  Wellos FALLBACK_BRAND_COLORS when omitted. */
+  presets?: BrandColor[];
 };
 
 export function ServiceForm({
@@ -79,6 +83,7 @@ export function ServiceForm({
   categories,
   submitLabel = 'Save',
   successMessage = 'Saved.',
+  presets,
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
@@ -325,6 +330,7 @@ export function ServiceForm({
             name="color"
             defaultValue={values.color ?? ''}
             error={Boolean(fieldErrors.color)}
+            presets={presets}
           />
         </FormField>
 

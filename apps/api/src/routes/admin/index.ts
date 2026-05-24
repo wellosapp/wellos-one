@@ -21,6 +21,7 @@ import staffCalendarSyncRoutes from './staff-calendar-sync.js';
 import staffOnboardingFormsRoutes from './staff-onboarding-forms.js';
 import staffScheduleBlocksRoutes from './staff-schedule-blocks.js';
 import staffRoutes from './staff.js';
+import tenantBrandRoutes from './tenant-brand.js';
 import triageRoutes from './triage.js';
 import waitlistRoutes from './waitlist.js';
 import whoamiRoutes from './whoami.js';
@@ -51,6 +52,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(onboardingRoutes, { prefix: '/admin' });
   await app.register(intakeFormsRoutes, { prefix: '/admin' });
   await app.register(staffOnboardingFormsRoutes, { prefix: '/admin' });
+  await app.register(tenantBrandRoutes, { prefix: '/admin' });
   await app.register(waitlistRoutes, { prefix: '/admin' });
   await app.register(impersonateRoutes, { prefix: '/admin' });
 }

@@ -10,6 +10,7 @@ import { listStaff } from '@/lib/api/staff';
 import { ServiceForm } from '../ServiceForm';
 import type { ServiceFormValues } from '../_actions';
 import { deleteServiceAction, updateServiceAction } from '../_actions';
+import { loadTenantBrandColors } from '../_constants/loadTenantBrandColors';
 
 function serviceToFormDefaults(s: ServiceWithStaff): ServiceFormValues {
   return {
@@ -49,9 +50,10 @@ export default async function ServiceDetailPage({
     throw err;
   }
 
-  const [staffResp, categoriesResp] = await Promise.all([
+  const [staffResp, categoriesResp, brandColors] = await Promise.all([
     listStaff({ active: true, take: 200 }),
     listServiceCategories({ take: 200 }),
+    loadTenantBrandColors(),
   ]);
   const { staff } = staffResp;
   const { categories } = categoriesResp;
@@ -97,6 +99,7 @@ export default async function ServiceDetailPage({
             lastName: s.lastName,
             jobTitle: s.jobTitle,
           }))}
+          presets={brandColors}
           submitLabel="Save changes"
           successMessage="Service updated."
         />

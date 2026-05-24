@@ -6,15 +6,17 @@ import { listStaff } from '@/lib/api/staff';
 
 import { ServiceForm } from '../ServiceForm';
 import { createServiceAction } from '../_actions';
+import { loadTenantBrandColors } from '../_constants/loadTenantBrandColors';
 
 export default async function NewServicePage() {
   // Fetch active staff so the form can render the multi-select. Take a
   // generous page so we never accidentally omit one — Service.staffIds
   // caps at 200, and a tenant with >200 staff has bigger problems than
   // a paginated form.
-  const [staffResp, categoriesResp] = await Promise.all([
+  const [staffResp, categoriesResp, brandColors] = await Promise.all([
     listStaff({ active: true, take: 200 }),
     listServiceCategories({ take: 200 }),
+    loadTenantBrandColors(),
   ]);
   const { staff } = staffResp;
   const { categories } = categoriesResp;
@@ -43,6 +45,7 @@ export default async function NewServicePage() {
             lastName: s.lastName,
             jobTitle: s.jobTitle,
           }))}
+          presets={brandColors}
           submitLabel="Create service"
         />
       </Card>

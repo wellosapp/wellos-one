@@ -1,5 +1,9 @@
+import type { Route } from 'next';
+import Link from 'next/link';
+
 import { Card } from '@/components/ui';
 import { getTenantBookingSettings } from '@/lib/api/booking-settings';
+import { cn } from '@/lib/cn';
 
 import { BookingSettingsForm } from './BookingSettingsForm';
 import {
@@ -34,6 +38,23 @@ export default async function AdminSettingsPage() {
 
   return (
     <div className="flex flex-col gap-s6">
+      <Link
+        href={'/admin/settings/branding' as Route}
+        className={cn(
+          'block rounded-md border border-line bg-surface p-s5 shadow-sm',
+          'transition-colors duration-fast hover:bg-sage-tint-2 no-underline',
+        )}
+      >
+        <div className="t-eyebrow tracking-wide text-sage">BRAND PALETTE</div>
+        <h2 className="mt-s2 font-display text-[18px] text-ink">
+          Customize your brand colors →
+        </h2>
+        <p className="mt-s1 t-body-sm text-ink-3">
+          Edit the color palette used in service color pickers and (future) the
+          public booking page.
+        </p>
+      </Link>
+
       <header className="flex flex-col gap-s1">
         <span className="t-eyebrow text-accent">Settings</span>
         <h1 className="t-display-lg">Booking settings</h1>
