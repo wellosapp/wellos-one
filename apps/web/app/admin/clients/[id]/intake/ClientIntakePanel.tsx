@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui';
+import { Alert, Button, Select } from '@/components/ui';
+import { cn } from '@/lib/cn';
 import type {
   IntakeFormDefinitionDto,
   IntakeFormSubmissionDto,
@@ -13,6 +14,28 @@ import {
   startClientIntakeDraftAction,
   submitClientIntakeAction,
 } from './_actions';
+
+// Two-section panel: Submissions list + Start-a-draft form. Each section is
+// a card matching the SectionHeader chrome used elsewhere on the client
+// profile (Overview / Visits / Book / Notes / Files).
+
+function relativeOrAbsolute(iso: string): string {
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const diff = Math.max(0, now - then);
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export function ClientIntakePanel({
   clientId,
@@ -25,56 +48,73 @@ export function ClientIntakePanel({
 }) {
   const [pendingStart, startTransition] = useTransition();
   const [pendingSubmit, submitTransition] = useTransition();
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{
+    tone: 'success' | 'error';
+    text: string;
+  } | null>(null);
   const [defId, setDefId] = useState(publishedForms[0]?.id ?? '');
 
   return (
-    <div className="space-y-s6">
-      <Card
-        padding="lg"
-        className="rounded-2xl border border-surface-3 bg-white shadow-sm"
+    <div className="flex flex-col gap-s6">
+      {message && (
+        <Alert tone={message.tone}>{message.text}</Alert>
+      )}
+
+      <SectionCard
+        eyebrow="SUBMISSIONS"
+        headline="Drafts and completed intake."
+        subtitle="Submitting locks the answers and writes an audit row (IP + user agent)."
       >
-        <h2 className="font-display t-heading-md text-ink">Submissions</h2>
-        <p className="mt-s2 max-w-2xl t-body-md text-ink-soft">
-          Drafts and completed intake forms for this client. Submitting locks
-          the answers and writes an audit row (IP and user agent).
-        </p>
-
-        {message ? (
-          <p className="mt-s4 t-body-sm text-ink-soft" role="status">
-            {message}
-          </p>
-        ) : null}
-
         {submissions.length === 0 ? (
-          <p className="mt-s4 t-body-md text-ink-soft">No submissions yet.</p>
+          <div
+            className={cn(
+              'rounded-md border border-line bg-surface-2 p-s8 text-center',
+            )}
+          >
+            <h4 className="font-display text-[20px] text-ink">
+              No submissions yet.
+            </h4>
+            <p className="mx-auto mt-s2 max-w-sm t-body-sm text-ink-3">
+              Start a draft below to record this client&apos;s answers
+              against a published intake form.
+            </p>
+          </div>
         ) : (
-          <ul className="mt-s4 divide-y divide-surface-3 border border-surface-3 rounded-lg">
+          <ul className="flex flex-col gap-s2">
             {submissions.map((s) => (
               <li
                 key={s.id}
-                className="flex flex-wrap items-center justify-between gap-s3 px-s4 py-s3"
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-s3',
+                  'rounded-md border border-line bg-surface-2 px-s4 py-s3 shadow-sm',
+                )}
               >
-                <div>
-                  <p className="t-body-md font-medium text-ink">
-                    {s.definition.title}{' '}
-                    <span className="t-caption font-normal text-ink-soft">
-                      (v{s.definition.version})
+                <div className="flex min-w-0 flex-1 flex-col gap-s1">
+                  <div className="flex flex-wrap items-center gap-s2">
+                    <span className="t-body-md font-medium text-ink">
+                      {s.definition.title}
                     </span>
-                  </p>
-                  <p className="t-caption text-ink-soft capitalize">
-                    {s.status}
+                    <span className="t-caption text-ink-4">
+                      v{s.definition.version}
+                    </span>
+                    <StatusBadge status={s.status} />
+                  </div>
+                  <span className="t-caption uppercase tracking-wide text-ink-4">
                     {s.submittedAt
-                      ? ` · ${new Date(s.submittedAt).toLocaleString()}`
-                      : null}
-                  </p>
+                      ? `Submitted ${relativeOrAbsolute(s.submittedAt)}`
+                      : `Draft created ${relativeOrAbsolute(s.createdAt)}`}
+                  </span>
                 </div>
-                {s.status === 'draft' ? (
+                {s.status === 'draft' && (
                   <Button
                     type="button"
-                    variant="accent"
+                    variant="primary"
                     size="sm"
+                    className={cn(
+                      'bg-sage-deep text-ink-inv enabled:hover:bg-ink',
+                    )}
                     loading={pendingSubmit}
+                    disabled={pendingSubmit}
                     onClick={() => {
                       setMessage(null);
                       submitTransition(async () => {
@@ -82,65 +122,114 @@ export function ClientIntakePanel({
                           clientId,
                           s.id,
                         );
-                        if (!r.ok) setMessage(r.error ?? 'Submit failed.');
-                        else setMessage('Submitted.');
+                        if (!r.ok) {
+                          setMessage({
+                            tone: 'error',
+                            text: r.error ?? 'Submit failed.',
+                          });
+                        } else {
+                          setMessage({
+                            tone: 'success',
+                            text: 'Submission locked.',
+                          });
+                        }
                       });
                     }}
                   >
                     Submit as finished
                   </Button>
-                ) : null}
+                )}
               </li>
             ))}
           </ul>
         )}
-      </Card>
+      </SectionCard>
 
-      <Card
-        padding="lg"
-        className="rounded-2xl border border-surface-3 bg-white shadow-sm"
+      <SectionCard
+        eyebrow="NEW DRAFT"
+        headline="Create an intake draft."
+        subtitle={
+          <>
+            Only <strong className="text-ink-2">published</strong> forms appear
+            here. Manage definitions in{' '}
+            <Link
+              href="/admin/intake-forms"
+              className="text-sage-deep underline hover:text-ink"
+            >
+              Intake forms
+            </Link>
+            .
+          </>
+        }
       >
-        <h2 className="font-display t-heading-md text-ink">Start a draft</h2>
-        <p className="mt-s2 t-body-md text-ink-soft">
-          Only <strong className="text-ink">published</strong> forms appear
-          here. Manage definitions in{' '}
-          <a href="/admin/intake-forms" className="text-accent hover:underline">
-            Intake forms
-          </a>
-          .
-        </p>
-
         {publishedForms.length === 0 ? (
-          <p className="mt-s4 t-body-md text-ink-soft">
-            No published forms yet. Publish a form first, then return here.
-          </p>
+          <div
+            className={cn(
+              'rounded-md border border-line bg-surface-2 p-s8 text-center',
+            )}
+          >
+            <h4 className="font-display text-[20px] text-ink">
+              No published forms yet.
+            </h4>
+            <p className="mx-auto mt-s2 max-w-md t-body-sm text-ink-3">
+              Publish a form definition first.{' '}
+              <Link
+                href="/admin/intake-forms"
+                className="text-sage-deep underline hover:text-ink"
+              >
+                Open Intake forms
+              </Link>
+              .
+            </p>
+          </div>
         ) : (
-          <div className="mt-s4 flex flex-wrap items-end gap-s3">
-            <label className="block space-y-s2">
-              <span className="t-label text-ink">Published form</span>
-              <select
+          <div className="flex flex-wrap items-end gap-s4">
+            <div className="flex min-w-[260px] flex-col gap-s2">
+              <label
+                htmlFor="intake-definition"
+                className="t-eyebrow tracking-wide text-ink-3"
+              >
+                PUBLISHED FORM
+              </label>
+              <Select
+                id="intake-definition"
                 value={defId}
                 onChange={(e) => setDefId(e.target.value)}
-                className="min-w-[240px] rounded-lg border border-surface-3 bg-white px-s3 py-s2 t-body-md text-ink"
               >
                 {publishedForms.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.title} (v{f.version})
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </div>
             <Button
               type="button"
-              variant="accent"
+              variant="primary"
+              size="md"
+              className={cn(
+                'bg-sage-deep text-ink-inv enabled:hover:bg-ink',
+              )}
               loading={pendingStart}
-              disabled={!defId}
+              disabled={!defId || pendingStart}
               onClick={() => {
                 setMessage(null);
                 startTransition(async () => {
-                  const r = await startClientIntakeDraftAction(clientId, defId);
-                  if (!r.ok) setMessage(r.error ?? 'Could not create draft.');
-                  else setMessage('Draft created.');
+                  const r = await startClientIntakeDraftAction(
+                    clientId,
+                    defId,
+                  );
+                  if (!r.ok) {
+                    setMessage({
+                      tone: 'error',
+                      text: r.error ?? 'Could not create draft.',
+                    });
+                  } else {
+                    setMessage({
+                      tone: 'success',
+                      text: 'Draft created.',
+                    });
+                  }
                 });
               }}
             >
@@ -148,7 +237,72 @@ export function ClientIntakePanel({
             </Button>
           </div>
         )}
-      </Card>
+      </SectionCard>
     </div>
+  );
+}
+
+function SectionCard({
+  eyebrow,
+  headline,
+  subtitle,
+  children,
+}: {
+  eyebrow: string;
+  headline: string;
+  subtitle?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        'overflow-hidden rounded-md border border-line bg-surface shadow-sm',
+      )}
+    >
+      <header
+        className={cn(
+          'border-b border-line bg-surface-sunk/40',
+          'px-s6 py-s5 lg:px-s8 lg:py-s6',
+        )}
+      >
+        <div className="t-eyebrow tracking-wide text-sage">{eyebrow}</div>
+        <h2 className="mt-s2 font-display text-[22px] leading-tight text-ink">
+          {headline}
+        </h2>
+        {subtitle && (
+          <p className="mt-s2 max-w-2xl t-body-md leading-relaxed text-ink-3">
+            {subtitle}
+          </p>
+        )}
+      </header>
+      <div className="px-s6 py-s5 lg:px-s8 lg:py-s6">{children}</div>
+    </section>
+  );
+}
+
+function StatusBadge({ status }: { status: 'draft' | 'submitted' }) {
+  if (status === 'submitted') {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center rounded-sm border px-s2 py-[2px]',
+          'border-sage-soft bg-sage-tint text-sage-deep',
+          't-caption uppercase tracking-wide',
+        )}
+      >
+        Submitted
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-sm border px-s2 py-[2px]',
+        'border-line bg-surface text-ink-3',
+        't-caption uppercase tracking-wide',
+      )}
+    >
+      Draft
+    </span>
   );
 }
