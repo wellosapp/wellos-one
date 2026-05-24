@@ -18,6 +18,7 @@ import soapNotesRoutes from './soap-notes.js';
 import staffBookingPreferencesRoutes from './staff-booking-preferences.js';
 import staffBookingRoutes from './staff-booking.js';
 import staffCalendarSyncRoutes from './staff-calendar-sync.js';
+import staffOnboardingFormsRoutes from './staff-onboarding-forms.js';
 import staffScheduleBlocksRoutes from './staff-schedule-blocks.js';
 import staffRoutes from './staff.js';
 import triageRoutes from './triage.js';
@@ -49,6 +50,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(mediaRoutes, { prefix: '/admin' });
   await app.register(onboardingRoutes, { prefix: '/admin' });
   await app.register(intakeFormsRoutes, { prefix: '/admin' });
+  await app.register(staffOnboardingFormsRoutes, { prefix: '/admin' });
   await app.register(waitlistRoutes, { prefix: '/admin' });
   await app.register(impersonateRoutes, { prefix: '/admin' });
 }

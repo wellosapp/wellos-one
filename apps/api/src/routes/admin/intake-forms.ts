@@ -20,6 +20,7 @@ import {
   createIntakeFormDefinition,
   createIntakeFormSubmission,
   getIntakeFormDefinitionById,
+  getIntakeSubmissionForClient,
   listIntakeFormDefinitions,
   listIntakeSubmissionsForClient,
   patchIntakeFormSubmission,
@@ -252,6 +253,33 @@ export default async function intakeFormsRoutes(
         tenantId,
         clientId: params.data.clientId,
       });
+      return reply.send(result);
+    },
+  );
+
+  app.get(
+    '/clients/:clientId/intake-submissions/:submissionId',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = IntakeSubmissionIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const result = await getIntakeSubmissionForClient(app.prisma, {
+        tenantId,
+        clientId: params.data.clientId,
+        submissionId: params.data.submissionId,
+      });
+      if (!result) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Intake form submission not found.',
+        });
+      }
       return reply.send(result);
     },
   );

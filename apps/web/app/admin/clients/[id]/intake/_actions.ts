@@ -36,18 +36,40 @@ export async function startClientIntakeDraftAction(
 export async function submitClientIntakeAction(
   clientId: string,
   submissionId: string,
+  answers?: Record<string, unknown>,
 ): Promise<ClientIntakeActionState> {
   try {
     await patchClientIntakeSubmission(clientId, submissionId, {
+      ...(answers !== undefined ? { answers } : {}),
       status: 'submitted',
     });
     revalidatePath(`/admin/clients/${clientId}/intake`);
+    revalidatePath(`/admin/clients/${clientId}/intake/${submissionId}`);
     return { ok: true };
   } catch (err) {
     return {
       ok: false,
       error:
         err instanceof ApiError ? err.message : 'Could not submit intake.',
+    };
+  }
+}
+
+export async function updateClientIntakeAnswersAction(
+  clientId: string,
+  submissionId: string,
+  answers: Record<string, unknown>,
+): Promise<ClientIntakeActionState> {
+  try {
+    await patchClientIntakeSubmission(clientId, submissionId, { answers });
+    revalidatePath(`/admin/clients/${clientId}/intake`);
+    revalidatePath(`/admin/clients/${clientId}/intake/${submissionId}`);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof ApiError ? err.message : 'Could not save intake draft.',
     };
   }
 }

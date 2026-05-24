@@ -1,27 +1,71 @@
 import { ClipboardIcon } from '@/app/admin/_shell/icons';
+import { ApiError } from '@/lib/api/client';
+import {
+  listStaffOnboardingFormDefinitions,
+  listStaffOnboardingSubmissions,
+} from '@/lib/api/staff-onboarding-forms';
+import { cn } from '@/lib/cn';
 
 import { SectionHeader } from '../_components/SectionHeader';
 import { loadStaffDetail } from '../_components/_data';
+
+import { StaffFormsPanel } from './StaffFormsPanel';
 
 export default async function StaffFormsPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const staff = await loadStaffDetail(id);
+  const { id: staffId } = await params;
+  const staff = await loadStaffDetail(staffId);
+
+  let loadError: string | null = null;
+  let publishedForms: Awaited<
+    ReturnType<typeof listStaffOnboardingFormDefinitions>
+  >['definitions'] = [];
+  let submissions: Awaited<
+    ReturnType<typeof listStaffOnboardingSubmissions>
+  >['submissions'] = [];
+
+  try {
+    const [defsRes, subRes] = await Promise.all([
+      listStaffOnboardingFormDefinitions({ status: 'published' }),
+      listStaffOnboardingSubmissions(staffId),
+    ]);
+    publishedForms = defsRes.definitions;
+    submissions = subRes.submissions;
+  } catch (err) {
+    loadError =
+      err instanceof ApiError
+        ? err.message
+        : 'Could not load onboarding forms. Is the API running?';
+  }
+
   return (
-    <SectionHeader
-      icon={ClipboardIcon}
-      eyebrow="FORMS"
-      headline={`Onboarding forms for ${staff.firstName}.`}
-      subtitle="Coming soon — staff onboarding form flow (W9, license, certifications)."
-    >
-      <div className="rounded-md border border-line bg-surface-2 p-s6 text-center">
-        <p className="t-body-md text-ink-3">
-          Coming soon — staff onboarding forms ship in a follow-up.
-        </p>
-      </div>
-    </SectionHeader>
+    <div className="flex flex-col gap-s6">
+      <SectionHeader
+        icon={ClipboardIcon}
+        eyebrow="FORMS"
+        headline={`Onboarding forms for ${staff.firstName}.`}
+        subtitle="Tax forms, license, certifications. Submitting locks the answers and writes an audit row."
+      />
+
+      {loadError ? (
+        <div
+          className={cn(
+            'rounded-md border border-amber/30 bg-amber-pale/60 p-s4',
+            't-body-sm text-amber',
+          )}
+        >
+          {loadError}
+        </div>
+      ) : (
+        <StaffFormsPanel
+          staffId={staffId}
+          publishedForms={publishedForms}
+          submissions={submissions}
+        />
+      )}
+    </div>
   );
 }

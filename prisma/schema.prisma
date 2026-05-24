@@ -283,6 +283,27 @@ enum IntakeFormSubmissionAuditAction {
   submitted
 }
 
+// Staff onboarding forms (W9, license, certifications). Mirrors the IntakeForm
+// shape but keyed by staff and not appointment-scoped. Audit includes the full
+// lifecycle: created → updated* → submitted, plus voided for future amend flows.
+enum StaffOnboardingFormDefinitionStatus {
+  draft
+  published
+  archived
+}
+
+enum StaffOnboardingFormSubmissionStatus {
+  draft
+  submitted
+}
+
+enum StaffOnboardingFormSubmissionAuditAction {
+  created
+  submitted
+  updated
+  voided
+}
+
 // Slot hold lifecycle per R2 §9.4. `active` is reserved until either the
 // booking confirms (→ consumed), the TTL elapses (→ expired), or the user
 // abandons (→ released). Only `active` rows participate in availability
@@ -359,6 +380,9 @@ model Tenant {
   intakeFormDefinitions     IntakeFormDefinition[]
   intakeFormSubmissions     IntakeFormSubmission[]
   intakeFormSubmissionAudits IntakeFormSubmissionAudit[]
+  staffOnboardingFormDefinitions     StaffOnboardingFormDefinition[]
+  staffOnboardingFormSubmissions     StaffOnboardingFormSubmission[]
+  staffOnboardingFormSubmissionAudits StaffOnboardingFormSubmissionAudit[]
   slotHolds                 SlotHold[]
   waitlistEntries           WaitlistEntry[]
 
@@ -672,6 +696,9 @@ model Staff {
   calendarFeedToken StaffCalendarFeedToken?
 
   slotHolds SlotHold[]
+
+  /// Staff-side onboarding forms (W9, license, certs). Submissions keyed by staffId.
+  onboardingFormSubmissions StaffOnboardingFormSubmission[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1418,6 +1445,85 @@ model IntakeFormSubmissionAudit {
   @@index([tenantId])
   @@index([submissionId, createdAt])
   @@map("intake_form_submission_audits")
+}
+
+// ---------- Staff onboarding forms (W9, license, certs) ----------
+//
+// Mirrors the IntakeForm trio (definition / submission / audit) but keyed by
+// staffId and not appointment-scoped. Submissions persist as drafts until the
+// staff member (or admin on their behalf) submits — submitting locks the row
+// and writes an audit row with the schema + answers snapshot.
+
+model StaffOnboardingFormDefinition {
+  id        String                                  @id @default(cuid())
+  tenantId  String                                  @map("tenant_id")
+  groupId   String                                  @map("group_id")
+  title     String
+  /// Field templates: array of { key, type, label, ... } — validated at API layer.
+  schema    Json
+  version   Int
+  status    StaffOnboardingFormDefinitionStatus     @default(draft)
+  isActive  Boolean                                 @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submissions StaffOnboardingFormSubmission[]
+
+  @@unique([tenantId, groupId, version])
+  @@index([tenantId])
+  @@index([tenantId, groupId])
+  @@index([tenantId, status])
+  @@map("staff_onboarding_form_definitions")
+}
+
+model StaffOnboardingFormSubmission {
+  id             String                                  @id @default(cuid())
+  tenantId       String                                  @map("tenant_id")
+  definitionId   String                                  @map("definition_id")
+  staffId        String                                  @map("staff_id")
+  answers        Json                                    @default("{}")
+  status         StaffOnboardingFormSubmissionStatus     @default(draft)
+
+  submittedAt    DateTime?                               @map("submitted_at") @db.Timestamptz(3)
+
+  createdAt      DateTime                                @default(now()) @map("created_at")
+  updatedAt      DateTime                                @updatedAt @map("updated_at")
+
+  tenant     Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  definition StaffOnboardingFormDefinition       @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  staff      Staff                               @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  audits     StaffOnboardingFormSubmissionAudit[]
+
+  @@index([tenantId])
+  @@index([tenantId, staffId])
+  @@index([tenantId, definitionId])
+  @@map("staff_onboarding_form_submissions")
+}
+
+// Append-only compliance trail. No updatedAt.
+model StaffOnboardingFormSubmissionAudit {
+  id                String                                          @id @default(cuid())
+  tenantId          String                                          @map("tenant_id")
+  submissionId      String                                          @map("submission_id")
+  action            StaffOnboardingFormSubmissionAuditAction
+  definitionId      String                                          @map("definition_id")
+  definitionVersion Int                                             @map("definition_version")
+  schemaSnapshot    Json                                            @map("schema_snapshot")
+  answersSnapshot   Json                                            @map("answers_snapshot")
+
+  ip                String?
+  userAgent         String?                                         @map("user_agent")
+
+  createdAt         DateTime                                        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submission StaffOnboardingFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([submissionId, createdAt])
+  @@map("staff_onboarding_form_submission_audits")
 }
 
 // ---------- Slot holds (R2 §9) ----------
