@@ -64,6 +64,7 @@ const RAIL_GROUPS: RailGroup[] = [
     label: 'Catalog',
     items: [
       { label: 'Services', href: '/admin/services' as Route, icon: SparkIcon },
+      { label: 'Classes', href: '/admin/classes' as Route, icon: SparkIcon },
       { label: 'Categories', href: '/admin/service-categories' as Route, icon: GridIcon },
       { label: 'Tags', href: '/admin/client-tags' as Route, icon: TagIcon },
       { label: 'Intake forms', href: '/admin/intake-forms' as Route, icon: ClipboardIcon },

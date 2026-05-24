@@ -370,6 +370,7 @@ model Tenant {
   clients                   Client[]
   staff                     Staff[]
   services                  Service[]
+  classes                   Class[]
   serviceCategories         ServiceCategory[]
   clientTags                ClientTag[]
   appointments              Appointment[]
@@ -712,6 +713,9 @@ model Staff {
   /// Staff-side onboarding forms (W9, license, certs). Submissions keyed by staffId.
   onboardingFormSubmissions StaffOnboardingFormSubmission[]
 
+  /// Classes epic Phase 1 — assignments to class templates (M2M via class_instructors).
+  classInstructorOf ClassInstructor[]
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -747,6 +751,7 @@ model ServiceCategory {
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   services Service[]
+  classes  Class[]   @relation("ServiceCategoryClasses")
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -825,6 +830,62 @@ model StaffService {
   @@id([staffId, serviceId])
   @@index([serviceId])
   @@map("staff_services")
+}
+
+// ---------- Classes (Phase 1 of the Classes epic) ----------
+//
+// Class is the TEMPLATE for a group session (yoga, fitness, etc.). Per-occurrence
+// scheduling (ClassInstance), bookings, waitlist, and check-in land in Phase 2-4.
+// Mirrors Service's CRUD shape with capacity additions (max/min, waitlist).
+// ServiceCategory is reused as the catalog grouping.
+
+model Class {
+  id                    String         @id @default(cuid())
+  tenantId              String         @map("tenant_id")
+  name                  String
+  shortDescription      String?        @map("short_description")
+  longDescription       String?        @map("long_description")
+  durationMinutes       Int            @map("duration_minutes")
+  basePriceCents        Int            @default(0) @map("base_price_cents")
+  maxCapacity           Int            @map("max_capacity")
+  minToRun              Int            @default(1) @map("min_to_run")
+  allowWaitlist         Boolean        @default(false) @map("allow_waitlist")
+  waitlistLimit         Int            @default(0) @map("waitlist_limit")
+  color                 String?
+  bufferBeforeMinutes   Int            @default(0) @map("buffer_before_minutes")
+  bufferAfterMinutes    Int            @default(0) @map("buffer_after_minutes")
+  active                Boolean        @default(true)
+  categoryId            String?        @map("category_id")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  deletedAt             DateTime?      @map("deleted_at")
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  category    ServiceCategory?  @relation("ServiceCategoryClasses", fields: [categoryId], references: [id], onDelete: SetNull)
+  instructors ClassInstructor[]
+
+  @@index([tenantId])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, active])
+  @@index([deletedAt])
+  @@map("classes")
+}
+
+// Pure M2M join between Class and Staff (instructors). First-inserted (or
+// explicit) row is marked is_primary=true. Replace-all semantics on update.
+model ClassInstructor {
+  id        String   @id @default(cuid())
+  classId   String   @map("class_id")
+  staffId   String   @map("staff_id")
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  staff Staff @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, staffId])
+  @@index([staffId])
+  @@map("class_instructors")
 }
 
 model ClientTag {

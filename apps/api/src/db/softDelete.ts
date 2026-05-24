@@ -25,6 +25,7 @@ const SOFT_DELETE_MODELS = new Set<string>([
   'Client',
   'Staff',
   'Service',
+  'Class',
   'ClientTag',
   'Appointment',
   // Tier A — client memory + triage system
