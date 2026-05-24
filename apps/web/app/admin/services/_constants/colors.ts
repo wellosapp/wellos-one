@@ -1,10 +1,9 @@
 // Brand color palette for the service color picker.
 //
-// TODO(brand-settings-epic): when the Tenant.brandColors JSONB field lands,
-// add a server-side loader like apps/web/lib/api/tenant.ts:getTenantBrandColors()
-// that reads tenant.brandColors ?? FALLBACK_BRAND_COLORS, and pass it through
-// to ServiceForm via a `presets` prop. The picker already accepts that prop
-// — no component changes needed. See PR description §"Future-swap plan."
+// Pure constants + types only — this module is imported by the client
+// component ServiceColorPicker. The server-side loader that fetches the
+// tenant palette lives in ./loadTenantBrandColors.ts to keep server-only
+// imports (Clerk auth, apiFetch) out of the client bundle.
 
 export type BrandColor = {
   /** Display name shown in the chip tooltip and the "Selected: ●" caption. */

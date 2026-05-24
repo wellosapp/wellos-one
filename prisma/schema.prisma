@@ -349,6 +349,11 @@ model Tenant {
   /// Comma-separated role names allowed to override double-book (e.g. "admin,manager").
   bookingOverrideRoles           String  @default("admin,manager")  @map("booking_override_roles")
 
+  /// Tenant-scoped brand color palette. Empty array means "use Wellos defaults".
+  /// Phase 1 of the Brand Settings epic — logo + fonts + theme tokens in later
+  /// phases. Shape: [{name: string, hex: string}].
+  brandColors      Json      @default("[]")             @map("brand_colors")
+
   locations                 Location[]
   users                     User[]
   roleAssignments           RoleAssignment[]
