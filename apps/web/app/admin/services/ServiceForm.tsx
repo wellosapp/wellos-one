@@ -9,6 +9,7 @@ import { Alert, Button, FormField, Input, Select, Textarea } from '@/components/
 
 import type { ActionState, ServiceFormValues } from './_actions';
 import type { BookingPolicy, ServicePriceDisplayMode } from '@/lib/api/services';
+import { ServiceColorPicker } from './ServiceColorPicker';
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus();
@@ -318,13 +319,10 @@ export function ServiceForm({
         <FormField
           label="Color"
           error={fieldErrors.color}
-          hint="6-digit hex like #3D7A5E. Used on the calendar."
+          hint="Used on the calendar and the public booking flow."
         >
-          <Input
-            type="text"
+          <ServiceColorPicker
             name="color"
-            placeholder="#3D7A5E"
-            maxLength={7}
             defaultValue={values.color ?? ''}
             error={Boolean(fieldErrors.color)}
           />
