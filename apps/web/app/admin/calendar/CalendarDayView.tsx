@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import { Alert, Button, Card } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
+import type { ClassInstanceWithRelations } from '@/lib/api/class-instances';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
 import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
@@ -28,6 +29,7 @@ import {
 
 import { AppointmentDrawer } from './AppointmentDrawer';
 import { BlockTimeSheet } from './BlockTimeSheet';
+import { ClassInstanceDrawer } from './ClassInstanceDrawer';
 import { deleteStaffScheduleBlockAction } from './_actions';
 import { selectNextUpAppointmentId } from './calendar-selection';
 import { CalendarDensityWave } from './CalendarDensityWave';
@@ -49,6 +51,8 @@ interface CalendarDayViewProps {
   staff: Staff[];
   services: Service[];
   appointments: Appointment[];
+  /** Phase 2a — class instances overlapping the fetch window; filtered to day-local in the grid. */
+  classInstances: ClassInstanceWithRelations[];
   /** Staff id → blocks overlapping the appointment fetch window (day grid filters locally). */
   scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]>;
   clientDisplayNames?: Record<string, string>;
@@ -60,6 +64,9 @@ interface CalendarDayViewProps {
     bookingAnswers: BookingAnswer[];
   } | null;
   selectedError: string | null;
+  /** Phase 2a — class instance drawer drilldown (separate from appointment selection). */
+  selectedClassInstance: ClassInstanceWithRelations | null;
+  selectedClassInstanceError: string | null;
   activeTab: string;
   quickBookOpen: boolean;
   blockTimeOpen: boolean;
@@ -75,11 +82,14 @@ export function CalendarDayView({
   staff,
   services,
   appointments,
+  classInstances,
   scheduleBlocksByStaff,
   clientDisplayNames,
   locations,
   selected,
   selectedError,
+  selectedClassInstance,
+  selectedClassInstanceError,
   activeTab,
   quickBookOpen,
   blockTimeOpen,
@@ -106,6 +116,32 @@ export function CalendarDayView({
   );
 
   const hrefCloseDrawer = useCallback((): string => {
+    return buildCalendarUrl(ADMIN_CAL, {
+      date: dateParam,
+      view,
+      quickbook: qb,
+      blocktime: bt,
+    });
+  }, [dateParam, view, qb, bt]);
+
+  // Phase 2a — class instance selection lives on its own `?classInstance=`
+  // param so it doesn't collide with appointment selection. buildCalendarUrl
+  // doesn't know about this param yet — append it manually.
+  const hrefSelectedClassInstance = useCallback(
+    (instanceId: string): string => {
+      const base = buildCalendarUrl(ADMIN_CAL, {
+        date: dateParam,
+        view,
+        quickbook: qb,
+        blocktime: bt,
+      });
+      const sep = base.includes('?') ? '&' : '?';
+      return `${base}${sep}classInstance=${encodeURIComponent(instanceId)}`;
+    },
+    [dateParam, view, qb, bt],
+  );
+
+  const hrefCloseClassInstance = useCallback((): string => {
     return buildCalendarUrl(ADMIN_CAL, {
       date: dateParam,
       view,
@@ -179,6 +215,17 @@ export function CalendarDayView({
       );
     });
   }, [appointments, date]);
+
+  const visibleDayClassInstances = useMemo(() => {
+    return classInstances.filter((c) => {
+      const start = new Date(c.scheduledStartAt);
+      return (
+        start.getFullYear() === date.getFullYear() &&
+        start.getMonth() === date.getMonth() &&
+        start.getDate() === date.getDate()
+      );
+    });
+  }, [classInstances, date]);
 
   const nextAppointmentId = useMemo(
     () =>
@@ -278,6 +325,9 @@ export function CalendarDayView({
   const handleCloseQuickBook = useCallback(() => {
     router.push(hrefCloseQuickBook as Route);
   }, [router, hrefCloseQuickBook]);
+  const handleCloseClassInstanceDrawer = useCallback(() => {
+    router.push(hrefCloseClassInstance() as Route);
+  }, [router, hrefCloseClassInstance]);
 
   const [, startDeleteBlock] = useTransition();
   const handleDeleteBlock = useCallback(
@@ -365,9 +415,12 @@ export function CalendarDayView({
             staff={staff}
             serviceById={serviceById}
             appointments={visibleDayAppointments}
+            classInstances={visibleDayClassInstances}
             scheduleBlocksByStaff={scheduleBlocksByStaff}
             hrefSelected={hrefSelected}
             selectedAppointmentId={selected?.appointment.id ?? null}
+            hrefSelectedClassInstance={hrefSelectedClassInstance}
+            selectedClassInstanceId={selectedClassInstance?.id ?? null}
             clientDisplayNames={clientDisplayNames}
             hrefQuickBook={hrefQuickBook}
             nextAppointmentId={nextAppointmentId}
@@ -472,9 +525,23 @@ export function CalendarDayView({
       />
     ) : null;
 
+  const classInstanceDrawer = selectedClassInstance ? (
+    <ClassInstanceDrawer
+      instance={selectedClassInstance}
+      onClose={handleCloseClassInstanceDrawer}
+    />
+  ) : null;
+
+  // Surface the class-instance lookup error (e.g. 404 from a stale URL) as a
+  // banner in the day view rather than silently dropping the param.
+  const classInstanceErrorBanner = selectedClassInstanceError ? (
+    <Alert tone="error">{selectedClassInstanceError}</Alert>
+  ) : null;
+
   if (view === 'day') {
     return (
       <div className="flex flex-col gap-s5">
+        {classInstanceErrorBanner}
         <div className="flex flex-col gap-s5 lg:flex-row lg:items-start">
           <CalendarLeftRail
             staffLoad={staffLoad}
@@ -487,6 +554,7 @@ export function CalendarDayView({
           {sidePanels}
         </div>
         {drawer}
+        {classInstanceDrawer}
       </div>
     );
   }
@@ -500,9 +568,11 @@ export function CalendarDayView({
           : 'flex flex-col gap-s5'
       }
     >
+      {classInstanceErrorBanner}
       {weekOrMonthCentre}
       {sidePanels}
       {drawer}
+      {classInstanceDrawer}
     </div>
   );
 }

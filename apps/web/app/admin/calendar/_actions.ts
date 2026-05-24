@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { ApiError } from '@/lib/api/client';
+import { cancelClassInstance } from '@/lib/api/class-instances';
 import {
   createClient,
   listClients,
@@ -552,6 +553,30 @@ export async function loadStaffBookingClientContextAction(args: {
     }
     throw err;
   }
+}
+
+// ---- Class instances (Phase 2a of the Classes epic) ----
+
+/** Cancel a class instance from the calendar drawer. Reason is optional. */
+export async function cancelClassInstanceCalendarAction(args: {
+  instanceId: string;
+  reason?: string;
+}): Promise<ActionState> {
+  try {
+    await cancelClassInstance(args.instanceId, { reason: args.reason });
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // 409 = already cancelled. Treat as success — the UI state matches.
+      if (err.status === 409 || err.status === 404) {
+        revalidatePath(PAGE);
+        return { ok: true };
+      }
+      return apiErrorToState(err);
+    }
+    throw err;
+  }
+  revalidatePath(PAGE);
+  return { ok: true };
 }
 
 export async function loadAvailabilitySlotsAction(args: {

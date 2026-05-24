@@ -7,6 +7,7 @@ import { useRef, useState, useTransition } from 'react';
 
 import { cn } from '@/lib/cn';
 import {
+  formatTimeLocal,
   localDayAndMinutesToUtcIso,
   staffScheduleBlockTouchesLocalDay,
 } from '@/lib/calendar';
@@ -14,6 +15,7 @@ import type {
   Appointment,
   AppointmentState,
 } from '@/lib/api/appointments';
+import type { ClassInstanceWithRelations } from '@/lib/api/class-instances';
 import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
 import type { Service } from '@/lib/api/services';
 import type { Staff } from '@/lib/api/staff';
@@ -93,6 +95,15 @@ function blockRange(b: StaffScheduleBlock): LaneRange {
   };
 }
 
+function classInstanceRange(c: ClassInstanceWithRelations): LaneRange {
+  const s = new Date(c.scheduledStartAt);
+  const e = new Date(c.scheduledEndAt);
+  return {
+    startMin: s.getHours() * 60 + s.getMinutes(),
+    endMin: e.getHours() * 60 + e.getMinutes(),
+  };
+}
+
 /**
  * Walk a staff lane's appointments + blocks and return the gaps in
  * [ANCHOR_HOUR, DAY_END_HOUR]. Each gap ≥ 15 min becomes a Quick Book entry.
@@ -140,9 +151,15 @@ interface CalendarRiverGridProps {
   staff: Staff[];
   serviceById: Map<string, Service>;
   appointments: Appointment[];
+  /** Phase 2a — class instances scheduled on the visible day. Rendered as chips. */
+  classInstances: ClassInstanceWithRelations[];
   scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]>;
   hrefSelected: (appointmentId: string, tab?: string) => string;
   selectedAppointmentId: string | null;
+  /** URL builder for opening the class instance drawer. */
+  hrefSelectedClassInstance: (instanceId: string) => string;
+  /** Active class-instance drawer (used for selected-state styling). */
+  selectedClassInstanceId: string | null;
   clientDisplayNames?: Record<string, string>;
   hrefQuickBook: string;
   nextAppointmentId?: string | null;
@@ -154,9 +171,12 @@ export function CalendarRiverGrid({
   staff,
   serviceById,
   appointments,
+  classInstances,
   scheduleBlocksByStaff,
   hrefSelected,
   selectedAppointmentId,
+  hrefSelectedClassInstance,
+  selectedClassInstanceId,
   clientDisplayNames,
   hrefQuickBook,
   nextAppointmentId,
@@ -173,6 +193,15 @@ export function CalendarRiverGrid({
     const list = apptsByStaff.get(a.staffId);
     if (list) list.push(a);
     else apptsByStaff.set(a.staffId, [a]);
+  }
+
+  // Phase 2a — bucket class instances by instructor staffId so each lane
+  // can render its own chips alongside the appointment chips.
+  const classInstancesByStaff = new Map<string, ClassInstanceWithRelations[]>();
+  for (const c of classInstances) {
+    const list = classInstancesByStaff.get(c.staffId);
+    if (list) list.push(c);
+    else classInstancesByStaff.set(c.staffId, [c]);
   }
 
   const handleLaneDragOver = (e: React.DragEvent) => {
@@ -278,12 +307,14 @@ export function CalendarRiverGrid({
             {/* Staff lanes */}
             {staff.map((s, idx) => {
               const list = apptsByStaff.get(s.id) ?? [];
+              const classList = classInstancesByStaff.get(s.id) ?? [];
               const blocksForStaff = (
                 scheduleBlocksByStaff[s.id] ?? []
               ).filter((b) => staffScheduleBlockTouchesLocalDay(b, date));
               const ranges: LaneRange[] = [
                 ...list.map(appointmentRange),
                 ...blocksForStaff.map(blockRange),
+                ...classList.map(classInstanceRange),
               ];
               const gaps = gapsForLane(ranges);
               const laneTop = idx * LANE_HEIGHT;
@@ -379,6 +410,56 @@ export function CalendarRiverGrid({
                             onDelete={onDeleteScheduleBlock}
                           />
                         </div>
+                      );
+                    })}
+
+                    {/* Class instance chips (Phase 2a). Rendered with the
+                        class's color and a dashed outline so they read as
+                        distinct from appointment chips. Capacity shows 0/X
+                        until Phase 3 wires real bookings. */}
+                    {classList.map((inst) => {
+                      const r = classInstanceRange(inst);
+                      const leftPx = minutesSinceAnchorPx(r.startMin);
+                      const widthPx =
+                        minutesSinceAnchorPx(r.endMin) - leftPx;
+                      if (widthPx <= 0) return null;
+                      const isSelected = inst.id === selectedClassInstanceId;
+                      const capacity =
+                        inst.capacityOverride ?? inst.class.maxCapacity;
+                      const bg = inst.class.color ?? undefined;
+                      return (
+                        <Link
+                          key={`ci-${inst.id}`}
+                          href={hrefSelectedClassInstance(inst.id) as Route}
+                          className={cn(
+                            'absolute top-s2 bottom-s2 z-[4] flex flex-col gap-[2px] overflow-hidden rounded-md',
+                            'border-2 border-dashed bg-white/85 px-s2 py-s1 no-underline',
+                            'transition-colors duration-fast hover:bg-white',
+                            isSelected
+                              ? 'ring-2 ring-accent/60 ring-offset-1'
+                              : '',
+                          )}
+                          style={{
+                            left: leftPx + 2,
+                            width: widthPx - 4,
+                            borderColor: bg ?? 'var(--accent)',
+                            backgroundColor: bg
+                              ? `${bg}22`
+                              : undefined,
+                          }}
+                          aria-label={`Open class instance ${inst.class.name}`}
+                          title={`${inst.class.name} · ${formatTimeLocal(inst.scheduledStartAt)}`}
+                        >
+                          <span className="t-eyebrow truncate text-ink-soft">
+                            Class
+                          </span>
+                          <span className="t-body-sm truncate font-semibold text-ink">
+                            {inst.class.name}
+                          </span>
+                          <span className="t-caption truncate text-ink-soft">
+                            0 / {capacity}
+                          </span>
+                        </Link>
                       );
                     })}
 

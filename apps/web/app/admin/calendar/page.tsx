@@ -7,6 +7,10 @@ import {
   type Appointment,
 } from '@/lib/api/appointments';
 import {
+  getClassInstance,
+  listClassInstances,
+} from '@/lib/api/class-instances';
+import {
   listStaffScheduleBlocks,
   type StaffScheduleBlock,
 } from '@/lib/api/staff-schedule-blocks';
@@ -64,6 +68,8 @@ type SearchParams = {
   quickbook?: string;
   blocktime?: string;
   pulse?: string;
+  /** Phase 2a — class instance chip selection (mirrors `selected` but for instances). */
+  classInstance?: string;
 };
 
 // River day view runs 7am → 8pm in 30-min bins (26 bins). Density bins count
@@ -183,21 +189,32 @@ export default async function CalendarPage({
   const { fromIso, toIso } = appointmentFetchBounds(date, view);
   const take = appointmentFetchTake(view);
 
-  // Fetch the directory data + appointments + whoami in parallel. If any
-  // fail with a 403 we surface a single error UI instead of cascading.
+  // Fetch the directory data + appointments + class instances + whoami in
+  // parallel. If any fail with a 403 we surface a single error UI instead
+  // of cascading. Class instances are Phase 2a — `scheduled` only here so
+  // cancelled rows don't clutter the day grid.
   let directoryError: string | null = null;
   let staffData: Awaited<ReturnType<typeof listStaff>> | null = null;
   let servicesData: Awaited<ReturnType<typeof listServices>> | null = null;
   let appointmentsData: Awaited<ReturnType<typeof listAppointments>> | null = null;
+  let classInstancesData: Awaited<ReturnType<typeof listClassInstances>> | null =
+    null;
   let whoami: Awaited<ReturnType<typeof getWhoami>> | null = null;
 
   try {
-    [staffData, servicesData, appointmentsData, whoami] = await Promise.all([
-      listStaff({ active: true, take: 100 }),
-      listServices({ active: true, take: 200 }),
-      listAppointments({ from: fromIso, to: toIso, take }),
-      getWhoami(),
-    ]);
+    [staffData, servicesData, appointmentsData, classInstancesData, whoami] =
+      await Promise.all([
+        listStaff({ active: true, take: 100 }),
+        listServices({ active: true, take: 200 }),
+        listAppointments({ from: fromIso, to: toIso, take }),
+        listClassInstances({
+          fromDate: fromIso,
+          toDate: toIso,
+          state: 'scheduled',
+          take,
+        }),
+        getWhoami(),
+      ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
       directoryError = 'You do not have access to this tenant.';
@@ -219,6 +236,12 @@ export default async function CalendarPage({
       }
     | null = null;
   let selectedError: string | null = null;
+  // Phase 2a — separate class-instance drawer fetch. Mirrors the appointment
+  // drilldown pattern but on `?classInstance=<id>`.
+  let selectedClassInstance:
+    | Awaited<ReturnType<typeof getClassInstance>>['instance']
+    | null = null;
+  let selectedClassInstanceError: string | null = null;
   if (sp.selected && !directoryError) {
     try {
       const apptResp = await getAppointment(sp.selected);
@@ -244,6 +267,21 @@ export default async function CalendarPage({
         selectedError = err.message;
       } else {
         selectedError = formatCalendarLoadError(err);
+      }
+    }
+  }
+
+  if (sp.classInstance && !directoryError) {
+    try {
+      const resp = await getClassInstance(sp.classInstance);
+      selectedClassInstance = resp.instance;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        selectedClassInstanceError = 'Class instance not found.';
+      } else if (err instanceof ApiError) {
+        selectedClassInstanceError = err.message;
+      } else {
+        selectedClassInstanceError = formatCalendarLoadError(err);
       }
     }
   }
@@ -303,11 +341,14 @@ export default async function CalendarPage({
       staff={staffRows}
       services={servicesData?.services ?? []}
       appointments={appts}
+      classInstances={classInstancesData?.instances ?? []}
       scheduleBlocksByStaff={scheduleBlocksByStaff}
       clientDisplayNames={clientDisplayNames}
       locations={whoami?.locations ?? []}
       selected={selectedBundle}
       selectedError={selectedError}
+      selectedClassInstance={selectedClassInstance}
+      selectedClassInstanceError={selectedClassInstanceError}
       activeTab={sp.tab ?? 'overview'}
       quickBookOpen={sp.quickbook === '1'}
       blockTimeOpen={sp.blocktime === '1'}
