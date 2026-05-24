@@ -79,15 +79,27 @@ export default async function ClassDetailPage({
           <span className="t-eyebrow text-accent">Class</span>
           <h1 className="t-display-lg">{klass.name}</h1>
         </div>
-        {klass.deletedAt ? (
-          <Badge tone="red">
-            Soft-deleted {new Date(klass.deletedAt).toLocaleString()}
-          </Badge>
-        ) : klass.active ? (
-          <Badge tone="green">Active</Badge>
-        ) : (
-          <Badge tone="neutral">Inactive</Badge>
-        )}
+        <div className="flex flex-wrap items-center gap-s3">
+          {!klass.deletedAt && (
+            <Link
+              href={`/admin/classes/${id}/schedule` as Route}
+              className="no-underline"
+            >
+              <Button variant="accent" size="md">
+                Schedule
+              </Button>
+            </Link>
+          )}
+          {klass.deletedAt ? (
+            <Badge tone="red">
+              Soft-deleted {new Date(klass.deletedAt).toLocaleString()}
+            </Badge>
+          ) : klass.active ? (
+            <Badge tone="green">Active</Badge>
+          ) : (
+            <Badge tone="neutral">Inactive</Badge>
+          )}
+        </div>
       </header>
 
       <Card padding="lg">

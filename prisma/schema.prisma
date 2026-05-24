@@ -371,6 +371,7 @@ model Tenant {
   staff                     Staff[]
   services                  Service[]
   classes                   Class[]
+  classInstances            ClassInstance[]
   serviceCategories         ServiceCategory[]
   clientTags                ClientTag[]
   appointments              Appointment[]
@@ -418,6 +419,7 @@ model Location {
   staffScheduleBlocks StaffScheduleBlock[]
   slotHolds    SlotHold[]
   waitlistEntries WaitlistEntry[]
+  classInstances ClassInstance[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -716,6 +718,9 @@ model Staff {
   /// Classes epic Phase 1 — assignments to class templates (M2M via class_instructors).
   classInstructorOf ClassInstructor[]
 
+  /// Classes epic Phase 2a — per-occurrence rows where this staff is instructor.
+  classInstancesAsInstructor ClassInstance[]
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -863,12 +868,58 @@ model Class {
   tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   category    ServiceCategory?  @relation("ServiceCategoryClasses", fields: [categoryId], references: [id], onDelete: SetNull)
   instructors ClassInstructor[]
+  instances   ClassInstance[]
 
   @@index([tenantId])
   @@index([tenantId, categoryId])
   @@index([tenantId, active])
   @@index([deletedAt])
   @@map("classes")
+}
+
+// ---------- Class instances (Phase 2a of the Classes epic) ----------
+//
+// Per-occurrence row for a Class template. Phase 2a only ships manual
+// creation (admin schedules a one-off workshop/retreat). RecurrenceRule +
+// cron-driven generation lands in Phase 2b; ClassBooking / waitlist /
+// check-in land in Phase 3-4. `recurrence_rule_id` is nullable here and
+// populated by Phase 2b's RecurrenceRule cron when it materialises a
+// recurring template's occurrences.
+//
+// State enum is stored as TEXT — values: 'scheduled' | 'in_progress' |
+// 'completed' | 'cancelled'. Zod validates at the API edge (matches the
+// Tenant.bookingClientRecognitionMode pattern). Auto-transitions
+// scheduled → in_progress → completed are Phase 4 cron work; Phase 2a
+// only supports the manual `scheduled → cancelled` move.
+
+model ClassInstance {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  classId             String    @map("class_id")
+  staffId             String    @map("staff_id")
+  locationId          String    @map("location_id")
+  scheduledStartAt    DateTime  @map("scheduled_start_at")
+  scheduledEndAt      DateTime  @map("scheduled_end_at")
+  capacityOverride    Int?      @map("capacity_override")
+  waitlistOverride    Int?      @map("waitlist_override")
+  state               String    @default("scheduled")
+  cancelledReason     String?   @map("cancelled_reason")
+  cancelledAt         DateTime? @map("cancelled_at")
+  recurrenceRuleId    String?   @map("recurrence_rule_id")  // Phase 2b populates
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  class    Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, scheduledStartAt])
+  @@index([classId])
+  @@index([staffId, scheduledStartAt])
+  @@index([state])
+  @@map("class_instances")
 }
 
 // Pure M2M join between Class and Staff (instructors). First-inserted (or
