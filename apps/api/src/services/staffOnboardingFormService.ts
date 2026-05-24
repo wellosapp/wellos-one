@@ -1,10 +1,19 @@
+import { Prisma } from '@prisma/client';
 import type {
   StaffOnboardingFormDefinition,
   StaffOnboardingFormDefinitionStatus,
   StaffOnboardingFormSubmission,
 } from '@prisma/client';
 
-import type { ExtendedPrismaClient } from '../db/client.js';
+import type {
+  ExtendedPrismaClient,
+  ExtendedTransactionClient,
+} from '../db/client.js';
+
+// Audit entityType for definition-level mutations. Distinct from intake's
+// surface so the audit log clearly identifies which catalog the change came
+// from.
+const DEFINITION_AUDIT_ENTITY = 'staff_onboarding_form_definition';
 
 // Mirror of intakeFormService but staff-keyed. Submissions are not appointment-
 // scoped. Audit lifecycle covers created → updated* → submitted.
@@ -69,6 +78,256 @@ export async function getStaffOnboardingFormDefinition(
   return prisma.staffOnboardingFormDefinition.findFirst({
     where: { id: args.id, tenantId: args.tenantId },
   });
+}
+
+// ---- Definition CRUD (admin-only) ----------------------------------------
+//
+// Mirrors intakeFormService for the equivalent operations (create, update,
+// publish). Adds explicit createNextVersion + archive helpers that intake
+// inlines into create / leaves to a follow-up. Every mutation also writes
+// an AuditLog row keyed by `entityType=staff_onboarding_form_definition`
+// so the change history is queryable from the activity surface.
+
+async function writeDefinitionAudit(
+  tx: ExtendedTransactionClient,
+  args: {
+    tenantId: string;
+    actorUserId: string | null;
+    action: 'created' | 'updated' | 'versioned' | 'published' | 'archived';
+    entityId: string;
+    before: StaffOnboardingFormDefinition | null;
+    after: StaffOnboardingFormDefinition | null;
+  },
+): Promise<void> {
+  await tx.auditLog.create({
+    data: {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      actorType: args.actorUserId ? 'user' : 'system',
+      action: args.action,
+      entityType: DEFINITION_AUDIT_ENTITY,
+      entityId: args.entityId,
+      before: args.before
+        ? (args.before as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+      after: args.after
+        ? (args.after as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+    },
+  });
+}
+
+export async function createStaffOnboardingFormDefinition(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string | null;
+    title: string;
+    schema: unknown;
+    groupId?: string;
+  },
+): Promise<{ definition: StaffOnboardingFormDefinition }> {
+  const { tenantId, title, schema } = args;
+  let groupId = args.groupId;
+  let version = 1;
+
+  if (groupId) {
+    const agg = await prisma.staffOnboardingFormDefinition.aggregate({
+      where: { tenantId, groupId },
+      _max: { version: true },
+    });
+    const maxV = agg._max.version;
+    if (maxV === null) {
+      throw new StaffOnboardingFormReferenceError(
+        'groupId',
+        'Unknown form group for this tenant.',
+      );
+    }
+    version = maxV + 1;
+  } else {
+    groupId = crypto.randomUUID();
+  }
+
+  const definition = await prisma.$transaction(async (tx) => {
+    const created = await tx.staffOnboardingFormDefinition.create({
+      data: {
+        tenantId,
+        groupId,
+        title,
+        schema: schema as object,
+        version,
+        status: 'draft',
+      },
+    });
+    await writeDefinitionAudit(tx, {
+      tenantId,
+      actorUserId: args.actorUserId,
+      action: 'created',
+      entityId: created.id,
+      before: null,
+      after: created,
+    });
+    return created;
+  });
+  return { definition };
+}
+
+export async function updateStaffOnboardingFormDefinition(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string | null;
+    id: string;
+    title?: string;
+    schema?: unknown;
+    isActive?: boolean;
+  },
+): Promise<{ definition: StaffOnboardingFormDefinition }> {
+  const existing = await prisma.staffOnboardingFormDefinition.findFirst({
+    where: { id: args.id, tenantId: args.tenantId },
+  });
+  if (!existing) throw new StaffOnboardingFormNotFoundError();
+  if (existing.status !== 'draft') {
+    throw new StaffOnboardingFormStateError(
+      'Only draft definitions can be edited.',
+    );
+  }
+
+  const definition = await prisma.$transaction(async (tx) => {
+    const updated = await tx.staffOnboardingFormDefinition.update({
+      where: { id: existing.id },
+      data: {
+        ...(args.title !== undefined ? { title: args.title } : {}),
+        ...(args.schema !== undefined ? { schema: args.schema as object } : {}),
+        ...(args.isActive !== undefined ? { isActive: args.isActive } : {}),
+      },
+    });
+    await writeDefinitionAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'updated',
+      entityId: updated.id,
+      before: existing,
+      after: updated,
+    });
+    return updated;
+  });
+  return { definition };
+}
+
+// Read the current row, copy title + schema, increment version, write the
+// result as a new draft in the same group_id family. Used by admins who want
+// to revise a published version — they call this, then edit the new draft,
+// then publish (which auto-archives the previous published version).
+export async function createNextVersionStaffOnboardingFormDefinition(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; actorUserId: string | null; id: string },
+): Promise<{ definition: StaffOnboardingFormDefinition }> {
+  const source = await prisma.staffOnboardingFormDefinition.findFirst({
+    where: { id: args.id, tenantId: args.tenantId },
+  });
+  if (!source) throw new StaffOnboardingFormNotFoundError();
+
+  const agg = await prisma.staffOnboardingFormDefinition.aggregate({
+    where: { tenantId: args.tenantId, groupId: source.groupId },
+    _max: { version: true },
+  });
+  const nextVersion = (agg._max.version ?? source.version) + 1;
+
+  const definition = await prisma.$transaction(async (tx) => {
+    const created = await tx.staffOnboardingFormDefinition.create({
+      data: {
+        tenantId: args.tenantId,
+        groupId: source.groupId,
+        title: source.title,
+        schema: source.schema as object,
+        version: nextVersion,
+        status: 'draft',
+      },
+    });
+    await writeDefinitionAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'versioned',
+      entityId: created.id,
+      before: source,
+      after: created,
+    });
+    return created;
+  });
+  return { definition };
+}
+
+export async function publishStaffOnboardingFormDefinition(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; actorUserId: string | null; id: string },
+): Promise<{ definition: StaffOnboardingFormDefinition }> {
+  const existing = await prisma.staffOnboardingFormDefinition.findFirst({
+    where: { id: args.id, tenantId: args.tenantId },
+  });
+  if (!existing) throw new StaffOnboardingFormNotFoundError();
+  if (existing.status !== 'draft') {
+    throw new StaffOnboardingFormStateError(
+      'Only a draft definition can be published.',
+    );
+  }
+
+  const definition = await prisma.$transaction(async (tx) => {
+    await tx.staffOnboardingFormDefinition.updateMany({
+      where: {
+        tenantId: args.tenantId,
+        groupId: existing.groupId,
+        status: 'published',
+      },
+      data: { status: 'archived' },
+    });
+    const updated = await tx.staffOnboardingFormDefinition.update({
+      where: { id: existing.id },
+      data: { status: 'published' },
+    });
+    await writeDefinitionAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'published',
+      entityId: updated.id,
+      before: existing,
+      after: updated,
+    });
+    return updated;
+  });
+  return { definition };
+}
+
+export async function archiveStaffOnboardingFormDefinition(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; actorUserId: string | null; id: string },
+): Promise<{ definition: StaffOnboardingFormDefinition }> {
+  const existing = await prisma.staffOnboardingFormDefinition.findFirst({
+    where: { id: args.id, tenantId: args.tenantId },
+  });
+  if (!existing) throw new StaffOnboardingFormNotFoundError();
+  if (existing.status === 'archived') {
+    throw new StaffOnboardingFormStateError(
+      'Definition is already archived.',
+    );
+  }
+
+  const definition = await prisma.$transaction(async (tx) => {
+    const updated = await tx.staffOnboardingFormDefinition.update({
+      where: { id: existing.id },
+      data: { status: 'archived' },
+    });
+    await writeDefinitionAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'archived',
+      entityId: updated.id,
+      before: existing,
+      after: updated,
+    });
+    return updated;
+  });
+  return { definition };
 }
 
 async function requirePublishedDefinition(

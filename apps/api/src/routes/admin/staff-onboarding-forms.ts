@@ -4,23 +4,30 @@ import { ZodError } from 'zod';
 import { withIdempotency } from '../../middleware/idempotency.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
+  CreateStaffOnboardingFormDefinitionBodySchema,
   CreateStaffOnboardingSubmissionBodySchema,
   ListStaffOnboardingFormDefinitionsQuerySchema,
   PatchStaffOnboardingSubmissionBodySchema,
   StaffIdParamsSchema,
   StaffOnboardingFormDefinitionIdParamsSchema,
   StaffOnboardingSubmissionIdParamsSchema,
+  UpdateStaffOnboardingFormDefinitionBodySchema,
 } from '../../schemas/staffOnboardingForm.js';
 import {
   StaffOnboardingFormNotFoundError,
   StaffOnboardingFormReferenceError,
   StaffOnboardingFormStateError,
+  archiveStaffOnboardingFormDefinition,
+  createNextVersionStaffOnboardingFormDefinition,
+  createStaffOnboardingFormDefinition,
   createStaffOnboardingSubmission,
   getStaffOnboardingFormDefinition,
   getStaffOnboardingSubmission,
   listStaffOnboardingFormDefinitions,
   listStaffOnboardingSubmissions,
   patchStaffOnboardingSubmission,
+  publishStaffOnboardingFormDefinition,
+  updateStaffOnboardingFormDefinition,
 } from '../../services/staffOnboardingFormService.js';
 
 function zodErrorBody(err: ZodError) {
@@ -100,6 +107,261 @@ export default async function staffOnboardingFormsRoutes(
         });
       }
       return reply.send({ definition });
+    },
+  );
+
+  // Definition CRUD (admin-only). Tenant scope comes from request.currentUser
+  // and is never accepted from the request body.
+
+  app.post(
+    '/staff-onboarding-forms',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const body = CreateStaffOnboardingFormDefinitionBodySchema.safeParse(
+        request.body,
+      );
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'staff_onboarding_form.definition.create',
+        },
+        async () => {
+          try {
+            const result = await createStaffOnboardingFormDefinition(
+              app.prisma,
+              {
+                tenantId,
+                actorUserId: user.id,
+                title: body.data.title,
+                schema: body.data.schema,
+                groupId: body.data.groupId,
+              },
+            );
+            return { status: 201, body: result };
+          } catch (err) {
+            if (err instanceof StaffOnboardingFormReferenceError) {
+              return {
+                status: 400,
+                body: {
+                  error: 'Bad Request',
+                  message: 'Validation failed.',
+                  issues: [{ path: err.field, message: err.message }],
+                },
+              };
+            }
+            throw err;
+          }
+        },
+      );
+    },
+  );
+
+  app.patch(
+    '/staff-onboarding-forms/:id',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = StaffOnboardingFormDefinitionIdParamsSchema.safeParse(
+        request.params,
+      );
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = UpdateStaffOnboardingFormDefinitionBodySchema.safeParse(
+        request.body,
+      );
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      try {
+        const result = await updateStaffOnboardingFormDefinition(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          id: params.data.id,
+          ...body.data,
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof StaffOnboardingFormNotFoundError) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: err.message,
+          });
+        }
+        if (err instanceof StaffOnboardingFormStateError) {
+          return reply.code(422).send({
+            error: 'Unprocessable Entity',
+            message: err.message,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.post(
+    '/staff-onboarding-forms/:id/version',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = StaffOnboardingFormDefinitionIdParamsSchema.safeParse(
+        request.params,
+      );
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'staff_onboarding_form.definition.version',
+        },
+        async () => {
+          try {
+            const result = await createNextVersionStaffOnboardingFormDefinition(
+              app.prisma,
+              {
+                tenantId,
+                actorUserId: user.id,
+                id: params.data.id,
+              },
+            );
+            return { status: 201, body: result };
+          } catch (err) {
+            if (err instanceof StaffOnboardingFormNotFoundError) {
+              return {
+                status: 404,
+                body: { error: 'Not Found', message: err.message },
+              };
+            }
+            throw err;
+          }
+        },
+      );
+    },
+  );
+
+  app.post(
+    '/staff-onboarding-forms/:id/publish',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = StaffOnboardingFormDefinitionIdParamsSchema.safeParse(
+        request.params,
+      );
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'staff_onboarding_form.definition.publish',
+        },
+        async () => {
+          try {
+            const result = await publishStaffOnboardingFormDefinition(
+              app.prisma,
+              {
+                tenantId,
+                actorUserId: user.id,
+                id: params.data.id,
+              },
+            );
+            return { status: 200, body: result };
+          } catch (err) {
+            if (err instanceof StaffOnboardingFormNotFoundError) {
+              return {
+                status: 404,
+                body: { error: 'Not Found', message: err.message },
+              };
+            }
+            if (err instanceof StaffOnboardingFormStateError) {
+              return {
+                status: 422,
+                body: { error: 'Unprocessable Entity', message: err.message },
+              };
+            }
+            throw err;
+          }
+        },
+      );
+    },
+  );
+
+  app.post(
+    '/staff-onboarding-forms/:id/archive',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = StaffOnboardingFormDefinitionIdParamsSchema.safeParse(
+        request.params,
+      );
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'staff_onboarding_form.definition.archive',
+        },
+        async () => {
+          try {
+            const result = await archiveStaffOnboardingFormDefinition(
+              app.prisma,
+              {
+                tenantId,
+                actorUserId: user.id,
+                id: params.data.id,
+              },
+            );
+            return { status: 200, body: result };
+          } catch (err) {
+            if (err instanceof StaffOnboardingFormNotFoundError) {
+              return {
+                status: 404,
+                body: { error: 'Not Found', message: err.message },
+              };
+            }
+            if (err instanceof StaffOnboardingFormStateError) {
+              return {
+                status: 422,
+                body: { error: 'Unprocessable Entity', message: err.message },
+              };
+            }
+            throw err;
+          }
+        },
+      );
     },
   );
 

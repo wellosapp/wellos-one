@@ -23,6 +23,26 @@ export const StaffOnboardingFormDefinitionIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+export const CreateStaffOnboardingFormDefinitionBodySchema = z.object({
+  title: z.string().min(1).max(200),
+  schema: StaffOnboardingFormSchemaJsonSchema,
+  /** When set, creates the next draft version for this form family. */
+  groupId: z.string().min(1).max(64).optional(),
+});
+
+export const UpdateStaffOnboardingFormDefinitionBodySchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    schema: StaffOnboardingFormSchemaJsonSchema.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (b) => b.title !== undefined || b.schema !== undefined || b.isActive !== undefined,
+    {
+      message: 'At least one of title, schema, isActive is required.',
+    },
+  );
+
 export const StaffIdParamsSchema = z.object({
   staffId: z.string().min(1),
 });
