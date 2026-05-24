@@ -77,6 +77,48 @@ export async function getStaffOnboardingFormDefinition(id: string) {
   );
 }
 
+export async function createStaffOnboardingFormDefinition(body: {
+  title: string;
+  schema: unknown;
+  groupId?: string;
+}) {
+  return apiFetch<{ definition: StaffOnboardingFormDefinitionDto }>(
+    '/admin/staff-onboarding-forms',
+    { method: 'POST', body },
+  );
+}
+
+export async function updateStaffOnboardingFormDefinition(
+  id: string,
+  body: { title?: string; schema?: unknown; isActive?: boolean },
+) {
+  return apiFetch<{ definition: StaffOnboardingFormDefinitionDto }>(
+    `/admin/staff-onboarding-forms/${id}`,
+    { method: 'PATCH', body },
+  );
+}
+
+export async function versionStaffOnboardingFormDefinition(id: string) {
+  return apiFetch<{ definition: StaffOnboardingFormDefinitionDto }>(
+    `/admin/staff-onboarding-forms/${id}/version`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function publishStaffOnboardingFormDefinition(id: string) {
+  return apiFetch<{ definition: StaffOnboardingFormDefinitionDto }>(
+    `/admin/staff-onboarding-forms/${id}/publish`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function archiveStaffOnboardingFormDefinition(id: string) {
+  return apiFetch<{ definition: StaffOnboardingFormDefinitionDto }>(
+    `/admin/staff-onboarding-forms/${id}/archive`,
+    { method: 'POST', body: {} },
+  );
+}
+
 export async function listStaffOnboardingSubmissions(staffId: string) {
   return apiFetch<{ submissions: StaffOnboardingFormSubmissionListItem[] }>(
     `/admin/staff/${staffId}/onboarding-submissions`,

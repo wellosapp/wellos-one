@@ -8,6 +8,7 @@ import type { Route } from 'next';
 import {
   CalendarIcon,
   ClipboardIcon,
+  FileTextIcon,
   GridIcon,
   HourglassIcon,
   ImageIcon,
@@ -66,6 +67,11 @@ const RAIL_GROUPS: RailGroup[] = [
       { label: 'Categories', href: '/admin/service-categories' as Route, icon: GridIcon },
       { label: 'Tags', href: '/admin/client-tags' as Route, icon: TagIcon },
       { label: 'Intake forms', href: '/admin/intake-forms' as Route, icon: ClipboardIcon },
+      {
+        label: 'Staff onboarding forms',
+        href: '/admin/staff-onboarding-forms' as Route,
+        icon: FileTextIcon,
+      },
       { label: 'Media', href: '/admin/media' as Route, icon: ImageIcon },
     ],
   },
