@@ -35,6 +35,14 @@ type Props = {
    * staff_services assignments untouched instead of wiping them.
    */
   hideServicesFieldset?: boolean;
+  /**
+   * When true, omit the working-hours fieldset entirely. Used by the
+   * Overview form on the staff profile (per-day shifts live on a
+   * dedicated Schedule tab). The absence of the `includeWorkingHours`
+   * marker tells the action to leave the workingHours JSONB untouched
+   * instead of clearing shifts.
+   */
+  hideWorkingHoursFieldset?: boolean;
 };
 
 export function StaffForm({
@@ -44,6 +52,7 @@ export function StaffForm({
   submitLabel = 'Save',
   successMessage = 'Saved.',
   hideServicesFieldset = false,
+  hideWorkingHoursFieldset = false,
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
@@ -104,22 +113,35 @@ export function StaffForm({
         </FormField>
       </div>
 
-      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
-        <legend className="t-eyebrow px-s2 text-ink-soft">Working hours</legend>
-        <p className="t-body-sm text-ink-soft">
-          Single shift per day for now. 24-hour HH:MM format. Mark closed for off days.
-        </p>
-        <div className="flex flex-col gap-s2">
-          {DAY_KEYS.map((day) => (
-            <DayRow
-              key={day}
-              day={day}
-              row={values.workingHours?.[day]}
-              error={fieldErrors[`workingHours_${day}`]}
-            />
-          ))}
-        </div>
-      </fieldset>
+      {!hideWorkingHoursFieldset && (
+        <>
+          {/*
+            Marker telling the server action that this form submission
+            contains the working-hours fieldset, so the action should
+            read workingHours_* fields from FormData. Absent on the
+            Overview form (where the fieldset is hidden) so the action
+            leaves the workingHours JSONB untouched instead of clearing
+            shifts.
+          */}
+          <input type="hidden" name="includeWorkingHours" value="1" />
+          <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+            <legend className="t-eyebrow px-s2 text-ink-soft">Working hours</legend>
+            <p className="t-body-sm text-ink-soft">
+              Single shift per day for now. 24-hour HH:MM format. Mark closed for off days.
+            </p>
+            <div className="flex flex-col gap-s2">
+              {DAY_KEYS.map((day) => (
+                <DayRow
+                  key={day}
+                  day={day}
+                  row={values.workingHours?.[day]}
+                  error={fieldErrors[`workingHours_${day}`]}
+                />
+              ))}
+            </div>
+          </fieldset>
+        </>
+      )}
 
       <div className="grid grid-cols-1 gap-s4 md:grid-cols-2">
         <FormField

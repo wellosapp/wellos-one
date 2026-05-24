@@ -10,9 +10,10 @@ import {
   DAY_KEYS,
   type DayKey,
   type StaffWriteBody,
-  type WorkingHours,
 } from '@/lib/api/staff';
 import { ApiError } from '@/lib/api/client';
+
+import { parseWorkingHoursFromValues } from './_working-hours';
 
 // Server actions for admin Staff CRUD with inline StaffService M2M
 // assignment. Mirrors services/_actions.ts. No duplicate-warning
@@ -53,13 +54,23 @@ function pick(formData: FormData, key: string): string | undefined {
 }
 
 function valuesFromForm(formData: FormData): StaffFormValues {
-  const workingHours: NonNullable<StaffFormValues['workingHours']> = {};
-  for (const day of DAY_KEYS) {
-    workingHours[day] = {
-      closed: formData.get(`workingHours_${day}_closed`) === '1',
-      start: pick(formData, `workingHours_${day}_start`),
-      end: pick(formData, `workingHours_${day}_end`),
-    };
+  // The Overview StaffForm hides the working-hours fieldset; per-day
+  // shifts are edited from a dedicated tab. Only read workingHours_*
+  // fields when the form posts the `includeWorkingHours` marker —
+  // otherwise leave workingHours undefined so parseBody emits undefined
+  // to the API (partial update, shifts untouched).
+  const includeWorkingHours = formData.get('includeWorkingHours') === '1';
+  let workingHours: StaffFormValues['workingHours'];
+  if (includeWorkingHours) {
+    const rows: NonNullable<StaffFormValues['workingHours']> = {};
+    for (const day of DAY_KEYS) {
+      rows[day] = {
+        closed: formData.get(`workingHours_${day}_closed`) === '1',
+        start: pick(formData, `workingHours_${day}_start`),
+        end: pick(formData, `workingHours_${day}_end`),
+      };
+    }
+    workingHours = rows;
   }
   // The Overview StaffForm hides the services fieldset; service
   // assignments are edited from a dedicated tab. Only read serviceIds
@@ -117,23 +128,11 @@ function parseBody(values: StaffFormValues): {
 
   // Working hours: only emit days that aren't closed and have both start
   // and end. The API allows closed days to be absent rather than empty
-  // arrays (per the strict() schema).
-  const workingHours: WorkingHours = {};
-  if (values.workingHours) {
-    for (const day of DAY_KEYS) {
-      const row = values.workingHours[day];
-      if (!row || row.closed) continue;
-      if (!row.start || !row.end) {
-        fieldErrors[`workingHours_${day}`] = 'Set both start and end, or mark closed.';
-        continue;
-      }
-      if (row.start >= row.end) {
-        fieldErrors[`workingHours_${day}`] = 'End must be after start.';
-        continue;
-      }
-      workingHours[day] = [{ start: row.start, end: row.end }];
-    }
-  }
+  // arrays (per the strict() schema). Returns {} when values is undefined
+  // (Overview form hides the fieldset and omits the includeWorkingHours
+  // marker) — combined with the `workingHours: undefined` emit below,
+  // that leaves shifts untouched on partial PATCHes.
+  const workingHours = parseWorkingHoursFromValues(values.workingHours, fieldErrors);
 
   if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
 
