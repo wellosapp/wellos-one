@@ -3,6 +3,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import { ApiError } from '@/lib/api/client';
 import { getImpersonationActive } from '@/lib/api/impersonate';
 import { getOnboardingStatus } from '@/lib/api/onboarding';
+import { getTenantBrand, type TenantLogo } from '@/lib/api/tenant-brand';
 
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { AdminShell } from './_shell/AdminShell';
@@ -53,6 +54,17 @@ export default async function AdminLayout({
     // Auth race in render — fall through to a generic greeting.
   }
 
+  // Tenant logo for the admin rail's top branding spot. If the fetch fails
+  // (API down, R2 unconfigured, etc.) the rail falls back to LeafIcon + "Wellos".
+  let tenantLogo: TenantLogo | null = null;
+  try {
+    const brand = await getTenantBrand();
+    tenantLogo = brand.logo;
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    // 401 / 403 / 5xx — render fallback branding, don't block the layout.
+  }
+
   const now = new Date();
   const serverHour = now.getHours();
   // "Wednesday · May 20" — kept short to read as a calm eyebrow. The
@@ -90,6 +102,7 @@ export default async function AdminLayout({
             todayLabel={todayLabel}
           />
         }
+        logo={tenantLogo}
       >
         {children}
       </AdminShell>

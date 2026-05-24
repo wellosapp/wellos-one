@@ -87,11 +87,14 @@ function isActive(itemHref: string, pathname: string): boolean {
 interface AdminRailProps {
   expanded: boolean;
   onToggle: () => void;
+  /** Tenant logo from server-side fetch. Falls back to LeafIcon + "Wellos" when null. */
+  logo?: { id: string; displayUrl: string | null } | null;
 }
 
-export function AdminRail({ expanded, onToggle }: AdminRailProps) {
+export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
   const pathname = usePathname();
   const settingsActive = isActive('/admin/settings', pathname);
+  const hasLogo = !!logo?.displayUrl;
 
   return (
     <aside
@@ -103,19 +106,34 @@ export function AdminRail({ expanded, onToggle }: AdminRailProps) {
         aria-label="Wellos admin home"
         className="flex items-center gap-s3 overflow-hidden whitespace-nowrap px-s2 pb-s4 pt-s1 text-ink no-underline focus-visible:shadow-focus focus-visible:outline-none rounded-sm"
       >
-        <span
-          aria-hidden="true"
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-sage text-surface shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]"
-        >
-          <LeafIcon size={18} />
-        </span>
-        <span
-          className={`font-display text-[22px] leading-none tracking-[-0.01em] transition-[opacity,transform] duration-base ${
-            expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
-          }`}
-        >
-          Wellos
-        </span>
+        {hasLogo ? (
+          // Signed R2 URLs expire and can't be optimized by next/image
+          // without domain config. Plain <img> mirrors FileTile.tsx.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logo!.displayUrl!}
+            alt=""
+            className={`h-8 shrink-0 object-contain transition-[width,max-width] duration-base ${
+              expanded ? 'w-auto max-w-[140px]' : 'w-8 max-w-8'
+            }`}
+          />
+        ) : (
+          <>
+            <span
+              aria-hidden="true"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-sage text-surface shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]"
+            >
+              <LeafIcon size={18} />
+            </span>
+            <span
+              className={`font-display text-[22px] leading-none tracking-[-0.01em] transition-[opacity,transform] duration-base ${
+                expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
+              }`}
+            >
+              Wellos
+            </span>
+          </>
+        )}
       </Link>
 
       <nav className="flex flex-1 flex-col gap-s1">

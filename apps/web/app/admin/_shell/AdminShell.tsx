@@ -14,9 +14,11 @@ interface AdminShellProps {
   topbar: ReactNode;
   /** Admin page content rendered into the main area. */
   children: ReactNode;
+  /** Tenant logo (server-fetched) — falls back to LeafIcon + "Wellos" when null. */
+  logo?: { id: string; displayUrl: string | null } | null;
 }
 
-export function AdminShell({ topbar, children }: AdminShellProps) {
+export function AdminShell({ topbar, children, logo }: AdminShellProps) {
   // Client-side state for the rail. SSR renders collapsed; the first
   // effect tick reads localStorage and rehydrates the user's preference.
   // The `data-rail` attribute drives the grid template via inline style
@@ -50,7 +52,7 @@ export function AdminShell({ topbar, children }: AdminShellProps) {
       className="grid min-h-screen bg-canvas transition-[grid-template-columns] duration-base"
       style={{ gridTemplateColumns: `${expanded ? 220 : 68}px 1fr` }}
     >
-      <AdminRail expanded={expanded} onToggle={toggle} />
+      <AdminRail expanded={expanded} onToggle={toggle} logo={logo} />
       <main className="flex min-w-0 flex-col gap-s4 px-s8 py-s6 pb-s10">
         {topbar}
         {children}
