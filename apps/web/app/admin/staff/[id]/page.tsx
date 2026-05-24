@@ -75,7 +75,7 @@ export default async function StaffOverviewPage({
         icon={UserIcon}
         eyebrow="OVERVIEW"
         headline={`Overview for ${staff.firstName}.`}
-        subtitle="Personal information, working hours, and services. Booking overrides and the iCal feed live in the Booking settings tab."
+        subtitle="Personal information and working hours. Service assignments live in the Services tab; booking overrides + iCal feed in the Booking settings tab."
       >
         <StaffForm
           action={updateAction}
@@ -83,6 +83,7 @@ export default async function StaffOverviewPage({
           services={services.map((s) => ({ id: s.id, name: s.name, color: s.color }))}
           submitLabel="Save changes"
           successMessage="Staff updated."
+          hideServicesFieldset
         />
       </SectionHeader>
 

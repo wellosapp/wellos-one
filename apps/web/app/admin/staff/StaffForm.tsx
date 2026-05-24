@@ -28,6 +28,13 @@ type Props = {
   services: ServiceOption[];
   submitLabel?: string;
   successMessage?: string;
+  /**
+   * When true, omit the services fieldset entirely. Used by the Overview
+   * form on the staff profile (services live on a dedicated tab). The
+   * absence of the `includeServiceIds` marker tells the action to leave
+   * staff_services assignments untouched instead of wiping them.
+   */
+  hideServicesFieldset?: boolean;
 };
 
 export function StaffForm({
@@ -36,6 +43,7 @@ export function StaffForm({
   services,
   submitLabel = 'Save',
   successMessage = 'Saved.',
+  hideServicesFieldset = false,
 }: Props) {
   const [state, formAction] = useFormState<ActionState, FormData>(action, { ok: false });
 
@@ -162,42 +170,54 @@ export function StaffForm({
         </label>
       </FormField>
 
-      <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
-        <legend className="t-eyebrow px-s2 text-ink-soft">Services this staff can perform</legend>
-        {services.length === 0 ? (
-          <p className="t-body-sm text-ink-soft">
-            No services exist yet. Create some on the Services page first.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-s2 md:grid-cols-2">
-            {services.map((s) => (
-              <label
-                key={s.id}
-                className="flex cursor-pointer items-center gap-s2 rounded-sm px-s2 py-s1 transition-colors duration-fast hover:bg-surface-2"
-              >
-                <input
-                  type="checkbox"
-                  name="serviceIds"
-                  value={s.id}
-                  defaultChecked={initialServiceIds.has(s.id)}
-                  className="h-[18px] w-[18px] cursor-pointer accent-accent"
-                />
-                {s.color && (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-[12px] w-[12px] shrink-0 rounded-sm border border-surface-3"
-                    style={{ backgroundColor: s.color }}
-                  />
-                )}
-                <span className="t-body-md text-ink">{s.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-        {fieldErrors.serviceIds && (
-          <span className="t-caption text-red font-sans">{fieldErrors.serviceIds}</span>
-        )}
-      </fieldset>
+      {!hideServicesFieldset && (
+        <>
+          {/*
+            Marker telling the server action that this form submission
+            contains the services fieldset, so the action should read
+            serviceIds from FormData. Absent on the Overview form (where
+            the fieldset is hidden) so the action leaves staff_services
+            untouched instead of wiping it.
+          */}
+          <input type="hidden" name="includeServiceIds" value="1" />
+          <fieldset className="flex flex-col gap-s3 rounded-md border border-surface-3 px-s4 pb-s4 pt-s2">
+            <legend className="t-eyebrow px-s2 text-ink-soft">Services this staff can perform</legend>
+            {services.length === 0 ? (
+              <p className="t-body-sm text-ink-soft">
+                No services exist yet. Create some on the Services page first.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-s2 md:grid-cols-2">
+                {services.map((s) => (
+                  <label
+                    key={s.id}
+                    className="flex cursor-pointer items-center gap-s2 rounded-sm px-s2 py-s1 transition-colors duration-fast hover:bg-surface-2"
+                  >
+                    <input
+                      type="checkbox"
+                      name="serviceIds"
+                      value={s.id}
+                      defaultChecked={initialServiceIds.has(s.id)}
+                      className="h-[18px] w-[18px] cursor-pointer accent-accent"
+                    />
+                    {s.color && (
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-[12px] w-[12px] shrink-0 rounded-sm border border-surface-3"
+                        style={{ backgroundColor: s.color }}
+                      />
+                    )}
+                    <span className="t-body-md text-ink">{s.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {fieldErrors.serviceIds && (
+              <span className="t-caption text-red font-sans">{fieldErrors.serviceIds}</span>
+            )}
+          </fieldset>
+        </>
+      )}
 
       <div className="flex gap-s3">
         <SubmitButton label={submitLabel} />
