@@ -1,7 +1,10 @@
 'use client';
 
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useRef, useState, useTransition } from 'react';
 
+import { XIcon } from '@/app/admin/_shell/icons';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
@@ -62,9 +65,11 @@ function putWithProgress(
 
 export function FilesDropzone({
   clientId,
+  closeHref,
   onUploaded,
 }: {
   clientId: string;
+  closeHref?: Route;
   onUploaded?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -138,7 +143,22 @@ export function FilesDropzone({
 
   return (
     <div className="flex flex-col gap-s4">
-      <div
+      <div className="relative">
+        {closeHref && (
+          <Link
+            href={closeHref}
+            aria-label="Close upload"
+            title="Close upload"
+            className={cn(
+              'absolute right-s3 top-s3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full',
+              'border border-line bg-surface text-ink-3 no-underline shadow-sm',
+              'transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink',
+            )}
+          >
+            <XIcon size={14} />
+          </Link>
+        )}
+        <div
         onClick={() => inputRef.current?.click()}
         onDragEnter={(e) => {
           e.preventDefault();
@@ -196,6 +216,7 @@ export function FilesDropzone({
         <div className="mt-s1 t-body-sm text-ink-3">
           Images, PDFs, and paperwork · up to 100 MB each
         </div>
+      </div>
       </div>
 
       {rows.length > 0 && (
