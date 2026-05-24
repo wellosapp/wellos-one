@@ -61,6 +61,12 @@ function valuesFromForm(formData: FormData): StaffFormValues {
       end: pick(formData, `workingHours_${day}_end`),
     };
   }
+  // The Overview StaffForm hides the services fieldset; service
+  // assignments are edited from a dedicated tab. Only read serviceIds
+  // from FormData when the form posts the `includeServiceIds` marker —
+  // otherwise leave serviceIds undefined so parseBody emits undefined to
+  // the API (partial update, M2M untouched).
+  const includeServiceIds = formData.get('includeServiceIds') === '1';
   return {
     firstName: pick(formData, 'firstName'),
     lastName: pick(formData, 'lastName'),
@@ -71,9 +77,11 @@ function valuesFromForm(formData: FormData): StaffFormValues {
     commissionRatePct: pick(formData, 'commissionRatePct'),
     active: formData.get('active') === '1',
     workingHours,
-    serviceIds: formData.getAll('serviceIds').filter(
-      (v): v is string => typeof v === 'string',
-    ),
+    serviceIds: includeServiceIds
+      ? formData.getAll('serviceIds').filter(
+          (v): v is string => typeof v === 'string',
+        )
+      : undefined,
   };
 }
 
@@ -140,7 +148,11 @@ function parseBody(values: StaffFormValues): {
       hourlyRateCents,
       commissionRatePct,
       active: values.active,
-      serviceIds: values.serviceIds ?? [],
+      // Pass-through: undefined → leave staff_services untouched; [] →
+      // clear all; [...] → replace. Default-to-[] would wipe assignments
+      // any time the Overview form (which hides the services fieldset)
+      // is saved.
+      serviceIds: values.serviceIds,
     },
   };
 }
