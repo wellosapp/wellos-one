@@ -84,6 +84,16 @@ export async function listClientIntakeSubmissions(clientId: string) {
   );
 }
 
+export async function getClientIntakeSubmission(
+  clientId: string,
+  submissionId: string,
+) {
+  return apiFetch<{
+    submission: IntakeFormSubmissionDto;
+    definition: IntakeFormDefinitionDto;
+  }>(`/admin/clients/${clientId}/intake-submissions/${submissionId}`);
+}
+
 export async function createClientIntakeSubmission(
   clientId: string,
   body: {

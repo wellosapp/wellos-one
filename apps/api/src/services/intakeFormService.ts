@@ -230,6 +230,29 @@ export async function listIntakeSubmissionsForClient(
   return { submissions };
 }
 
+/// Single-record fetch used by the fill-out page. Returns the submission + the
+/// full definition (schema included) so the renderer can render fields without
+/// a second round-trip.
+export async function getIntakeSubmissionForClient(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; clientId: string; submissionId: string },
+): Promise<{
+  submission: IntakeFormSubmission;
+  definition: IntakeFormDefinition;
+} | null> {
+  const row = await prisma.intakeFormSubmission.findFirst({
+    where: {
+      id: args.submissionId,
+      tenantId: args.tenantId,
+      clientId: args.clientId,
+    },
+    include: { definition: true },
+  });
+  if (!row) return null;
+  const { definition, ...submission } = row;
+  return { submission, definition };
+}
+
 export async function createIntakeFormSubmission(
   prisma: ExtendedPrismaClient,
   args: {

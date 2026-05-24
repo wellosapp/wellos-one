@@ -7,15 +7,14 @@ import { useState, useTransition } from 'react';
 import { Alert, Button, Select } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import type {
-  IntakeFormDefinitionDto,
-  IntakeFormSubmissionDto,
-} from '@/lib/api/intake-forms';
+  StaffOnboardingFormDefinitionDto,
+  StaffOnboardingFormSubmissionListItem,
+} from '@/lib/api/staff-onboarding-forms';
 
-import { startClientIntakeDraftAction } from './_actions';
+import { startStaffFormDraftAction } from './_actions';
 
-// Two-section panel: Submissions list + Start-a-draft form. Each section is
-// a card matching the SectionHeader chrome used elsewhere on the client
-// profile (Overview / Visits / Book / Notes / Files).
+// Two-section panel: Submissions list (with row-level Fill in / View links) +
+// Start-a-draft form. Mirrors ClientIntakePanel chrome.
 
 function relativeOrAbsolute(iso: string): string {
   const now = Date.now();
@@ -35,14 +34,14 @@ function relativeOrAbsolute(iso: string): string {
   });
 }
 
-export function ClientIntakePanel({
-  clientId,
+export function StaffFormsPanel({
+  staffId,
   publishedForms,
   submissions,
 }: {
-  clientId: string;
-  publishedForms: IntakeFormDefinitionDto[];
-  submissions: IntakeFormSubmissionDto[];
+  staffId: string;
+  publishedForms: StaffOnboardingFormDefinitionDto[];
+  submissions: StaffOnboardingFormSubmissionListItem[];
 }) {
   const [pendingStart, startTransition] = useTransition();
   const [message, setMessage] = useState<{
@@ -53,13 +52,11 @@ export function ClientIntakePanel({
 
   return (
     <div className="flex flex-col gap-s6">
-      {message && (
-        <Alert tone={message.tone}>{message.text}</Alert>
-      )}
+      {message && <Alert tone={message.tone}>{message.text}</Alert>}
 
       <SectionCard
         eyebrow="SUBMISSIONS"
-        headline="Drafts and completed intake."
+        headline="Drafts and completed onboarding forms."
         subtitle="Submitting locks the answers and writes an audit row (IP + user agent)."
       >
         {submissions.length === 0 ? (
@@ -72,15 +69,15 @@ export function ClientIntakePanel({
               No submissions yet.
             </h4>
             <p className="mx-auto mt-s2 max-w-sm t-body-sm text-ink-3">
-              Start a draft below to record this client&apos;s answers
-              against a published intake form.
+              Start a draft below to record this staff member&apos;s
+              onboarding answers against a published form.
             </p>
           </div>
         ) : (
           <ul className="flex flex-col gap-s2">
             {submissions.map((s) => {
               const href =
-                `/admin/clients/${clientId}/intake/${s.id}` as Route;
+                `/admin/staff/${staffId}/forms/${s.id}` as Route;
               return (
                 <li
                   key={s.id}
@@ -126,18 +123,12 @@ export function ClientIntakePanel({
 
       <SectionCard
         eyebrow="NEW DRAFT"
-        headline="Create an intake draft."
+        headline="Create an onboarding draft."
         subtitle={
           <>
             Only <strong className="text-ink-2">published</strong> forms appear
-            here. Manage definitions in{' '}
-            <Link
-              href="/admin/intake-forms"
-              className="text-sage-deep underline hover:text-ink"
-            >
-              Intake forms
-            </Link>
-            .
+            here. W-9 ships pre-published. License + cert templates ship in a
+            follow-up.
           </>
         }
       >
@@ -151,27 +142,20 @@ export function ClientIntakePanel({
               No published forms yet.
             </h4>
             <p className="mx-auto mt-s2 max-w-md t-body-sm text-ink-3">
-              Publish a form definition first.{' '}
-              <Link
-                href="/admin/intake-forms"
-                className="text-sage-deep underline hover:text-ink"
-              >
-                Open Intake forms
-              </Link>
-              .
+              No published staff onboarding forms exist for this tenant yet.
             </p>
           </div>
         ) : (
           <div className="flex flex-wrap items-end gap-s4">
             <div className="flex min-w-[260px] flex-col gap-s2">
               <label
-                htmlFor="intake-definition"
+                htmlFor="staff-form-definition"
                 className="t-eyebrow tracking-wide text-ink-3"
               >
                 PUBLISHED FORM
               </label>
               <Select
-                id="intake-definition"
+                id="staff-form-definition"
                 value={defId}
                 onChange={(e) => setDefId(e.target.value)}
               >
@@ -194,10 +178,7 @@ export function ClientIntakePanel({
               onClick={() => {
                 setMessage(null);
                 startTransition(async () => {
-                  const r = await startClientIntakeDraftAction(
-                    clientId,
-                    defId,
-                  );
+                  const r = await startStaffFormDraftAction(staffId, defId);
                   if (!r.ok) {
                     setMessage({
                       tone: 'error',
