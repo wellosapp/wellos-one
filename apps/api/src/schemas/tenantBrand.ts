@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-// Tenant brand-color palette validation (Phase 1 of Brand Settings).
-// JSONB column on tenants.brand_colors stores an array of { name, hex }.
-// Empty array means "fall back to FALLBACK_BRAND_COLORS at the web layer."
+// Tenant brand validation. JSONB column on tenants.brand_colors stores an
+// array of { name, hex }. tenants.logo_media_asset_id is a nullable FK to
+// MediaAsset for the tenant logo (Phase 2).
 
 // Hex color: # + exactly 6 hex digits (case-insensitive).
 const HEX_COLOR = z
@@ -15,10 +15,20 @@ export const BrandColorSchema = z.object({
   hex: HEX_COLOR,
 });
 
-// Max 24 colors per tenant (sanity cap). Empty allowed.
-export const UpdateBrandColorsBodySchema = z.object({
-  brandColors: z.array(BrandColorSchema).max(24),
-});
+// Update body — at least one field required. Both optional individually:
+//   - brandColors omitted = no palette change
+//   - logoMediaAssetId omitted = no logo change
+//   - logoMediaAssetId null   = clear the logo
+//   - logoMediaAssetId string = set/replace the logo
+export const UpdateTenantBrandBodySchema = z
+  .object({
+    brandColors: z.array(BrandColorSchema).max(24).optional(),
+    logoMediaAssetId: z.union([z.string().min(1), z.null()]).optional(),
+  })
+  .refine(
+    (b) => b.brandColors !== undefined || b.logoMediaAssetId !== undefined,
+    { message: 'At least one of brandColors or logoMediaAssetId is required.' },
+  );
 
 export type BrandColor = z.infer<typeof BrandColorSchema>;
-export type UpdateBrandColorsBody = z.infer<typeof UpdateBrandColorsBodySchema>;
+export type UpdateTenantBrandBody = z.infer<typeof UpdateTenantBrandBodySchema>;

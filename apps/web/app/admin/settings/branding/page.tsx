@@ -1,33 +1,39 @@
 import { GridIcon } from '@/app/admin/_shell/icons';
 import { ApiError } from '@/lib/api/client';
-import { getTenantBrand } from '@/lib/api/tenant-brand';
+import { getTenantBrand, type TenantLogo } from '@/lib/api/tenant-brand';
 import { cn } from '@/lib/cn';
 
 import { FALLBACK_BRAND_COLORS } from '../../services/_constants/colors';
 
 import { BrandColorsEditor } from './BrandColorsEditor';
+import { LogoUploadSection } from './LogoUploadSection';
 import { updateBrandColorsAction } from './_actions';
 
-// Tenant-wide brand palette. Phase 1 of the Brand Settings epic.
-// Logo + fonts + per-tenant CSS variables land in later phases.
+// Tenant-wide brand settings. Phase 1 shipped the color palette; Phase 2
+// adds the logo upload + admin rail render. Phase 3+ adds fonts + per-tenant
+// CSS variables.
 
 export default async function BrandSettingsPage() {
   let initial = [...FALLBACK_BRAND_COLORS];
+  let currentLogo: TenantLogo | null = null;
   let loadError: string | null = null;
   try {
-    const { brandColors } = await getTenantBrand();
+    const { brandColors, logo } = await getTenantBrand();
     if (brandColors.length > 0) {
       initial = brandColors;
     }
+    currentLogo = logo;
   } catch (err) {
     loadError =
       err instanceof ApiError
         ? err.message
-        : 'Could not load brand palette. Is the API running?';
+        : 'Could not load brand settings. Is the API running?';
   }
 
   return (
     <div className="flex flex-col gap-s6">
+      <LogoUploadSection currentLogo={currentLogo} />
+
       {/* Section header — inline chrome since this is an /admin/settings
           sub-route, not a client/staff profile section. */}
       <section

@@ -354,6 +354,13 @@ model Tenant {
   /// phases. Shape: [{name: string, hex: string}].
   brandColors      Json      @default("[]")             @map("brand_colors")
 
+  /// Tenant logo — uploaded to R2 via the MediaAsset table with
+  /// ownerType='tenant'. ON DELETE SET NULL means the tenant loses
+  /// its logo display if the asset is deleted (no cascade). Phase 2
+  /// of the Brand Settings epic. Phase 3+ adds fonts + theme tokens.
+  logoMediaAssetId String?      @map("logo_media_asset_id")
+  logoMediaAsset   MediaAsset?  @relation("TenantLogo", fields: [logoMediaAssetId], references: [id], onDelete: SetNull)
+
   locations                 Location[]
   users                     User[]
   roleAssignments           RoleAssignment[]
@@ -1123,6 +1130,9 @@ model MediaAsset {
 
   note              ClientNote?  @relation("MediaAssetNote",        fields: [noteId], references: [id], onDelete: SetNull)
   uploadedByStaff   Staff?       @relation("MediaAssetUploadedByStaff", fields: [uploadedByStaffId], references: [id], onDelete: SetNull)
+
+  // Back-relation for Tenant.logoMediaAsset.
+  tenantLogoBackrefs Tenant[] @relation("TenantLogo")
 
   @@unique([bucket, objectKey])
   @@index([tenantId])
