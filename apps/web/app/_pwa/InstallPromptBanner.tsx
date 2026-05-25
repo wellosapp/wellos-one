@@ -17,6 +17,8 @@
 //      a PRIOR visit (otherwise this is their first /book load and the
 //      banner is too aggressive)
 
+import Link from 'next/link';
+import type { Route } from 'next';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui';
@@ -181,6 +183,19 @@ export function InstallPromptBanner({
             </Button>
           </div>
         </div>
+        {/* Discovery hook for /me/permissions. Only surfaced on the
+            returning-client banner — the booking-confirmation surface is
+            its own bounded moment and shouldn't fork attention. */}
+        {surface === 'returning-client' ? (
+          <div className="mt-s3 flex justify-end">
+            <Link
+              href={'/me/permissions' as Route}
+              className="t-body-sm text-ink-soft no-underline hover:text-ink focus-visible:shadow-focus focus-visible:outline-none rounded-sm"
+            >
+              Manage permissions →
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       <IOSInstallModal
