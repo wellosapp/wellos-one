@@ -28,10 +28,16 @@ import type {
 // `class_waitlist.*` row inside the same transaction so reporting / event
 // streams see consistent history.
 //
+// Phase 3c — cancelBooking now auto-promotes the next 'waiting' waitlist
+// entry into a confirmed booking with a 24h expiresAt window, all inside the
+// same Serializable transaction. It also records a `_isLateCancel` flag on
+// the cancel audit row based on the tenant's bookingCancellationWindowHours
+// (informational only — no fee logic until Epic 6 / Stripe).
+//
 // Deferred work:
-//   - cancelBooking → auto-promote next waitlist entry (Phase 3c)
 //   - payment_id stays null until Epic 6 (Stripe) lands
-//   - SMS/email notifications on booking + cancel + waitlist (Epic 8)
+//   - SMS/email notifications on booking + cancel + waitlist + auto-promote
+//     (Epic 8)
 
 // ---------- Typed errors → route layer maps to 409s with `code` ----------
 
@@ -104,7 +110,7 @@ export class WaitlistEntryNotFoundError extends Error {
 export class BookingAlreadyCancelledError extends Error {
   code = 'BOOKING_ALREADY_CANCELLED' as const;
   constructor() {
-    super('Booking is already cancelled.');
+    super('Booking is already cancelled or completed.');
     this.name = 'BookingAlreadyCancelledError';
   }
 }
@@ -187,7 +193,16 @@ type ClassBookingAuditAction =
   | 'class_booking.created'
   | 'class_booking.cancelled'
   | 'class_waitlist.joined'
-  | 'class_waitlist.promoted';
+  | 'class_waitlist.promoted'
+  | 'class_waitlist.auto_promoted';
+
+// `before` / `after` accept either a raw ClassBooking / ClassWaitlistEntry row
+// (the common case) or a plain object (used by cancelBooking to attach an
+// `_isLateCancel` flag alongside the row snapshot).
+type AuditJsonRow =
+  | ClassBooking
+  | ClassWaitlistEntry
+  | Record<string, unknown>;
 
 async function writeAudit(
   tx: ExtendedTransactionClient,
@@ -200,8 +215,8 @@ async function writeAudit(
     action: ClassBookingAuditAction;
     entityType: 'class_booking' | 'class_waitlist_entry';
     entityId: string;
-    before?: ClassBooking | ClassWaitlistEntry | null;
-    after?: ClassBooking | ClassWaitlistEntry | null;
+    before?: AuditJsonRow | null;
+    after?: AuditJsonRow | null;
   },
 ): Promise<void> {
   await tx.auditLog.create({
@@ -480,6 +495,42 @@ export async function listRoster(
 
 // ---------- cancelBooking ----------
 
+// Default expiry window for an auto-promoted waitlist entry. The promoted
+// client has 24h to confirm before the entry expires (cleanup job lands in
+// Epic 8 alongside the notification stack). Mirrors MANUAL_PROMOTE_EXPIRY_HOURS
+// so both promote paths set the same window.
+const AUTO_PROMOTE_EXPIRY_HOURS = 24;
+
+export type CancelBookingResult = {
+  cancelled: ClassBooking;
+  /** Set when a waiting entry was auto-promoted into the freed seat. */
+  promotedBooking?: ClassBooking;
+  /** The waitlist entry that was promoted (state='promoted'). */
+  promotedFromEntry?: ClassWaitlistEntry;
+  /**
+   * Inlined client summary on the promoted entry so the admin UI can render
+   * "Promoted {Name} from waitlist" without a follow-up fetch.
+   */
+  promotedClient?: { id: string; firstName: string; lastName: string | null };
+  /**
+   * True when the cancel happened inside the tenant's cancellation window
+   * (NOW > scheduledStartAt - bookingCancellationWindowHours). Informational
+   * only — no refund/fee logic until Epic 6 (Stripe).
+   */
+  lateCancel: boolean;
+};
+
+/**
+ * Cancel a confirmed (or checked-in) class booking and, when the instance is
+ * still scheduled and there's a waiting waitlist entry, auto-promote the
+ * lowest-position entry into a confirmed booking with a 24h confirmation
+ * window. Cancel + promote run in the same Serializable transaction so a
+ * promote failure rolls the cancel back too.
+ *
+ * `lateCancel` is computed from the tenant's `bookingCancellationWindowHours`
+ * and recorded on the cancel audit row as `_isLateCancel`. It does NOT block
+ * the cancel and does NOT trigger a fee — fees land in Epic 6 with Stripe.
+ */
 export async function cancelBooking(
   prisma: ExtendedPrismaClient,
   args: {
@@ -488,62 +539,199 @@ export async function cancelBooking(
     instanceId: string;
     bookingId: string;
     reason: string | undefined;
-    initiatedBy: 'studio';
+    initiatedBy: 'studio' | 'client';
   },
-): Promise<{ booking: ClassBooking }> {
-  return prisma.$transaction(async (tx) => {
-    const before = await tx.classBooking.findFirst({
-      where: {
-        id: args.bookingId,
+): Promise<CancelBookingResult> {
+  return await prisma.$transaction(
+    async (tx) => {
+      const before = await tx.classBooking.findFirst({
+        where: {
+          id: args.bookingId,
+          tenantId: args.tenantId,
+          classInstanceId: args.instanceId,
+        },
+        select: CLASS_BOOKING_SAFE_FIELDS,
+      });
+      if (!before) {
+        throw new BookingNotFoundError();
+      }
+      // Reject if already in a terminal state — cancelled / no_show /
+      // completed bookings can't be cancelled again.
+      if (
+        before.state === 'cancelled_by_client' ||
+        before.state === 'cancelled_by_studio' ||
+        before.state === 'no_show' ||
+        before.state === 'completed'
+      ) {
+        throw new BookingAlreadyCancelledError();
+      }
+
+      // Load the instance + tenant cancellation window. Used to (a) decide
+      // whether to attempt auto-promote and (b) compute the lateCancel flag.
+      const instance = await tx.classInstance.findFirstOrThrow({
+        where: { id: args.instanceId, tenantId: args.tenantId },
+        select: {
+          id: true,
+          state: true,
+          scheduledStartAt: true,
+          tenant: {
+            select: { bookingCancellationWindowHours: true },
+          },
+        },
+      });
+
+      const now = new Date();
+      const windowHours = instance.tenant.bookingCancellationWindowHours;
+      const cancelCutoff = new Date(
+        instance.scheduledStartAt.getTime() - windowHours * 60 * 60_000,
+      );
+      const lateCancel = now > cancelCutoff;
+
+      const newState =
+        args.initiatedBy === 'client'
+          ? 'cancelled_by_client'
+          : 'cancelled_by_studio';
+
+      const after = await tx.classBooking.update({
+        where: { id: args.bookingId },
+        data: {
+          state: newState,
+          cancellationReason: args.reason ?? null,
+          cancellationInitiatedBy: args.initiatedBy,
+          cancelledAt: now,
+        },
+        select: CLASS_BOOKING_SAFE_FIELDS,
+      });
+
+      // Audit the cancel. `_isLateCancel` rides alongside the row snapshot so
+      // the audit trail captures the policy state at the moment of cancel.
+      await writeAudit(tx, {
         tenantId: args.tenantId,
-        classInstanceId: args.instanceId,
-      },
-      select: CLASS_BOOKING_SAFE_FIELDS,
-    });
-    if (!before) {
-      throw new BookingNotFoundError();
-    }
-    if (
-      before.state === 'cancelled_by_client' ||
-      before.state === 'cancelled_by_studio'
-    ) {
-      throw new BookingAlreadyCancelledError();
-    }
+        actorUserId: args.actorUserId,
+        action: 'class_booking.cancelled',
+        entityType: 'class_booking',
+        entityId: after.id,
+        before: before as ClassBooking,
+        after: {
+          ...(after as ClassBooking),
+          _isLateCancel: lateCancel,
+        } as Record<string, unknown>,
+      });
 
-    const after = await tx.classBooking.update({
-      where: { id: args.bookingId },
-      data: {
-        state:
-          args.initiatedBy === 'studio'
-            ? 'cancelled_by_studio'
-            : 'cancelled_by_client',
-        cancellationReason: args.reason ?? null,
-        cancellationInitiatedBy: args.initiatedBy,
-        cancelledAt: new Date(),
-      },
-      select: CLASS_BOOKING_SAFE_FIELDS,
-    });
+      // Auto-promote next waiting entry. Only when the instance is still
+      // scheduled — cancelled/in_progress/completed instances don't get new
+      // bookings. The promote happens inside this same transaction so a
+      // failure rolls back the cancel.
+      let promotedBooking: ClassBooking | undefined;
+      let promotedFromEntry: ClassWaitlistEntry | undefined;
+      let promotedClient:
+        | { id: string; firstName: string; lastName: string | null }
+        | undefined;
 
-    await writeAudit(tx, {
-      tenantId: args.tenantId,
-      actorUserId: args.actorUserId,
-      action: 'class_booking.cancelled',
-      entityType: 'class_booking',
-      entityId: after.id,
-      before: before as ClassBooking,
-      after: after as ClassBooking,
-    });
+      if (instance.state === 'scheduled') {
+        const nextEntry = await tx.classWaitlistEntry.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            classInstanceId: args.instanceId,
+            state: 'waiting',
+          },
+          orderBy: [{ position: 'asc' }, { joinedAt: 'asc' }],
+          select: {
+            ...CLASS_WAITLIST_SAFE_FIELDS,
+            client: { select: CLIENT_SUMMARY_SELECT },
+          },
+        });
 
-    // TODO(phase-3c): auto-promote next waitlist entry on cancel — pull the
-    // lowest-position waiting entry, flip to 'promoted' with expiresAt, and
-    // create a confirmed ClassBooking. Phase 3a leaves this for manual
-    // promote via promoteWaitlistEntryManually.
-    //
-    // TODO(epic-8): notify client (and the promoted waitlist client) of the
-    // cancellation + spot opening.
+        if (nextEntry) {
+          // Defensive pre-check: if the promoted client already has an active
+          // booking for this instance (e.g. they re-booked after joining the
+          // waitlist), the partial unique index on
+          // (class_instance_id, client_id) WHERE state IN
+          // ('confirmed','checked_in') would reject our insert and abort the
+          // transaction. Skip the promote in that case so the cancel itself
+          // still commits — admin can manually clean up the waitlist entry.
+          const existingActive = await tx.classBooking.findFirst({
+            where: {
+              classInstanceId: args.instanceId,
+              clientId: nextEntry.clientId,
+              state: { in: ['confirmed', 'checked_in'] },
+            },
+            select: { id: true },
+          });
 
-    return { booking: after as ClassBooking };
-  });
+          let createdBooking: ClassBooking | null = null;
+          if (!existingActive) {
+            const idempotencyKey = `waitlist-auto-promote:${nextEntry.id}`;
+            createdBooking = (await tx.classBooking.create({
+              data: {
+                tenantId: args.tenantId,
+                classInstanceId: args.instanceId,
+                clientId: nextEntry.clientId,
+                state: 'confirmed',
+                idempotencyKey,
+              },
+              select: CLASS_BOOKING_SAFE_FIELDS,
+            })) as ClassBooking;
+          }
+
+          if (createdBooking) {
+            const promotedAt = now;
+            const expiresAt = new Date(
+              promotedAt.getTime() + AUTO_PROMOTE_EXPIRY_HOURS * 60 * 60_000,
+            );
+            const updatedEntry = await tx.classWaitlistEntry.update({
+              where: { id: nextEntry.id },
+              data: {
+                state: 'promoted',
+                promotedAt,
+                expiresAt,
+              },
+              select: CLASS_WAITLIST_SAFE_FIELDS,
+            });
+
+            await writeAudit(tx, {
+              tenantId: args.tenantId,
+              actorUserId: args.actorUserId,
+              action: 'class_booking.created',
+              entityType: 'class_booking',
+              entityId: createdBooking.id,
+              after: createdBooking,
+            });
+            await writeAudit(tx, {
+              tenantId: args.tenantId,
+              actorUserId: args.actorUserId,
+              action: 'class_waitlist.auto_promoted',
+              entityType: 'class_waitlist_entry',
+              entityId: updatedEntry.id,
+              before: nextEntry as ClassWaitlistEntry,
+              after: updatedEntry as ClassWaitlistEntry,
+            });
+
+            // TODO(epic-8): notify promoted client they have 24h to confirm.
+
+            promotedBooking = createdBooking;
+            promotedFromEntry = updatedEntry as ClassWaitlistEntry;
+            promotedClient = nextEntry.client;
+          }
+        }
+      }
+
+      // TODO(epic-8): notify the cancelling client and (if not promoted) the
+      // next waitlist client that a spot may open up.
+
+      return {
+        cancelled: after as ClassBooking,
+        promotedBooking,
+        promotedFromEntry,
+        promotedClient,
+        lateCancel,
+      };
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 8000,
+    },
+  );
 }
 
 // ---------- joinWaitlistManually ----------

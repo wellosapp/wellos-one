@@ -70,6 +70,13 @@ interface CalendarDayViewProps {
   /** Phase 3a — bookings + waitlist for the open class-instance drawer. */
   selectedClassInstanceRoster: ListRosterResponse | null;
   selectedClassInstanceError: string | null;
+  /**
+   * Tenant's bookingCancellationWindowHours (R2 §12 tenant booking settings).
+   * Passed to the class-instance drawer's CancelBookingButton so the confirm
+   * UI can show "Free cancellation until N hours before class" + matches the
+   * late-cancel flag the API records (Phase 3c).
+   */
+  cancellationWindowHours: number;
   activeTab: string;
   quickBookOpen: boolean;
   blockTimeOpen: boolean;
@@ -94,6 +101,7 @@ export function CalendarDayView({
   selectedClassInstance,
   selectedClassInstanceRoster,
   selectedClassInstanceError,
+  cancellationWindowHours,
   activeTab,
   quickBookOpen,
   blockTimeOpen,
@@ -533,6 +541,7 @@ export function CalendarDayView({
     <ClassInstanceDrawer
       instance={selectedClassInstance}
       roster={selectedClassInstanceRoster}
+      cancellationWindowHours={cancellationWindowHours}
       onClose={handleCloseClassInstanceDrawer}
     />
   ) : null;

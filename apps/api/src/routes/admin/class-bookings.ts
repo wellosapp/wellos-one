@@ -31,8 +31,9 @@ import {
 
 // /admin/class-instances/:instanceId/* — admin-side roster + booking +
 // waitlist endpoints for the Classes epic. Phase 3a. Public /book Classes
-// tab is Phase 3b; auto-promote-on-cancel is Phase 3c. Payments deferred to
-// Epic 6.
+// tab is Phase 3b; auto-promote-on-cancel + late-cancel detection landed in
+// Phase 3c (cancel response now carries promotedBooking / promotedFromEntry /
+// promotedClient / lateCancel). Payments deferred to Epic 6.
 //
 // Auth gating:
 //   GET    /roster                          requireRole.staff   (anyone in tenant)
