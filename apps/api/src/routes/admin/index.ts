@@ -14,6 +14,7 @@ import intakeFormsRoutes from './intake-forms.js';
 import linkedRecordsRoutes from './linked-records.js';
 import mediaRoutes from './media.js';
 import onboardingRoutes from './onboarding.js';
+import recurrenceRulesRoutes from './recurrence-rules.js';
 import serviceCategoriesRoutes from './service-categories.js';
 import servicesRoutes from './services.js';
 import soapNotesRoutes from './soap-notes.js';
@@ -39,6 +40,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(servicesRoutes, { prefix: '/admin' });
   await app.register(classesRoutes, { prefix: '/admin' });
   await app.register(classInstancesRoutes, { prefix: '/admin' });
+  await app.register(recurrenceRulesRoutes, { prefix: '/admin' });
   await app.register(serviceCategoriesRoutes, { prefix: '/admin' });
   await app.register(staffRoutes, { prefix: '/admin' });
   await app.register(staffBookingPreferencesRoutes, { prefix: '/admin' });
