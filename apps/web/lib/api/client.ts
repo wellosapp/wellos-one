@@ -27,7 +27,7 @@ export class ApiError extends Error {
 }
 
 type ApiFetchOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   searchParams?: Record<string, string | number | boolean | undefined>;
   /** Extra headers (e.g. x-wellos-calendar-drag for reschedule analytics). */

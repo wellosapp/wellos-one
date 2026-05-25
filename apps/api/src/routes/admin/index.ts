@@ -13,6 +13,7 @@ import contentDeliveriesRoutes from './content-deliveries.js';
 import impersonateRoutes from './impersonate.js';
 import intakeFormsRoutes from './intake-forms.js';
 import linkedRecordsRoutes from './linked-records.js';
+import locationGeofenceRoutes from './location-geofence.js';
 import mediaRoutes from './media.js';
 import onboardingRoutes from './onboarding.js';
 import recurrenceRulesRoutes from './recurrence-rules.js';
@@ -51,6 +52,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(appointmentsRoutes, { prefix: '/admin' });
   await app.register(availabilityRoutes, { prefix: '/admin' });
   await app.register(linkedRecordsRoutes, { prefix: '/admin' });
+  await app.register(locationGeofenceRoutes, { prefix: '/admin' });
   await app.register(staffBookingRoutes, { prefix: '/admin' });
   await app.register(staffScheduleBlocksRoutes, { prefix: '/admin' });
   await app.register(triageRoutes, { prefix: '/admin' });
