@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import { Alert, Button, Card } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
+import type { ListRosterResponse } from '@/lib/api/class-bookings';
 import type { ClassInstanceWithRelations } from '@/lib/api/class-instances';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
@@ -66,6 +67,8 @@ interface CalendarDayViewProps {
   selectedError: string | null;
   /** Phase 2a — class instance drawer drilldown (separate from appointment selection). */
   selectedClassInstance: ClassInstanceWithRelations | null;
+  /** Phase 3a — bookings + waitlist for the open class-instance drawer. */
+  selectedClassInstanceRoster: ListRosterResponse | null;
   selectedClassInstanceError: string | null;
   activeTab: string;
   quickBookOpen: boolean;
@@ -89,6 +92,7 @@ export function CalendarDayView({
   selected,
   selectedError,
   selectedClassInstance,
+  selectedClassInstanceRoster,
   selectedClassInstanceError,
   activeTab,
   quickBookOpen,
@@ -528,6 +532,7 @@ export function CalendarDayView({
   const classInstanceDrawer = selectedClassInstance ? (
     <ClassInstanceDrawer
       instance={selectedClassInstance}
+      roster={selectedClassInstanceRoster}
       onClose={handleCloseClassInstanceDrawer}
     />
   ) : null;

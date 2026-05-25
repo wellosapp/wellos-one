@@ -7,6 +7,10 @@ import {
   type Appointment,
 } from '@/lib/api/appointments';
 import {
+  getClassInstanceRoster,
+  type ListRosterResponse,
+} from '@/lib/api/class-bookings';
+import {
   getClassInstance,
   listClassInstances,
 } from '@/lib/api/class-instances';
@@ -237,10 +241,13 @@ export default async function CalendarPage({
     | null = null;
   let selectedError: string | null = null;
   // Phase 2a — separate class-instance drawer fetch. Mirrors the appointment
-  // drilldown pattern but on `?classInstance=<id>`.
+  // drilldown pattern but on `?classInstance=<id>`. Phase 3a augments the
+  // bundle with the live roster (bookings + waitlist) so the drawer can
+  // render real numbers + manage actions without a follow-up round-trip.
   let selectedClassInstance:
     | Awaited<ReturnType<typeof getClassInstance>>['instance']
     | null = null;
+  let selectedClassInstanceRoster: ListRosterResponse | null = null;
   let selectedClassInstanceError: string | null = null;
   if (sp.selected && !directoryError) {
     try {
@@ -273,8 +280,12 @@ export default async function CalendarPage({
 
   if (sp.classInstance && !directoryError) {
     try {
-      const resp = await getClassInstance(sp.classInstance);
-      selectedClassInstance = resp.instance;
+      const [instanceResp, rosterResp] = await Promise.all([
+        getClassInstance(sp.classInstance),
+        getClassInstanceRoster(sp.classInstance),
+      ]);
+      selectedClassInstance = instanceResp.instance;
+      selectedClassInstanceRoster = rosterResp;
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         selectedClassInstanceError = 'Class instance not found.';
@@ -348,6 +359,7 @@ export default async function CalendarPage({
       selected={selectedBundle}
       selectedError={selectedError}
       selectedClassInstance={selectedClassInstance}
+      selectedClassInstanceRoster={selectedClassInstanceRoster}
       selectedClassInstanceError={selectedClassInstanceError}
       activeTab={sp.tab ?? 'overview'}
       quickBookOpen={sp.quickbook === '1'}
