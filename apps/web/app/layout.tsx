@@ -1,7 +1,8 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Instrument_Serif, Manrope } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { RegisterServiceWorker } from './_pwa/RegisterServiceWorker';
 
 // Editorial serif display face. Used by every heading + the t-display-*
 // utility classes. Variable name `--font-display` is intentionally font-
@@ -26,6 +27,28 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: 'Wellos',
   description: 'Wellos — multi-vertical booking, payments, and CRM platform',
+  // PWA manifest. Next.js emits `<link rel="manifest" href="/manifest.json">`.
+  manifest: '/manifest.json',
+  // iOS Safari hints. `apple-mobile-web-app-capable` lets the PWA run
+  // standalone (no Safari chrome) once added to the home screen, and the
+  // touch icon shows up on the iOS home grid. Color hex literals match
+  // the manifest theme_color (--color-sage-deep token).
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Wellos',
+  },
+  icons: {
+    apple: [{ url: '/icons/icon-192.png', sizes: '192x192' }],
+  },
+};
+
+// Next 14 Metadata API: themeColor + viewport live on a separate `viewport`
+// export, not on `metadata`. Hex matches manifest.json theme_color and the
+// --color-sage-deep design token (#3D7A5E) — manifest.json can't reference
+// CSS vars so the literal is the source of truth here.
+export const viewport: Viewport = {
+  themeColor: '#3D7A5E',
 };
 
 // ClerkProvider validates NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY at module import,
@@ -42,7 +65,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${instrumentSerif.variable} ${manrope.variable}`}>
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <RegisterServiceWorker />
+          {children}
+        </Providers>
       </body>
     </html>
   );
