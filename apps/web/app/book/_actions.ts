@@ -5,9 +5,11 @@ import {
   createPublicAppointmentRequest,
   fetchPublicAvailability,
   fetchPublicBookingCatalog,
+  submitPublicClassBooking,
   type PublicBookingCatalogResponse,
   type AvailableSlotWire,
   type CreatePublicAppointmentResult,
+  type CreatePublicClassBookingResult,
 } from '@/lib/api/public-booking-server';
 import {
   PublicWaitlistApiError,
@@ -107,6 +109,52 @@ export async function submitPublicBookingAction(args: {
       return {
         ok: false,
         message,
+        issues: body?.issues,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function submitPublicClassBookingAction(args: {
+  tenantSlug: string;
+  classInstanceId: string;
+  idempotencyKey: string;
+  guest: {
+    firstName: string;
+    lastName?: string;
+    email: string;
+    phone?: string;
+  };
+}): Promise<
+  | { ok: true; result: CreatePublicClassBookingResult }
+  | {
+      ok: false;
+      message: string;
+      code?: string;
+      issues?: Array<{ path: string; message: string }>;
+    }
+> {
+  try {
+    const result = await submitPublicClassBooking(args);
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof PublicApiError) {
+      const body = err.body as {
+        message?: string;
+        code?: string;
+        issues?: Array<{ path: string; message: string }>;
+      } | null;
+      const message =
+        typeof body?.message === 'string'
+          ? body.message
+          : err.status === 409
+            ? 'That spot was just taken. Try another class.'
+            : 'Booking failed. Try again.';
+      return {
+        ok: false,
+        message,
+        code: typeof body?.code === 'string' ? body.code : undefined,
         issues: body?.issues,
       };
     }

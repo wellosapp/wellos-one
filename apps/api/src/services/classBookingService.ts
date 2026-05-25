@@ -193,7 +193,10 @@ async function writeAudit(
   tx: ExtendedTransactionClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    // Null when the action originates from the login-free public /book
+    // surface (Phase 3b). The audit row then records actorType='system'
+    // (mirrors apps/api/src/services/appointmentService.ts).
+    actorUserId: string | null;
     action: ClassBookingAuditAction;
     entityType: 'class_booking' | 'class_waitlist_entry';
     entityId: string;
@@ -205,7 +208,7 @@ async function writeAudit(
     data: {
       tenantId: args.tenantId,
       actorUserId: args.actorUserId,
-      actorType: 'user',
+      actorType: args.actorUserId ? 'user' : 'system',
       action: args.action,
       entityType: args.entityType,
       entityId: args.entityId,
@@ -252,7 +255,8 @@ export async function createBookingOrWaitlist(
   prisma: ExtendedPrismaClient,
   args: {
     tenantId: string;
-    actorUserId: string;
+    /** Null for the login-free public /book Classes flow (Phase 3b). */
+    actorUserId: string | null;
     instanceId: string;
     clientId: string;
     idempotencyKey: string;

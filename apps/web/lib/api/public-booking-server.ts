@@ -110,6 +110,129 @@ export type CreatePublicAppointmentResult = {
   message?: string;
 };
 
+// ---------- Public class booking (Phase 3b) ----------
+
+export type PublicClassDto = {
+  id: string;
+  name: string;
+  color: string | null;
+  durationMinutes: number;
+  basePriceCents: number;
+  allowWaitlist: boolean;
+  maxCapacity: number;
+  waitlistLimit: number;
+  categoryId: string | null;
+  shortDescription: string | null;
+};
+
+export type PublicClassCategoryDto = { id: string; name: string };
+
+export type PublicClassCatalogResponse = {
+  tenantSlug: string;
+  classes: PublicClassDto[];
+  categories: PublicClassCategoryDto[];
+};
+
+export type PublicClassInstanceDto = {
+  id: string;
+  classId: string;
+  class: PublicClassDto;
+  staff: { id: string; firstName: string; lastName: string | null };
+  location: { id: string; name: string; timezone: string };
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  capacityOverride: number | null;
+  waitlistOverride: number | null;
+  confirmedBookingCount: number;
+  waitlistCount: number;
+};
+
+export type PublicClassInstancesResponse = {
+  instances: PublicClassInstanceDto[];
+};
+
+export type CreatePublicClassBookingResult =
+  | { kind: 'booking'; id: string }
+  | { kind: 'waitlist'; id: string; position: number };
+
+export async function fetchPublicClassCatalog(
+  tenantSlug: string,
+): Promise<PublicClassCatalogResponse> {
+  const url = buildUrl('/public/booking/class-catalog', { tenantSlug });
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new PublicApiError(res.status, body);
+  }
+  return body as PublicClassCatalogResponse;
+}
+
+export async function fetchPublicClassInstances(params: {
+  tenantSlug: string;
+  fromDate?: string;
+  toDate?: string;
+  classId?: string;
+  categoryId?: string;
+  staffId?: string;
+  locationId?: string;
+}): Promise<PublicClassInstancesResponse> {
+  const url = buildUrl('/public/booking/class-instances', {
+    tenantSlug: params.tenantSlug,
+    fromDate: params.fromDate,
+    toDate: params.toDate,
+    classId: params.classId,
+    categoryId: params.categoryId,
+    staffId: params.staffId,
+    locationId: params.locationId,
+  });
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new PublicApiError(res.status, body);
+  }
+  return body as PublicClassInstancesResponse;
+}
+
+export async function submitPublicClassBooking(args: {
+  tenantSlug: string;
+  classInstanceId: string;
+  idempotencyKey: string;
+  guest: {
+    firstName: string;
+    lastName?: string;
+    email: string;
+    phone?: string;
+  };
+}): Promise<CreatePublicClassBookingResult> {
+  const url = buildUrl('/public/booking/class-bookings');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': args.idempotencyKey,
+    },
+    body: JSON.stringify({
+      tenantSlug: args.tenantSlug,
+      classInstanceId: args.classInstanceId,
+      idempotencyKey: args.idempotencyKey,
+      guest: args.guest,
+    }),
+    cache: 'no-store',
+  });
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new PublicApiError(res.status, body);
+  }
+  return body as CreatePublicClassBookingResult;
+}
+
 export async function createPublicAppointmentRequest(args: {
   tenantSlug: string;
   guest: {
