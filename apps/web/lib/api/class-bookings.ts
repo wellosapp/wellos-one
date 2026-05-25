@@ -31,6 +31,8 @@ export type ClassBooking = {
   checkInMethod: string | null;
   checkedInAt: string | null;
   checkedInByStaffId: string | null;
+  /** Phase 4 — late-arrival indicator on a checked-in booking. */
+  late: boolean;
   cancellationReason: string | null;
   cancellationInitiatedBy: string | null;
   cancelledAt: string | null;
@@ -166,5 +168,72 @@ export async function promoteClassWaitlistEntry(
   return apiFetch<PromoteWaitlistResponse>(
     `/admin/class-instances/${instanceId}/waitlist/${entryId}/promote`,
     { method: 'POST', body: {} },
+  );
+}
+
+// ---------- Phase 4: check-in lifecycle + state override + summary ----------
+
+export type InstanceSummary = {
+  totalBooked: number;
+  /** Bookings with state in (checked_in, completed). */
+  attended: number;
+  noShow: number;
+  /** Subset of attended where late=true. */
+  late: number;
+  /** Bookings cancelled by client or studio. */
+  cancelled: number;
+};
+
+export type ManualClassInstanceState =
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed';
+
+export async function checkInClassBooking(
+  instanceId: string,
+  bookingId: string,
+  body: { late?: boolean } = {},
+): Promise<{ booking: ClassBooking }> {
+  return apiFetch<{ booking: ClassBooking }>(
+    `/admin/class-instances/${instanceId}/bookings/${bookingId}/check-in`,
+    { method: 'POST', body },
+  );
+}
+
+export async function markNoShowClassBooking(
+  instanceId: string,
+  bookingId: string,
+): Promise<{ booking: ClassBooking }> {
+  return apiFetch<{ booking: ClassBooking }>(
+    `/admin/class-instances/${instanceId}/bookings/${bookingId}/no-show`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function revertClassBookingCheckIn(
+  instanceId: string,
+  bookingId: string,
+): Promise<{ booking: ClassBooking }> {
+  return apiFetch<{ booking: ClassBooking }>(
+    `/admin/class-instances/${instanceId}/bookings/${bookingId}/revert-check-in`,
+    { method: 'POST', body: {} },
+  );
+}
+
+export async function setClassInstanceState(
+  instanceId: string,
+  state: ManualClassInstanceState,
+): Promise<{ instance: import('./class-instances').ClassInstance }> {
+  return apiFetch<{ instance: import('./class-instances').ClassInstance }>(
+    `/admin/class-instances/${instanceId}/state`,
+    { method: 'PATCH', body: { state } },
+  );
+}
+
+export async function getClassInstanceSummary(
+  instanceId: string,
+): Promise<{ summary: InstanceSummary }> {
+  return apiFetch<{ summary: InstanceSummary }>(
+    `/admin/class-instances/${instanceId}/summary`,
   );
 }

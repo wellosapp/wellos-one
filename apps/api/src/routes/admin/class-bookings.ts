@@ -1,19 +1,25 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import { resolveStaffMemberIdForUser } from '../../auth/calendarStaffScope.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
   CancelClassBookingBodySchema,
+  CheckInClassBookingBodySchema,
   CreateClassBookingBodySchema,
   InstanceBookingIdParamsSchema,
   InstanceIdParamsSchema,
   InstanceWaitlistIdParamsSchema,
   JoinWaitlistBodySchema,
   ListRosterQuerySchema,
+  SetClassInstanceStateBodySchema,
 } from '../../schemas/classBooking.js';
 import {
   BookingAlreadyCancelledError,
+  BookingNotCheckInEligibleError,
   BookingNotFoundError,
+  BookingNotNoShowEligibleError,
+  BookingNotRevertibleError,
   ClassFullError,
   ClassInstanceNotBookableError,
   ClassInstanceNotFoundError,
@@ -23,11 +29,20 @@ import {
   WaitlistEntryNotPromotableError,
   WaitlistFullError,
   cancelBooking,
+  checkInBooking,
   createBookingOrWaitlist,
   joinWaitlistManually,
   listRoster,
+  markNoShow,
   promoteWaitlistEntryManually,
+  revertCheckIn,
 } from '../../services/classBookingService.js';
+import {
+  ClassInstanceCancelledStateError,
+  ClassInstanceStateTransitionError,
+  getInstanceSummary,
+  setInstanceState,
+} from '../../services/classInstanceService.js';
 
 // /admin/class-instances/:instanceId/* — admin-side roster + booking +
 // waitlist endpoints for the Classes epic. Phase 3a. Public /book Classes
@@ -342,6 +357,214 @@ export default async function classBookingsRoutes(
         }
         throw err;
       }
+    },
+  );
+
+  // ---------- Phase 4: check-in lifecycle + state override + summary ----------
+
+  // POST /admin/class-instances/:instanceId/bookings/:bookingId/check-in
+  // Staff manually checks a client into the class. Idempotent on re-check;
+  // only updates if the `late` flag differs.
+  app.post(
+    '/class-instances/:instanceId/bookings/:bookingId/check-in',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = InstanceBookingIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = CheckInClassBookingBodySchema.safeParse(request.body ?? {});
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      // Resolve the signed-in user → Staff row. Null is acceptable — the
+      // `checked_in_by_staff_id` column is nullable; the audit row still
+      // records `actorUserId` for accountability.
+      const actorStaffId = await resolveStaffMemberIdForUser(
+        app.prisma,
+        tenantId,
+        user.email,
+      );
+
+      try {
+        const result = await checkInBooking(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          actorStaffId,
+          instanceId: params.data.instanceId,
+          bookingId: params.data.bookingId,
+          late: body.data.late,
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof BookingNotFoundError) {
+          return reply.code(404).send({ error: 'Not Found', message: err.message });
+        }
+        if (err instanceof BookingNotCheckInEligibleError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            message: err.message,
+            state: err.state,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // POST /admin/class-instances/:instanceId/bookings/:bookingId/no-show
+  app.post(
+    '/class-instances/:instanceId/bookings/:bookingId/no-show',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = InstanceBookingIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      try {
+        const result = await markNoShow(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          instanceId: params.data.instanceId,
+          bookingId: params.data.bookingId,
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof BookingNotFoundError) {
+          return reply.code(404).send({ error: 'Not Found', message: err.message });
+        }
+        if (err instanceof BookingNotNoShowEligibleError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            message: err.message,
+            state: err.state,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // POST /admin/class-instances/:instanceId/bookings/:bookingId/revert-check-in
+  app.post(
+    '/class-instances/:instanceId/bookings/:bookingId/revert-check-in',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = InstanceBookingIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      try {
+        const result = await revertCheckIn(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          instanceId: params.data.instanceId,
+          bookingId: params.data.bookingId,
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof BookingNotFoundError) {
+          return reply.code(404).send({ error: 'Not Found', message: err.message });
+        }
+        if (err instanceof BookingNotRevertibleError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            message: err.message,
+            state: err.state,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // PATCH /admin/class-instances/:instanceId/state
+  // Admin manual lifecycle override. Cron-driven transitions are Epic 8.
+  app.patch(
+    '/class-instances/:instanceId/state',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = InstanceIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = SetClassInstanceStateBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      try {
+        const result = await setInstanceState(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          id: params.data.instanceId,
+          state: body.data.state,
+        });
+        if (!result) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Class instance not found.',
+          });
+        }
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof ClassInstanceCancelledStateError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            message: err.message,
+          });
+        }
+        if (err instanceof ClassInstanceStateTransitionError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            message: err.message,
+            fromState: err.fromState,
+            toState: err.toState,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // GET /admin/class-instances/:instanceId/summary
+  app.get(
+    '/class-instances/:instanceId/summary',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = InstanceIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const summary = await getInstanceSummary(app.prisma, {
+        tenantId,
+        instanceId: params.data.instanceId,
+      });
+      return reply.send({ summary });
     },
   );
 }

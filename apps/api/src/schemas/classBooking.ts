@@ -92,3 +92,21 @@ export const ListRosterQuerySchema = z.object({
     .transform((v) => v === 'true'),
 });
 export type ListRosterQuery = z.infer<typeof ListRosterQuerySchema>;
+
+// Phase 4 — check-in body. `late` is a visual indicator only; no policy
+// enforcement attached.
+export const CheckInClassBookingBodySchema = z.object({
+  late: z.boolean().optional().default(false),
+});
+export type CheckInClassBookingBody = z.infer<
+  typeof CheckInClassBookingBodySchema
+>;
+
+// Phase 4 — admin override of a class instance's lifecycle state. `cancelled`
+// is intentionally excluded — that path stays on POST .../cancel.
+export const SetClassInstanceStateBodySchema = z.object({
+  state: z.enum(['scheduled', 'in_progress', 'completed']),
+});
+export type SetClassInstanceStateBody = z.infer<
+  typeof SetClassInstanceStateBodySchema
+>;

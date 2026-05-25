@@ -7,6 +7,10 @@ import {
   listAppointments,
   listBookingAnswers,
 } from '@/lib/api/appointments';
+import {
+  listClassInstances,
+  type ClassInstanceWithRelations,
+} from '@/lib/api/class-instances';
 import { listClientNotes } from '@/lib/api/client-notes';
 import { getClient } from '@/lib/api/clients';
 import { listServices } from '@/lib/api/services';
@@ -168,6 +172,25 @@ export default async function StaffSchedulePage({
     [me.id]: myBlocks,
   };
 
+  // Phase 4 of the Classes epic — surface scheduled class instances the
+  // signed-in staff member is teaching. Threading chips through the three
+  // CalendarGrid views is a follow-up; this initial slice ships the list
+  // above the calendar so staff can click into /staff/classes/[instanceId]
+  // for check-in.
+  let myClassInstances: ClassInstanceWithRelations[] = [];
+  try {
+    const res = await listClassInstances({
+      staffId: me.id,
+      fromDate: fromIso,
+      toDate: toIso,
+      state: 'scheduled',
+      take: 200,
+    });
+    myClassInstances = res.instances;
+  } catch {
+    myClassInstances = [];
+  }
+
   return (
     <StaffScheduleView
       date={date}
@@ -177,6 +200,7 @@ export default async function StaffSchedulePage({
       services={servicesData?.services ?? []}
       appointments={myAppointments}
       scheduleBlocksByStaff={scheduleBlocksByStaff}
+      classInstances={myClassInstances}
       clientDisplayNames={clientDisplayNames}
       locations={whoami?.locations ?? []}
       selected={selectedBundle}
