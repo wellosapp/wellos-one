@@ -193,18 +193,38 @@ export function AddClientToClassInstanceButton({
 
 // ---------- CancelBookingButton ----------
 
+/**
+ * Phase 3c — surfaces:
+ *   - "Free cancellation until N hours before class" caption in the confirm UI
+ *     (from the tenant's bookingCancellationWindowHours)
+ *   - Auto-promote feedback: "Cancelled. Promoted {Name} from waitlist." when
+ *     the API returned a promotedClient
+ *   - "Late cancel logged." note when the cancel happened inside the window
+ *     (informational; no fee until Epic 6 / Stripe)
+ *
+ * The success alert renders in-place until `router.refresh()` re-renders the
+ * parent drawer and removes the cancelled booking row from the roster list,
+ * which unmounts this component.
+ */
 export function CancelBookingButton({
   instanceId,
   bookingId,
+  cancellationWindowHours,
 }: {
   instanceId: string;
   bookingId: string;
+  /** Tenant's bookingCancellationWindowHours — shown as a caption + drives the late-cancel flag. */
+  cancellationWindowHours: number;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [postCancelMessage, setPostCancelMessage] = useState<{
+    tone: 'success' | 'info';
+    text: string;
+  } | null>(null);
 
   const handleCancel = () => {
     setError(null);
@@ -220,9 +240,31 @@ export function CancelBookingButton({
       }
       setConfirming(false);
       setReason('');
+      // Compose the post-cancel feedback. Promoted-client wins the tone
+      // because it's the more interesting signal; late-cancel rides as a
+      // suffix when applicable.
+      const parts: string[] = [];
+      if (res.promotedClientName) {
+        parts.push(`Promoted ${res.promotedClientName} from waitlist.`);
+      } else {
+        parts.push('Cancelled.');
+      }
+      if (res.lateCancel) {
+        parts.push('Late cancel logged.');
+      }
+      setPostCancelMessage({
+        tone: res.promotedClientName ? 'success' : 'info',
+        text: parts.join(' '),
+      });
       router.refresh();
     });
   };
+
+  if (postCancelMessage) {
+    return (
+      <Alert tone={postCancelMessage.tone}>{postCancelMessage.text}</Alert>
+    );
+  }
 
   if (!confirming) {
     return (
@@ -241,6 +283,10 @@ export function CancelBookingButton({
   return (
     <div className="flex flex-col gap-s2 rounded-md border border-red/30 bg-red-pale/40 p-s3">
       {error && <Alert tone="error">{error}</Alert>}
+      <p className="t-caption text-ink-soft">
+        Free cancellation until {cancellationWindowHours}{' '}
+        {cancellationWindowHours === 1 ? 'hour' : 'hours'} before class.
+      </p>
       <Textarea
         name="reason"
         rows={2}

@@ -80,7 +80,17 @@ export type CreateBookingOrWaitlistResponse =
   | { kind: 'booking'; booking: ClassBooking }
   | { kind: 'waitlist'; entry: ClassWaitlistEntry };
 
-export type CancelClassBookingResponse = { booking: ClassBooking };
+// Phase 3c — cancel response widened to carry auto-promote info + late-cancel
+// flag. Existing callers reading `cancelled` keep working. `promotedBooking`
+// / `promotedFromEntry` / `promotedClient` are set together when an entry was
+// auto-promoted into the freed seat; otherwise all three are undefined.
+export type CancelClassBookingResponse = {
+  cancelled: ClassBooking;
+  promotedBooking?: ClassBooking;
+  promotedFromEntry?: ClassWaitlistEntry;
+  promotedClient?: ClassBookingClientSummary;
+  lateCancel: boolean;
+};
 
 export type PromoteWaitlistResponse = {
   booking: ClassBooking;

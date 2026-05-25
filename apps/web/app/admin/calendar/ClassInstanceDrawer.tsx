@@ -109,12 +109,19 @@ function waitlistStateBadge(state: RosterWaitlistEntry['state']) {
 interface ClassInstanceDrawerProps {
   instance: ClassInstanceWithRelations;
   roster: ListRosterResponse | null;
+  /**
+   * Tenant's bookingCancellationWindowHours — drives the "Free cancellation
+   * until N hours before class" caption + matches the late-cancel flag the
+   * API records on the cancel audit row (Phase 3c).
+   */
+  cancellationWindowHours: number;
   onClose: () => void;
 }
 
 export function ClassInstanceDrawer({
   instance,
   roster,
+  cancellationWindowHours,
   onClose,
 }: ClassInstanceDrawerProps) {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -263,6 +270,7 @@ export function ClassInstanceDrawer({
                         <CancelBookingButton
                           instanceId={instance.id}
                           bookingId={b.id}
+                          cancellationWindowHours={cancellationWindowHours}
                         />
                       )}
                     </div>

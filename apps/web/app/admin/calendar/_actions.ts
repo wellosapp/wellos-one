@@ -649,8 +649,17 @@ export async function addClientToClassInstanceAction(args: {
   }
 }
 
+// Phase 3c — the cancel action surfaces the auto-promoted client name (so
+// the drawer can show "Cancelled. Promoted {Name} from waitlist.") and the
+// lateCancel flag (informational; no fee logic until Epic 6 / Stripe).
+export type CancelClassBookingSuccess = {
+  ok: true;
+  promotedClientName?: string;
+  lateCancel: boolean;
+};
+
 export type CancelClassBookingResult =
-  | { ok: true }
+  | CancelClassBookingSuccess
   | ClassBookingActionError;
 
 export async function cancelClassBookingAction(args: {
@@ -659,19 +668,30 @@ export async function cancelClassBookingAction(args: {
   reason?: string;
 }): Promise<CancelClassBookingResult> {
   try {
-    await cancelClassBooking(args.instanceId, args.bookingId, {
+    const res = await cancelClassBooking(args.instanceId, args.bookingId, {
       reason: args.reason,
       initiatedBy: 'studio',
     });
     revalidatePath(PAGE);
-    return { ok: true };
+    const promotedClientName = res.promotedClient
+      ? [res.promotedClient.firstName, res.promotedClient.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || undefined
+      : undefined;
+    return {
+      ok: true,
+      promotedClientName,
+      lateCancel: res.lateCancel,
+    };
   } catch (err) {
     if (err instanceof ApiError) {
-      // 409 'already cancelled' / 404 'not found' — surface as success because
-      // the UI state matches the server state.
+      // 404 'not found' — surface as success because the UI state matches
+      // the server state. We can't read lateCancel in that case (the cancel
+      // didn't run), so default to false.
       if (err.status === 404) {
         revalidatePath(PAGE);
-        return { ok: true };
+        return { ok: true, lateCancel: false };
       }
       return classBookingApiErrorToState(err);
     }

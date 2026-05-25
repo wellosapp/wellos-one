@@ -14,6 +14,7 @@ import {
   getClassInstance,
   listClassInstances,
 } from '@/lib/api/class-instances';
+import { getTenantBookingSettings } from '@/lib/api/booking-settings';
 import {
   listStaffScheduleBlocks,
   type StaffScheduleBlock,
@@ -204,21 +205,33 @@ export default async function CalendarPage({
   let classInstancesData: Awaited<ReturnType<typeof listClassInstances>> | null =
     null;
   let whoami: Awaited<ReturnType<typeof getWhoami>> | null = null;
+  // Phase 3c — tenant booking settings drive the class-cancel "Free
+  // cancellation until N hours before class" caption + late-cancel flag.
+  let bookingSettingsData: Awaited<
+    ReturnType<typeof getTenantBookingSettings>
+  > | null = null;
 
   try {
-    [staffData, servicesData, appointmentsData, classInstancesData, whoami] =
-      await Promise.all([
-        listStaff({ active: true, take: 100 }),
-        listServices({ active: true, take: 200 }),
-        listAppointments({ from: fromIso, to: toIso, take }),
-        listClassInstances({
-          fromDate: fromIso,
-          toDate: toIso,
-          state: 'scheduled',
-          take,
-        }),
-        getWhoami(),
-      ]);
+    [
+      staffData,
+      servicesData,
+      appointmentsData,
+      classInstancesData,
+      whoami,
+      bookingSettingsData,
+    ] = await Promise.all([
+      listStaff({ active: true, take: 100 }),
+      listServices({ active: true, take: 200 }),
+      listAppointments({ from: fromIso, to: toIso, take }),
+      listClassInstances({
+        fromDate: fromIso,
+        toDate: toIso,
+        state: 'scheduled',
+        take,
+      }),
+      getWhoami(),
+      getTenantBookingSettings(),
+    ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
       directoryError = 'You do not have access to this tenant.';
@@ -361,6 +374,9 @@ export default async function CalendarPage({
       selectedClassInstance={selectedClassInstance}
       selectedClassInstanceRoster={selectedClassInstanceRoster}
       selectedClassInstanceError={selectedClassInstanceError}
+      cancellationWindowHours={
+        bookingSettingsData?.settings.bookingCancellationWindowHours ?? 24
+      }
       activeTab={sp.tab ?? 'overview'}
       quickBookOpen={sp.quickbook === '1'}
       blockTimeOpen={sp.blocktime === '1'}
