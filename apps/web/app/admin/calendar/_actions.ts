@@ -3,6 +3,13 @@
 import { revalidatePath } from 'next/cache';
 
 import { ApiError } from '@/lib/api/client';
+import {
+  cancelClassBooking,
+  createClassBooking,
+  promoteClassWaitlistEntry,
+  type CreateBookingOrWaitlistResponse,
+  type PromoteWaitlistResponse,
+} from '@/lib/api/class-bookings';
 import { cancelClassInstance } from '@/lib/api/class-instances';
 import {
   createClient,
@@ -595,6 +602,100 @@ export async function loadAvailabilitySlotsAction(args: {
     if (err instanceof ApiError) {
       return { slots: [], error: err.message };
     }
+    throw err;
+  }
+}
+
+// ---- Class bookings + waitlist (Phase 3a of the Classes epic) ----
+
+// Booking-action error envelope carries the typed `code` from the API so the
+// drawer can branch on CLASS_FULL / WAITLIST_FULL / DUPLICATE_BOOKING /
+// INSTANCE_NOT_BOOKABLE / BOOKING_ALREADY_CANCELLED / WAITLIST_ENTRY_*
+// without parsing free-text messages.
+export type ClassBookingActionError = {
+  ok: false;
+  error: string;
+  code?: string;
+};
+
+function classBookingApiErrorToState(err: ApiError): ClassBookingActionError {
+  const body = err.body;
+  const code =
+    body && typeof body === 'object' && 'code' in body
+      ? String((body as { code: unknown }).code)
+      : undefined;
+  return { ok: false, error: err.message, code };
+}
+
+export type AddClientToClassInstanceResult =
+  | { ok: true; result: CreateBookingOrWaitlistResponse }
+  | ClassBookingActionError;
+
+export async function addClientToClassInstanceAction(args: {
+  instanceId: string;
+  clientId: string;
+  idempotencyKey: string;
+}): Promise<AddClientToClassInstanceResult> {
+  try {
+    const result = await createClassBooking(args.instanceId, {
+      clientId: args.clientId,
+      idempotencyKey: args.idempotencyKey,
+    });
+    revalidatePath(PAGE);
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof ApiError) return classBookingApiErrorToState(err);
+    throw err;
+  }
+}
+
+export type CancelClassBookingResult =
+  | { ok: true }
+  | ClassBookingActionError;
+
+export async function cancelClassBookingAction(args: {
+  instanceId: string;
+  bookingId: string;
+  reason?: string;
+}): Promise<CancelClassBookingResult> {
+  try {
+    await cancelClassBooking(args.instanceId, args.bookingId, {
+      reason: args.reason,
+      initiatedBy: 'studio',
+    });
+    revalidatePath(PAGE);
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // 409 'already cancelled' / 404 'not found' — surface as success because
+      // the UI state matches the server state.
+      if (err.status === 404) {
+        revalidatePath(PAGE);
+        return { ok: true };
+      }
+      return classBookingApiErrorToState(err);
+    }
+    throw err;
+  }
+}
+
+export type PromoteWaitlistEntryResult =
+  | { ok: true; result: PromoteWaitlistResponse }
+  | ClassBookingActionError;
+
+export async function promoteWaitlistEntryAction(args: {
+  instanceId: string;
+  entryId: string;
+}): Promise<PromoteWaitlistEntryResult> {
+  try {
+    const result = await promoteClassWaitlistEntry(
+      args.instanceId,
+      args.entryId,
+    );
+    revalidatePath(PAGE);
+    return { ok: true, result };
+  } catch (err) {
+    if (err instanceof ApiError) return classBookingApiErrorToState(err);
     throw err;
   }
 }
