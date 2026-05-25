@@ -55,6 +55,23 @@ export default async function AdminSettingsPage() {
         </p>
       </Link>
 
+      <Link
+        href={'/admin/settings/geofence' as Route}
+        className={cn(
+          'block rounded-md border border-line bg-surface p-s5 shadow-sm',
+          'transition-colors duration-fast hover:bg-sage-tint-2 no-underline',
+        )}
+      >
+        <div className="t-eyebrow tracking-wide text-sage">STUDIO LOCATIONS</div>
+        <h2 className="mt-s2 font-display text-[18px] text-ink">
+          Configure geofence auto check-in →
+        </h2>
+        <p className="mt-s1 t-body-sm text-ink-3">
+          Set the GPS boundaries where clients can auto check-in for their
+          classes.
+        </p>
+      </Link>
+
       <header className="flex flex-col gap-s1">
         <span className="t-eyebrow text-accent">Settings</span>
         <h1 className="t-display-lg">Booking settings</h1>
