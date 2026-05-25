@@ -1,6 +1,6 @@
 // Wellos PWA service worker — Phase 1 foundation.
 //
-// Scope: "/" (registered from RegisterServiceWorker.tsx).
+// Scope: "/" (registered from app/_pwa/PwaInstallProvider.tsx).
 // Strategy: network-first for everything in Phase 1 — no caching yet.
 // Admin: hard-skipped via the early-return in `fetch` so admin requests
 // never go through SW interception even if /admin somehow ends up under
