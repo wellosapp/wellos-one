@@ -125,6 +125,37 @@ export class WaitlistEntryNotPromotableError extends Error {
   }
 }
 
+// Phase 4 — check-in lifecycle errors. Mapped to 409 by the route layer.
+export class BookingNotCheckInEligibleError extends Error {
+  code = 'BOOKING_NOT_CHECK_IN_ELIGIBLE' as const;
+  state: string;
+  constructor(state: string) {
+    super(`Booking in state '${state}' is not eligible for check-in.`);
+    this.name = 'BookingNotCheckInEligibleError';
+    this.state = state;
+  }
+}
+
+export class BookingNotRevertibleError extends Error {
+  code = 'BOOKING_NOT_REVERTIBLE' as const;
+  state: string;
+  constructor(state: string) {
+    super(`Booking in state '${state}' cannot be reverted.`);
+    this.name = 'BookingNotRevertibleError';
+    this.state = state;
+  }
+}
+
+export class BookingNotNoShowEligibleError extends Error {
+  code = 'BOOKING_NOT_NO_SHOW_ELIGIBLE' as const;
+  state: string;
+  constructor(state: string) {
+    super(`Booking in state '${state}' is not eligible for no-show.`);
+    this.name = 'BookingNotNoShowEligibleError';
+    this.state = state;
+  }
+}
+
 // ---------- Shared select shapes ----------
 
 const CLASS_BOOKING_SAFE_FIELDS = {
@@ -138,6 +169,8 @@ const CLASS_BOOKING_SAFE_FIELDS = {
   checkInMethod: true,
   checkedInAt: true,
   checkedInByStaffId: true,
+  // Phase 4 — visual indicator only, separate from `state`.
+  late: true,
   cancellationReason: true,
   cancellationInitiatedBy: true,
   cancelledAt: true,
@@ -192,6 +225,10 @@ const MANUAL_PROMOTE_EXPIRY_HOURS = 24;
 type ClassBookingAuditAction =
   | 'class_booking.created'
   | 'class_booking.cancelled'
+  | 'class_booking.checked_in'
+  | 'class_booking.late_toggled'
+  | 'class_booking.no_show'
+  | 'class_booking.revert_check_in'
   | 'class_waitlist.joined'
   | 'class_waitlist.promoted'
   | 'class_waitlist.auto_promoted';
@@ -983,4 +1020,232 @@ export async function promoteWaitlistEntryManually(
       timeout: 8000,
     },
   );
+}
+
+// ---------- Phase 4: check-in lifecycle ----------
+
+/**
+ * Staff manually checks a client into a class. Phase 4 of the Classes epic.
+ *
+ * State machine: confirmed → checked_in (sets checkedInAt + checkInMethod +
+ * checkedInByStaffId + late flag). Re-running on an already checked_in
+ * booking is idempotent — we only write an update if the `late` toggle
+ * differs, in which case we audit as `class_booking.late_toggled` so the
+ * history captures the flip. Any terminal / cancelled state is rejected
+ * with BookingNotCheckInEligibleError so the route layer can return 409.
+ *
+ * `actorStaffId` may be null when the signed-in user has no linked Staff row
+ * (e.g. an admin without a Work email match). The audit row still records
+ * `actorUserId`, so accountability is preserved.
+ */
+export async function checkInBooking(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string;
+    actorStaffId: string | null;
+    instanceId: string;
+    bookingId: string;
+    late?: boolean;
+  },
+): Promise<{ booking: ClassBooking }> {
+  const lateFlag = args.late ?? false;
+
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.classBooking.findFirst({
+      where: {
+        id: args.bookingId,
+        tenantId: args.tenantId,
+        classInstanceId: args.instanceId,
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+    if (!before) {
+      throw new BookingNotFoundError();
+    }
+
+    // Idempotent path: already checked in. Only update if the late toggle
+    // differs; otherwise return the booking unchanged.
+    if (before.state === 'checked_in') {
+      if (before.late === lateFlag) {
+        return { booking: before as ClassBooking };
+      }
+      const toggled = await tx.classBooking.update({
+        where: { id: args.bookingId },
+        data: { late: lateFlag },
+        select: CLASS_BOOKING_SAFE_FIELDS,
+      });
+      await writeAudit(tx, {
+        tenantId: args.tenantId,
+        actorUserId: args.actorUserId,
+        action: 'class_booking.late_toggled',
+        entityType: 'class_booking',
+        entityId: toggled.id,
+        before: before as ClassBooking,
+        after: toggled as ClassBooking,
+      });
+      return { booking: toggled as ClassBooking };
+    }
+
+    if (before.state !== 'confirmed') {
+      throw new BookingNotCheckInEligibleError(before.state);
+    }
+
+    const after = await tx.classBooking.update({
+      where: { id: args.bookingId },
+      data: {
+        state: 'checked_in',
+        checkInMethod: 'manual',
+        checkedInAt: new Date(),
+        checkedInByStaffId: args.actorStaffId,
+        late: lateFlag,
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+
+    await writeAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'class_booking.checked_in',
+      entityType: 'class_booking',
+      entityId: after.id,
+      before: before as ClassBooking,
+      after: after as ClassBooking,
+    });
+
+    // TODO(epic-8): notify client of check-in confirmation.
+
+    return { booking: after as ClassBooking };
+  });
+}
+
+/**
+ * Staff marks a booking as a no-show. State machine:
+ * confirmed | checked_in → no_show (also records cancelledAt for "when it
+ * was decided"). Already-terminal bookings (no_show, cancelled_*, completed)
+ * are rejected.
+ *
+ * no_show frees capacity because the active-capacity count only includes
+ * `confirmed` + `checked_in` — see createBookingOrWaitlist step 5 and the
+ * partial unique index on (class_instance_id, client_id) in migration SQL.
+ */
+export async function markNoShow(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string;
+    instanceId: string;
+    bookingId: string;
+  },
+): Promise<{ booking: ClassBooking }> {
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.classBooking.findFirst({
+      where: {
+        id: args.bookingId,
+        tenantId: args.tenantId,
+        classInstanceId: args.instanceId,
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+    if (!before) {
+      throw new BookingNotFoundError();
+    }
+    if (
+      before.state === 'no_show' ||
+      before.state === 'cancelled_by_client' ||
+      before.state === 'cancelled_by_studio' ||
+      before.state === 'completed'
+    ) {
+      throw new BookingNotNoShowEligibleError(before.state);
+    }
+
+    const after = await tx.classBooking.update({
+      where: { id: args.bookingId },
+      data: {
+        state: 'no_show',
+        cancelledAt: new Date(),
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+
+    await writeAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'class_booking.no_show',
+      entityType: 'class_booking',
+      entityId: after.id,
+      before: before as ClassBooking,
+      after: after as ClassBooking,
+    });
+
+    // TODO(epic-6): trigger no-show fee charge.
+    // TODO(epic-8): notify client of the no-show record.
+
+    return { booking: after as ClassBooking };
+  });
+}
+
+/**
+ * Staff reverts a check-in or no-show back to `confirmed`. Used when an
+ * action was mis-clicked. Resets all check-in fields and the late flag;
+ * when reverting from no_show, also clears cancelledAt. Terminal cancel /
+ * completed states cannot be reverted (use the existing un-cancel surface
+ * in those cases). Already-confirmed bookings are rejected as a no-op
+ * error so the UI doesn't silently swallow a misclick.
+ */
+export async function revertCheckIn(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string;
+    instanceId: string;
+    bookingId: string;
+  },
+): Promise<{ booking: ClassBooking }> {
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.classBooking.findFirst({
+      where: {
+        id: args.bookingId,
+        tenantId: args.tenantId,
+        classInstanceId: args.instanceId,
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+    if (!before) {
+      throw new BookingNotFoundError();
+    }
+    if (before.state !== 'checked_in' && before.state !== 'no_show') {
+      throw new BookingNotRevertibleError(before.state);
+    }
+
+    const wasNoShow = before.state === 'no_show';
+
+    const after = await tx.classBooking.update({
+      where: { id: args.bookingId },
+      data: {
+        state: 'confirmed',
+        checkedInAt: null,
+        checkedInByStaffId: null,
+        checkInMethod: null,
+        late: false,
+        // Only clear cancelledAt when reverting from no_show — a future
+        // re-cancel path would set it again. Reverting from checked_in
+        // leaves cancelledAt untouched (it should already be null).
+        ...(wasNoShow ? { cancelledAt: null } : {}),
+      },
+      select: CLASS_BOOKING_SAFE_FIELDS,
+    });
+
+    await writeAudit(tx, {
+      tenantId: args.tenantId,
+      actorUserId: args.actorUserId,
+      action: 'class_booking.revert_check_in',
+      entityType: 'class_booking',
+      entityId: after.id,
+      before: before as ClassBooking,
+      after: after as ClassBooking,
+    });
+
+    return { booking: after as ClassBooking };
+  });
 }

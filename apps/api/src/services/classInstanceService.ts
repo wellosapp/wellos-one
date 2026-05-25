@@ -124,6 +124,32 @@ export class ClassInstanceAlreadyCancelledError extends Error {
   }
 }
 
+// Phase 4 — manual state override errors. Cron-based transitions land in
+// Epic 8; until then, admins drive the lifecycle by hand.
+export class ClassInstanceStateTransitionError extends Error {
+  code = 'CLASS_INSTANCE_STATE_TRANSITION_INVALID' as const;
+  fromState: string;
+  toState: string;
+  constructor(args: { fromState: string; toState: string }) {
+    super(
+      `Cannot transition class instance from '${args.fromState}' to '${args.toState}'.`,
+    );
+    this.name = 'ClassInstanceStateTransitionError';
+    this.fromState = args.fromState;
+    this.toState = args.toState;
+  }
+}
+
+export class ClassInstanceCancelledStateError extends Error {
+  code = 'CLASS_INSTANCE_CANCELLED' as const;
+  constructor() {
+    super(
+      'Cancelled class instances cannot change state. Use the un-cancel path instead.',
+    );
+    this.name = 'ClassInstanceCancelledStateError';
+  }
+}
+
 async function writeAudit(
   tx: ExtendedTransactionClient,
   args: {
@@ -132,7 +158,8 @@ async function writeAudit(
     action:
       | 'class_instance.created'
       | 'class_instance.updated'
-      | 'class_instance.cancelled';
+      | 'class_instance.cancelled'
+      | 'class_instance.state_changed';
     entityId: string;
     before: ClassInstance | null;
     after: ClassInstance | null;
@@ -473,4 +500,140 @@ export async function cancelClassInstance(
 
     return { instance: after as ClassInstance };
   });
+}
+
+// ---------- Phase 4: manual state override + summary ----------
+
+export type ManualInstanceState = 'scheduled' | 'in_progress' | 'completed';
+
+// Allowed manual transitions. Cron-based auto-transitions land in Epic 8.
+//
+// Forward:  scheduled    → in_progress
+//           scheduled    → completed         (skip in_progress when staff forgets)
+//           in_progress  → completed
+// Backward (admin override for mistakes):
+//           in_progress  → scheduled
+//           completed    → in_progress
+//
+// Cancelled instances can't change state here — un-cancel goes through the
+// existing cancel path (the only legal move). See ClassInstanceCancelledStateError.
+const ALLOWED_INSTANCE_STATE_TRANSITIONS: Record<string, ManualInstanceState[]> = {
+  scheduled: ['in_progress', 'completed'],
+  in_progress: ['completed', 'scheduled'],
+  completed: ['in_progress'],
+};
+
+/**
+ * Admin manually overrides a class instance's lifecycle state. Phase 4 of
+ * the Classes epic — cron-driven transitions defer to Epic 8.
+ */
+export async function setInstanceState(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string;
+    id: string;
+    state: ManualInstanceState;
+  },
+): Promise<{ instance: ClassInstance } | null> {
+  const { tenantId, actorUserId, id, state } = args;
+
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.classInstance.findFirst({
+      where: { tenantId, id },
+      select: CLASS_INSTANCE_SAFE_FIELDS,
+    });
+    if (!before) return null;
+
+    if (before.state === 'cancelled') {
+      throw new ClassInstanceCancelledStateError();
+    }
+    if (before.state === state) {
+      // No-op: target equals current. Return the existing row unchanged so
+      // the route layer can still 200 with a sensible body.
+      return { instance: before as ClassInstance };
+    }
+    const allowed = ALLOWED_INSTANCE_STATE_TRANSITIONS[before.state] ?? [];
+    if (!allowed.includes(state)) {
+      throw new ClassInstanceStateTransitionError({
+        fromState: before.state,
+        toState: state,
+      });
+    }
+
+    const after = await tx.classInstance.update({
+      where: { id },
+      data: { state },
+      select: CLASS_INSTANCE_SAFE_FIELDS,
+    });
+
+    await writeAudit(tx, {
+      tenantId,
+      actorUserId,
+      action: 'class_instance.state_changed',
+      entityId: after.id,
+      before: before as ClassInstance,
+      after: after as ClassInstance,
+    });
+
+    return { instance: after as ClassInstance };
+  });
+}
+
+export type InstanceSummary = {
+  totalBooked: number;
+  /** Bookings with state in (checked_in, completed). */
+  attended: number;
+  noShow: number;
+  /** Subset of attended where late=true. */
+  late: number;
+  /** Bookings cancelled by client or studio. */
+  cancelled: number;
+};
+
+/**
+ * Returns the post-class summary for a single instance: attended / no-show /
+ * late / cancelled / total. Single groupBy query against class_bookings;
+ * counts are computed in-memory from the grouped result so we don't pay for
+ * five round-trips.
+ */
+export async function getInstanceSummary(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; instanceId: string },
+): Promise<InstanceSummary> {
+  // groupBy state — and pair (state, late) — so we can compute the late
+  // sub-count without a second round-trip. The empty roster case returns
+  // zero counts because the groupBy returns an empty array.
+  const rows = await prisma.classBooking.groupBy({
+    by: ['state', 'late'],
+    where: {
+      tenantId: args.tenantId,
+      classInstanceId: args.instanceId,
+    },
+    _count: { _all: true },
+  });
+
+  let totalBooked = 0;
+  let attended = 0;
+  let noShow = 0;
+  let late = 0;
+  let cancelled = 0;
+
+  for (const row of rows) {
+    const count = row._count._all;
+    totalBooked += count;
+    if (row.state === 'checked_in' || row.state === 'completed') {
+      attended += count;
+      if (row.late) late += count;
+    } else if (row.state === 'no_show') {
+      noShow += count;
+    } else if (
+      row.state === 'cancelled_by_client' ||
+      row.state === 'cancelled_by_studio'
+    ) {
+      cancelled += count;
+    }
+  }
+
+  return { totalBooked, attended, noShow, late, cancelled };
 }

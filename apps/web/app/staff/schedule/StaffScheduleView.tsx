@@ -12,8 +12,9 @@ import { CalendarMonthView } from '@/app/admin/calendar/CalendarMonthView';
 import { CalendarViewToggle } from '@/app/admin/calendar/CalendarViewToggle';
 import { CalendarWeekView } from '@/app/admin/calendar/CalendarWeekView';
 import { QuickBookPanel } from '@/app/admin/calendar/QuickBookPanel';
-import { Alert, Badge, Button } from '@/components/ui';
+import { Alert, Badge, Button, Card } from '@/components/ui';
 import type { Appointment, BookingAnswer } from '@/lib/api/appointments';
+import type { ClassInstanceWithRelations } from '@/lib/api/class-instances';
 import type { ClientWithTags } from '@/lib/api/clients';
 import type { ClientNoteSummary } from '@/lib/api/client-notes';
 import type { StaffScheduleBlock } from '@/lib/api/staff-schedule-blocks';
@@ -48,6 +49,13 @@ interface StaffScheduleViewProps {
   services: Service[];
   appointments: Appointment[];
   scheduleBlocksByStaff: Record<string, StaffScheduleBlock[]>;
+  /**
+   * Phase 4 of the Classes epic — scheduled class instances the staff
+   * member is teaching in the visible window. Listed above the calendar
+   * with click-through to /staff/classes/[instanceId]. Full chip render
+   * inside the day/week/month views is a follow-up.
+   */
+  classInstances: ClassInstanceWithRelations[];
   clientDisplayNames: Record<string, string>;
   locations: WhoamiLocation[];
   selected: {
@@ -75,6 +83,7 @@ export function StaffScheduleView({
   services,
   appointments,
   scheduleBlocksByStaff,
+  classInstances,
   clientDisplayNames,
   locations,
   selected,
@@ -365,6 +374,8 @@ export function StaffScheduleView({
         </div>
       </div>
 
+      <StaffClassInstancesList classInstances={classInstances} />
+
       {view === 'day' ? (
         <CalendarGrid
           date={date}
@@ -444,5 +455,72 @@ export function StaffScheduleView({
         />
       )}
     </div>
+  );
+}
+
+// Phase 4 of the Classes epic — list of class instances the staff member is
+// teaching in the visible window. Click-through to /staff/classes/[instanceId]
+// for check-in. Inline here rather than a separate component file because the
+// shape is dead simple; if the surface grows (recurrence indicators,
+// per-instance roster snippets), pull this out.
+function StaffClassInstancesList({
+  classInstances,
+}: {
+  classInstances: ClassInstanceWithRelations[];
+}) {
+  if (classInstances.length === 0) return null;
+  // Sort by start time so the list reads in time order regardless of API
+  // order. The API does return them sorted, but defending against a future
+  // re-order is cheap.
+  const ordered = [...classInstances].sort(
+    (a, b) =>
+      new Date(a.scheduledStartAt).getTime() -
+      new Date(b.scheduledStartAt).getTime(),
+  );
+  return (
+    <Card padding="md" className="flex flex-col gap-s3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="t-display-sm">Classes you&apos;re teaching</h2>
+        <span className="t-caption text-ink-soft">
+          {ordered.length} class{ordered.length === 1 ? '' : 'es'}
+        </span>
+      </div>
+      <ul className="flex flex-col gap-s2">
+        {ordered.map((inst) => {
+          const start = new Date(inst.scheduledStartAt);
+          const startLabel = start.toLocaleString(undefined, {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+          return (
+            <li key={inst.id}>
+              <Link
+                href={`/staff/classes/${inst.id}` as Route}
+                className="flex flex-wrap items-center gap-s3 rounded-md border border-surface-3 bg-surface px-s3 py-s3 no-underline transition-colors duration-fast hover:bg-surface-2"
+              >
+                <span
+                  className="h-8 w-1.5 shrink-0 rounded-sm"
+                  style={{
+                    backgroundColor:
+                      inst.class.color ?? 'var(--color-accent)',
+                  }}
+                  aria-hidden="true"
+                />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="t-body-md text-ink">{inst.class.name}</span>
+                  <span className="t-caption text-ink-soft">
+                    {startLabel} · {inst.location.name}
+                  </span>
+                </div>
+                <Badge tone="accent">Check in</Badge>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
