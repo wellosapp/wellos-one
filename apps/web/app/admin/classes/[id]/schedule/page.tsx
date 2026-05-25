@@ -9,12 +9,22 @@ import {
 } from '@/lib/api/class-instances';
 import { getClass } from '@/lib/api/classes';
 import { ApiError } from '@/lib/api/client';
+import {
+  listRecurrenceRules,
+  type RecurrenceRuleWithRelations,
+} from '@/lib/api/recurrence-rules';
 import { listStaff } from '@/lib/api/staff';
 import { getWhoami } from '@/lib/api/whoami';
 
 import { AddInstanceForm } from './AddInstanceForm';
 import { InstancesTable } from './InstancesTable';
-import { createInstanceAction } from './_actions';
+import { RecurrenceRuleEditor } from './RecurrenceRuleEditor';
+import { RecurrenceRulesList } from './RecurrenceRulesList';
+import {
+  createInstanceAction,
+  createRecurrenceRuleAction,
+  updateRecurrenceRuleAction,
+} from './_actions';
 
 // /admin/classes/[id]/schedule — Phase 2a of the Classes epic.
 // Manual scheduling surface for a class's one-off occurrences. The full
@@ -28,10 +38,18 @@ const HISTORY_WINDOW_DAYS = 30;
 
 export default async function ClassSchedulePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ ruleId?: string; newRule?: string }>;
 }) {
   const { id } = await params;
+  const { ruleId, newRule } = await searchParams;
+  const editorMode: 'create' | 'edit' | null = ruleId
+    ? 'edit'
+    : newRule === '1'
+      ? 'create'
+      : null;
 
   let className: string;
   try {
@@ -50,26 +68,29 @@ export default async function ClassSchedulePage({
   );
 
   // Fetch the class detail (for instructors), tenant staff (to resolve
-  // names for the picker), whoami (for locations), and the instances for
-  // this class in parallel.
+  // names for the picker), whoami (for locations), the instances for this
+  // class, and the recurrence rules in parallel.
   let classDetail: Awaited<ReturnType<typeof getClass>>['class'] | null = null;
   let staffData: Awaited<ReturnType<typeof listStaff>> | null = null;
   let whoami: Awaited<ReturnType<typeof getWhoami>> | null = null;
   let instancesData: Awaited<ReturnType<typeof listClassInstances>> | null =
     null;
+  let rulesData: Awaited<ReturnType<typeof listRecurrenceRules>> | null = null;
   let directoryError: string | null = null;
 
   try {
-    [classDetail, staffData, whoami, instancesData] = await Promise.all([
-      getClass(id).then((r) => r.class),
-      listStaff({ active: true, take: 200 }),
-      getWhoami(),
-      listClassInstances({
-        classId: id,
-        fromDate: historyFrom.toISOString(),
-        take: 200,
-      }),
-    ]);
+    [classDetail, staffData, whoami, instancesData, rulesData] =
+      await Promise.all([
+        getClass(id).then((r) => r.class),
+        listStaff({ active: true, take: 200 }),
+        getWhoami(),
+        listClassInstances({
+          classId: id,
+          fromDate: historyFrom.toISOString(),
+          take: 200,
+        }),
+        listRecurrenceRules({ classId: id, take: 100 }),
+      ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 403) {
       directoryError = 'You do not have admin access to this tenant.';
@@ -102,6 +123,40 @@ export default async function ClassSchedulePage({
   const instances: ClassInstanceWithRelations[] =
     instancesData?.instances ?? [];
 
+  const rules: RecurrenceRuleWithRelations[] = rulesData?.rules ?? [];
+
+  // Resolve the editing rule (if any). If ?ruleId points at a row we don't
+  // have, we fall back to create mode rather than 404 — the operator can
+  // still create a new rule from the same screen.
+  const editingRule =
+    editorMode === 'edit' && ruleId
+      ? (rules.find((r) => r.id === ruleId) ?? null)
+      : null;
+  const effectiveEditorMode: 'create' | 'edit' | null =
+    editorMode === 'edit' && !editingRule ? 'create' : editorMode;
+
+  const editorInitial = editingRule
+    ? {
+        staffId: editingRule.staffId,
+        locationId: editingRule.locationId,
+        startDate: editingRule.startDate.slice(0, 10),
+        endDate: editingRule.endDate
+          ? editingRule.endDate.slice(0, 10)
+          : undefined,
+        byday: editingRule.byday,
+        startTime: editingRule.startTime,
+        durationMinutes: String(editingRule.durationMinutes),
+        timezone: editingRule.timezone,
+      }
+    : undefined;
+
+  const editorAction =
+    effectiveEditorMode === 'edit' && editingRule
+      ? updateRecurrenceRuleAction.bind(null, id, editingRule.id)
+      : createRecurrenceRuleAction.bind(null, id);
+
+  const cancelHref = `/admin/classes/${id}/schedule`;
+
   return (
     <div className="flex flex-col gap-s6">
       <div>
@@ -124,18 +179,46 @@ export default async function ClassSchedulePage({
 
       {directoryError && <Alert tone="error">{directoryError}</Alert>}
 
-      <Card padding="lg">
-        <AddInstanceForm
-          action={createAction}
-          instructors={instructorOptions}
-          locations={locations.map((l) => ({ id: l.id, name: l.name }))}
-        />
-      </Card>
+      <section className="flex flex-col gap-s3">
+        <h2 className="t-display-sm">Recurring schedule</h2>
+        <RecurrenceRulesList classId={id} rules={rules} />
+      </section>
 
-      <div className="flex flex-col gap-s3">
+      {effectiveEditorMode && (
+        <section className="flex flex-col gap-s3">
+          <h2 className="t-display-sm">
+            {effectiveEditorMode === 'edit'
+              ? 'Edit recurrence rule'
+              : 'New recurrence rule'}
+          </h2>
+          <Card padding="lg">
+            <RecurrenceRuleEditor
+              mode={effectiveEditorMode}
+              action={editorAction}
+              cancelHref={cancelHref}
+              instructors={instructorOptions}
+              locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+              initial={editorInitial}
+            />
+          </Card>
+        </section>
+      )}
+
+      <section className="flex flex-col gap-s3">
+        <h2 className="t-display-sm">One-off instance</h2>
+        <Card padding="lg">
+          <AddInstanceForm
+            action={createAction}
+            instructors={instructorOptions}
+            locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+          />
+        </Card>
+      </section>
+
+      <section className="flex flex-col gap-s3">
         <h2 className="t-display-sm">Instances</h2>
         <InstancesTable classId={id} instances={instances} />
-      </div>
+      </section>
     </div>
   );
 }

@@ -372,6 +372,7 @@ model Tenant {
   services                  Service[]
   classes                   Class[]
   classInstances            ClassInstance[]
+  recurrenceRules           RecurrenceRule[]
   serviceCategories         ServiceCategory[]
   clientTags                ClientTag[]
   appointments              Appointment[]
@@ -420,6 +421,7 @@ model Location {
   slotHolds    SlotHold[]
   waitlistEntries WaitlistEntry[]
   classInstances ClassInstance[]
+  recurrenceRules RecurrenceRule[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -721,6 +723,9 @@ model Staff {
   /// Classes epic Phase 2a — per-occurrence rows where this staff is instructor.
   classInstancesAsInstructor ClassInstance[]
 
+  /// Classes epic Phase 2b — recurrence rule templates where this staff is instructor.
+  recurrenceRulesAsInstructor RecurrenceRule[]
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -865,10 +870,11 @@ model Class {
   updatedAt             DateTime       @updatedAt @map("updated_at")
   deletedAt             DateTime?      @map("deleted_at")
 
-  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  category    ServiceCategory?  @relation("ServiceCategoryClasses", fields: [categoryId], references: [id], onDelete: SetNull)
-  instructors ClassInstructor[]
-  instances   ClassInstance[]
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  category        ServiceCategory?  @relation("ServiceCategoryClasses", fields: [categoryId], references: [id], onDelete: SetNull)
+  instructors     ClassInstructor[]
+  instances       ClassInstance[]
+  recurrenceRules RecurrenceRule[]
 
   @@index([tenantId])
   @@index([tenantId, categoryId])
@@ -909,17 +915,62 @@ model ClassInstance {
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  class    Class    @relation(fields: [classId], references: [id], onDelete: Restrict)
-  staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  class          Class           @relation(fields: [classId], references: [id], onDelete: Restrict)
+  staff          Staff           @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  location       Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  recurrenceRule RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([tenantId, scheduledStartAt])
   @@index([classId])
   @@index([staffId, scheduledStartAt])
   @@index([state])
+  @@index([recurrenceRuleId])
   @@map("class_instances")
+}
+
+// ---------- Recurrence rules (Phase 2b of the Classes epic) ----------
+//
+// Templates the admin sets once (e.g. "Vinyasa Flow every Mon/Wed/Fri at 9am
+// at Studio A with instructor Alex"). A manual "Generate next 12 weeks"
+// endpoint materialises ClassInstance rows from each active rule; that
+// endpoint is idempotent so re-runs only insert what's missing. The cron
+// that schedules the generator weekly is deferred to Epic 8 (BullMQ).
+//
+// byday: JSON array of RFC 5545-style day codes — SU, MO, TU, WE, TH, FR, SA.
+// startTime: "HH:MM" 24-hour in the rule's timezone.
+// timezone: IANA zone (e.g. "America/Chicago") — wall-clock startTime is
+//   converted to UTC via date-fns-tz at generation time so DST flips don't
+//   shift the class's local hour.
+// active=false pauses generation but keeps existing instances. There is no
+// hard delete in Phase 2b.
+model RecurrenceRule {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  classId         String    @map("class_id")
+  staffId         String    @map("staff_id")
+  locationId      String    @map("location_id")
+  startDate       DateTime  @map("start_date") @db.Date
+  endDate         DateTime? @map("end_date") @db.Date
+  byday           Json      @default("[]")
+  startTime       String    @map("start_time")
+  durationMinutes Int       @map("duration_minutes")
+  timezone        String
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  class     Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  staff     Staff           @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  location  Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  instances ClassInstance[]
+
+  @@index([tenantId])
+  @@index([classId])
+  @@index([tenantId, active])
+  @@map("recurrence_rules")
 }
 
 // Pure M2M join between Class and Staff (instructors). First-inserted (or
