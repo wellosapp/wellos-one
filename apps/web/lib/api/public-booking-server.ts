@@ -152,7 +152,18 @@ export type PublicClassInstancesResponse = {
 };
 
 export type CreatePublicClassBookingResult =
-  | { kind: 'booking'; id: string }
+  | {
+      kind: 'booking';
+      id: string;
+      /**
+       * Raw magic-link bearer token (purpose='geofence_check_in') for the
+       * Geofence Auto Check-in epic. PR 9 will surface this through the
+       * booking confirmation page so the PWA can stash it in localStorage
+       * and call /public/class-bookings/:id/geofence-check-in. Null on
+       * idempotent replay (the original mint already happened).
+       */
+      geofenceCheckInToken: string | null;
+    }
   | { kind: 'waitlist'; id: string; position: number };
 
 export async function fetchPublicClassCatalog(

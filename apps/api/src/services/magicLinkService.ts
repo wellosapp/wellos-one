@@ -21,7 +21,10 @@
 
 import type { MagicLinkToken, Client, ClassBooking, Appointment } from '@prisma/client';
 
-import type { ExtendedPrismaClient } from '../db/client.js';
+import type {
+  ExtendedPrismaClient,
+  ExtendedTransactionClient,
+} from '../db/client.js';
 import { generateToken, hashToken } from '../lib/tokenCrypto.js';
 
 // Keep in sync with the magic_link_token_purpose_check CHECK constraint in
@@ -99,8 +102,11 @@ export interface MintTokenResult {
   token: MagicLinkToken;
 }
 
+// Accepts either the top-level extended client or a transaction client so
+// callers can mint atomically alongside other writes (e.g. the public class
+// booking flow mints inside the Serializable booking transaction).
 export async function mintToken(
-  prisma: ExtendedPrismaClient,
+  prisma: ExtendedPrismaClient | ExtendedTransactionClient,
   args: MintTokenArgs,
 ): Promise<MintTokenResult> {
   const { tenantId, purpose, expiresAt, scope } = args;
