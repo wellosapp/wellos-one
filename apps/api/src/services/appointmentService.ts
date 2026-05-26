@@ -18,6 +18,7 @@ import {
   InvalidStateTransitionError,
   assertTransition,
 } from './appointmentStateMachine.js';
+import { processBookingAssignments } from './formAssignmentRuleService.js';
 import { findEligibleEntriesForOpening } from './waitlistService.js';
 
 // Domain layer for Appointment admin CRUD (E3-S1).
@@ -346,7 +347,7 @@ export async function createAppointment(
   const { tenantId, actorUserId, body } = args;
   const startAt = new Date(body.scheduledStartAt);
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const { durationMinutes, basePriceCents } = await validateReferences(tx, {
       tenantId,
       locationId: body.locationId,
@@ -436,6 +437,27 @@ export async function createAppointment(
 
     return { appointment };
   });
+
+  // Forms System PR 5 — auto-create draft IntakeFormSubmission rows for any
+  // active rules attached to this service. Best-effort: must never fail the
+  // appointment that already committed. Hard-required blocking lands in PR 8.
+  try {
+    await processBookingAssignments(prisma, {
+      tenantId,
+      serviceId: result.appointment.serviceId,
+      appointmentId: result.appointment.id,
+      clientId: result.appointment.clientId,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[form-assignment] processBookingAssignments threw for appointment %s: %s',
+      result.appointment.id,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  return result;
 }
 
 export async function listAppointments(

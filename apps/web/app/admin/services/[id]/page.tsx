@@ -3,7 +3,12 @@ import { notFound } from 'next/navigation';
 
 import { Badge, Button, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
+import { listIntakeFormDefinitions } from '@/lib/api/intake-forms';
 import { listServiceCategories } from '@/lib/api/service-categories';
+import {
+  listServiceFormRules,
+  type FormAssignmentRule,
+} from '@/lib/api/service-form-rules';
 import { getService, type ServiceWithStaff } from '@/lib/api/services';
 import { listStaff } from '@/lib/api/staff';
 
@@ -11,6 +16,8 @@ import { ServiceForm } from '../ServiceForm';
 import type { ServiceFormValues } from '../_actions';
 import { deleteServiceAction, updateServiceAction } from '../_actions';
 import { loadTenantBrandColors } from '../_constants/loadTenantBrandColors';
+import { RequiredFormsSection } from './RequiredFormsSection';
+import type { FormGroupOption } from './AttachFormModal';
 
 function serviceToFormDefaults(s: ServiceWithStaff): ServiceFormValues {
   return {
@@ -50,13 +57,40 @@ export default async function ServiceDetailPage({
     throw err;
   }
 
-  const [staffResp, categoriesResp, brandColors] = await Promise.all([
-    listStaff({ active: true, take: 200 }),
-    listServiceCategories({ take: 200 }),
-    loadTenantBrandColors(),
-  ]);
+  const [staffResp, categoriesResp, brandColors, rulesResp, definitionsResp] =
+    await Promise.all([
+      listStaff({ active: true, take: 200 }),
+      listServiceCategories({ take: 200 }),
+      loadTenantBrandColors(),
+      listServiceFormRules(id).catch((err) => {
+        // Don't fail the whole page if the form-rules endpoint hiccups —
+        // service editing should still work. Empty rules list is safe.
+        if (err instanceof ApiError) return { rules: [] as FormAssignmentRule[] };
+        throw err;
+      }),
+      listIntakeFormDefinitions({ status: 'published' }).catch((err) => {
+        if (err instanceof ApiError) return { definitions: [] };
+        throw err;
+      }),
+    ]);
   const { staff } = staffResp;
   const { categories } = categoriesResp;
+  const { rules } = rulesResp;
+
+  // Collapse published definitions to one option per groupId (latest version).
+  // The API orders by groupId asc + version desc, so the first row per group
+  // is the latest version.
+  const allGroups: FormGroupOption[] = [];
+  const seenGroupIds = new Set<string>();
+  for (const def of definitionsResp.definitions) {
+    if (seenGroupIds.has(def.groupId)) continue;
+    seenGroupIds.add(def.groupId);
+    allGroups.push({
+      groupId: def.groupId,
+      title: def.title,
+      formType: def.formType ?? 'unknown',
+    });
+  }
 
   const updateAction = updateServiceAction.bind(null, id);
   const deleteAction = deleteServiceAction.bind(null, id);
@@ -104,6 +138,12 @@ export default async function ServiceDetailPage({
           successMessage="Service updated."
         />
       </Card>
+
+      <RequiredFormsSection
+        serviceId={service.id}
+        rules={rules}
+        allGroups={allGroups}
+      />
 
       {!service.deletedAt && (
         <Card padding="md" className="border border-red/20 bg-red-pale/40">

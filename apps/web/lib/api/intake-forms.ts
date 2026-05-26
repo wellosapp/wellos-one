@@ -5,6 +5,9 @@ export type IntakeFormDefinitionDto = {
   tenantId: string;
   groupId: string;
   title: string;
+  /** Form taxonomy (Forms System PR 1). Nullable for legacy rows. */
+  formType?: string | null;
+  description?: string | null;
   schema: unknown;
   version: number;
   status: 'draft' | 'published' | 'archived';
