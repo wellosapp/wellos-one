@@ -8,6 +8,7 @@ import type {
   ExtendedPrismaClient,
   ExtendedTransactionClient,
 } from '../db/client.js';
+import { mintToken } from './magicLinkService.js';
 
 // Domain layer for class bookings + waitlist (Phase 3a of the Classes epic).
 //
@@ -277,7 +278,22 @@ async function writeAudit(
 // ---------- Public result types ----------
 
 export type BookingOrWaitlistResult =
-  | { kind: 'booking'; booking: ClassBooking }
+  | {
+      kind: 'booking';
+      booking: ClassBooking;
+      /**
+       * Raw magic-link bearer token for the geofence check-in flow. Populated
+       * ONLY when the caller passes `mintCheckInToken: true` (the public
+       * /book flow) AND the result is a confirmed booking. Admin-side
+       * createBooking callers leave the flag default-false and receive null
+       * — admin-created bookings get checked in manually via Phase 4.
+       *
+       * Caller surfaces this to the PWA in the booking response; the raw
+       * token is NEVER persisted server-side (only its SHA-256 hash lives
+       * in magic_link_token.tokenHash).
+       */
+      geofenceCheckInToken: string | null;
+    }
   | { kind: 'waitlist'; entry: ClassWaitlistEntry };
 
 export type RosterResponse = {
@@ -312,10 +328,27 @@ export async function createBookingOrWaitlist(
     instanceId: string;
     clientId: string;
     idempotencyKey: string;
+    /**
+     * When true and the result is a confirmed booking, mint a magic-link
+     * bearer token (purpose='geofence_check_in') scoped to (clientId,
+     * classBookingId) with TTL = scheduledEndAt + 30 minutes, and return
+     * the raw token alongside the booking. The PWA stores the raw token
+     * in localStorage and sends it on each geofence check-in request.
+     *
+     * Defaults to false so admin-side bookings don't get tokens (admins
+     * check clients in manually). Set to true only from the public /book
+     * route per docs/specs/geofence-check-in-epic.md PR 8b.
+     */
+    mintCheckInToken?: boolean;
   },
 ): Promise<BookingOrWaitlistResult> {
+  const mintCheckInToken = args.mintCheckInToken ?? false;
+
   // Idempotency probe OUTSIDE the lock. If this key already booked, return
-  // the existing row without engaging the row lock.
+  // the existing row without engaging the row lock. We do NOT re-mint a
+  // token on idempotent replay — the original booking's token (if any) is
+  // still live; if the caller lost it, they can re-mint via a future
+  // dedicated endpoint (deferred).
   const existing = await prisma.classBooking.findUnique({
     where: {
       tenantId_idempotencyKey: {
@@ -325,13 +358,15 @@ export async function createBookingOrWaitlist(
     },
   });
   if (existing) {
-    return { kind: 'booking', booking: existing };
+    return { kind: 'booking', booking: existing, geofenceCheckInToken: null };
   }
 
   return await prisma.$transaction(
     async (tx) => {
       // 1. Lock the instance row. Includes tenant_id in the predicate so a
       //    cross-tenant guess can't gain a lock on someone else's row.
+      //    scheduled_end_at comes along for the geofence token TTL when the
+      //    public flow requests one (PR 8b).
       const lockedRows = await tx.$queryRaw<
         Array<{
           id: string;
@@ -339,9 +374,10 @@ export async function createBookingOrWaitlist(
           class_id: string;
           state: string;
           capacity_override: number | null;
+          scheduled_end_at: Date;
         }>
       >`
-        SELECT id, tenant_id, class_id, state, capacity_override
+        SELECT id, tenant_id, class_id, state, capacity_override, scheduled_end_at
         FROM class_instances
         WHERE id = ${args.instanceId} AND tenant_id = ${args.tenantId}
         FOR UPDATE
@@ -416,8 +452,35 @@ export async function createBookingOrWaitlist(
           entityId: booking.id,
           after: booking as ClassBooking,
         });
+
+        // Optional: mint a geofence check-in magic-link token. Only the
+        // public /book route requests this — admin-side bookings get
+        // checked in manually by staff and don't need a client-bearer.
+        // TTL = scheduledEndAt + 30 minutes (grace for the late window
+        // configured per-location).
+        let geofenceCheckInToken: string | null = null;
+        if (mintCheckInToken) {
+          const expiresAt = new Date(
+            instance.scheduled_end_at.getTime() + 30 * 60_000,
+          );
+          const minted = await mintToken(tx, {
+            tenantId: args.tenantId,
+            purpose: 'geofence_check_in',
+            expiresAt,
+            scope: {
+              clientId: args.clientId,
+              classBookingId: booking.id,
+            },
+          });
+          geofenceCheckInToken = minted.rawToken;
+        }
+
         // TODO(epic-8): notify client of booking confirmation.
-        return { kind: 'booking', booking: booking as ClassBooking };
+        return {
+          kind: 'booking',
+          booking: booking as ClassBooking,
+          geofenceCheckInToken,
+        };
       }
 
       // 6. At capacity. Either offer the waitlist or hard-stop.

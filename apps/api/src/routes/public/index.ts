@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import publicBookingRoutes from './booking.js';
 import publicCalendarFeedRoutes from './calendar-feed.js';
 import publicClassBookingRoutes from './class-booking.js';
+import publicGeofenceCheckInRoutes from './geofence-check-in.js';
 import publicSlotHoldRoutes from './slot-holds.js';
 import publicWaitlistRoutes from './waitlist.js';
 
@@ -13,4 +14,5 @@ export default async function publicRoutes(app: FastifyInstance): Promise<void> 
   await app.register(publicSlotHoldRoutes);
   await app.register(publicWaitlistRoutes);
   await app.register(publicCalendarFeedRoutes);
+  await app.register(publicGeofenceCheckInRoutes);
 }

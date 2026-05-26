@@ -70,7 +70,18 @@ export type PublicClassInstancesResponse = {
 };
 
 export type CreatePublicClassBookingResult =
-  | { kind: 'booking'; id: string }
+  | {
+      kind: 'booking';
+      id: string;
+      /**
+       * Raw magic-link bearer token (purpose='geofence_check_in') scoped
+       * to this booking. The PWA stores it in localStorage keyed by booking
+       * id and sends it as `Authorization: Bearer <token>` on geofence
+       * check-in requests. Null only when the booking was an idempotent
+       * replay (the original mint already happened).
+       */
+      geofenceCheckInToken: string | null;
+    }
   | { kind: 'waitlist'; id: string; position: number };
 
 // ---------- Typed errors (route maps to 4xx) ----------
@@ -273,7 +284,9 @@ export async function createPublicClassBooking(
 
   // Race-safe seat allocation + audit + idempotency lives in Phase 3a's
   // service. actorUserId=null surfaces as actorType='system' in the audit
-  // row (writeAudit branches on that).
+  // row (writeAudit branches on that). mintCheckInToken=true asks the
+  // service to mint a magic-link bearer token (Geofence epic PR 8b) — only
+  // the public flow gets one; admin-side bookings are checked in manually.
   const result: BookingOrWaitlistResult = await createBookingOrWaitlist(
     prisma,
     {
@@ -282,11 +295,16 @@ export async function createPublicClassBooking(
       instanceId: args.classInstanceId,
       clientId,
       idempotencyKey: args.idempotencyKey,
+      mintCheckInToken: true,
     },
   );
 
   if (result.kind === 'booking') {
-    return { kind: 'booking', id: result.booking.id };
+    return {
+      kind: 'booking',
+      id: result.booking.id,
+      geofenceCheckInToken: result.geofenceCheckInToken,
+    };
   }
   return {
     kind: 'waitlist',
