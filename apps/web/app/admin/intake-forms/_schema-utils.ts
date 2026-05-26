@@ -11,6 +11,14 @@
 // `normalizeSchema` accepts either shape and always returns the new shape so
 // the builder + submission viewer never see the legacy array.
 
+import type { VisibilityConfig } from './_visibility-utils';
+
+export type {
+  VisibilityConfig,
+  VisibilityRule,
+  VisibilityOperator,
+} from './_visibility-utils';
+
 // ---------- New shape ----------
 
 export type FieldType =
@@ -62,6 +70,9 @@ export type FormField = {
   order: number;
   options?: FieldOption[];
   validation?: FieldValidation;
+  // Conditional visibility — when undefined, field is always visible.
+  // See `_visibility-utils.ts` for the rule shape + evaluator.
+  visibility?: VisibilityConfig;
 };
 
 export type FormSection = {
