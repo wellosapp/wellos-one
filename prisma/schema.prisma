@@ -405,6 +405,10 @@ model Tenant {
   classBookings             ClassBooking[]
   classWaitlistEntries      ClassWaitlistEntry[]
 
+  // Geofence Auto Check-in epic Phase 2 — per-location geofences + audit log.
+  locationGeofences         LocationGeofence[]
+  classCheckInAttempts      ClassCheckInAttempt[]
+
   @@index([deletedAt])
   @@map("tenants")
 }
@@ -426,6 +430,9 @@ model Location {
   waitlistEntries WaitlistEntry[]
   classInstances ClassInstance[]
   recurrenceRules RecurrenceRule[]
+
+  // Geofence Auto Check-in epic Phase 2 — at most one geofence per location.
+  geofence     LocationGeofence?
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -657,6 +664,9 @@ model Client {
   // Classes epic Phase 3a — bookings + waitlist participation back-relations.
   classBookings        ClassBooking[]
   classWaitlistEntries ClassWaitlistEntry[]
+
+  // Geofence Auto Check-in epic Phase 2 — audit log for per-client check-in attempts.
+  classCheckInAttempts ClassCheckInAttempt[]
 
   @@unique([tenantId, clientNumber])
   @@index([tenantId])
@@ -1030,6 +1040,14 @@ model ClassBooking {
   // Phase 4 — "late arrival" indicator on a checked-in booking. Visual only;
   // cron-based state transitions defer to Epic 8.
   late                     Boolean   @default(false)
+  // Geofence Auto Check-in epic Phase 2 — GPS payload captured when a client
+  // self-checks-in via geolocation. All nullable: manual check-ins (the only
+  // path pre-Phase 2) leave these unset. `checkInAttempts` counts submissions
+  // against the rate limit applied in PR 8.
+  checkInLat               Decimal?  @map("check_in_lat") @db.Decimal(11, 8)
+  checkInLng               Decimal?  @map("check_in_lng") @db.Decimal(11, 8)
+  checkInAccuracyMeters    Int?      @map("check_in_accuracy_meters")
+  checkInAttempts          Int       @default(0) @map("check_in_attempts")
   cancellationReason       String?   @map("cancellation_reason")
   cancellationInitiatedBy  String?   @map("cancellation_initiated_by")
   cancelledAt              DateTime? @map("cancelled_at")
@@ -1041,6 +1059,10 @@ model ClassBooking {
   classInstance     ClassInstance  @relation(fields: [classInstanceId], references: [id], onDelete: Restrict)
   client            Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
   checkedInByStaff  Staff?         @relation("ClassBookingCheckedInBy", fields: [checkedInByStaffId], references: [id], onDelete: SetNull)
+
+  // Geofence Auto Check-in epic Phase 2 — every check-in attempt against this
+  // booking (success or failure) lands here for fraud review.
+  attempts          ClassCheckInAttempt[]
 
   @@unique([tenantId, idempotencyKey])
   @@index([classInstanceId, state])
@@ -1896,4 +1918,69 @@ model WaitlistEntry {
   @@index([serviceId, status])
   @@index([staffId, status])
   @@map("waitlist_entries")
+}
+
+// ---------- Geofence Auto Check-in (Phase 2 of the Geofence epic) ----------
+//
+// See docs/specs/geofence-check-in-epic.md § Phase 2.
+//
+// Tables in this section:
+//   - LocationGeofence: per-location geofence configuration (center, radius,
+//     check-in windows, enabled toggle). Unique on locationId — one geofence
+//     per location.
+//   - ClassCheckInAttempt: append-only audit log for fraud review and
+//     debugging. Every check-in attempt (manual or geofence, success or
+//     failure) writes a row. NOT soft-deletable — immutable history.
+//
+// Routes, services, and UI all defer to PRs 6-10 of this epic. This is a
+// schema-only landing so subsequent slices can be built against a stable DB.
+
+model LocationGeofence {
+  id                          String   @id @default(cuid())
+  tenantId                    String   @map("tenant_id")
+  locationId                  String   @unique @map("location_id")
+  centerLat                   Decimal  @map("center_lat") @db.Decimal(11, 8)
+  centerLng                   Decimal  @map("center_lng") @db.Decimal(11, 8)
+  radiusMeters                Int      @default(50)  @map("radius_meters")
+  checkInWindowBeforeMinutes  Int      @default(15)  @map("check_in_window_before_minutes")
+  checkInWindowAfterMinutes   Int      @default(5)   @map("check_in_window_after_minutes")
+  enabled                     Boolean  @default(true)
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt      @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("location_geofence")
+}
+
+model ClassCheckInAttempt {
+  id                          String   @id @default(cuid())
+  tenantId                    String   @map("tenant_id")
+  classBookingId              String   @map("class_booking_id")
+  clientId                    String   @map("client_id")
+  attemptedAt                 DateTime @default(now()) @map("attempted_at")
+  /// 'geofence' | 'manual' — enforced by check constraint in migration SQL.
+  method                      String
+  /// 'success' | 'out_of_range' | 'out_of_window' | 'low_accuracy' |
+  /// 'suspicious_pattern' | 'rate_limited' | 'error' — enforced by check
+  /// constraint in migration SQL.
+  result                      String
+  submittedLat                Decimal? @map("submitted_lat") @db.Decimal(11, 8)
+  submittedLng                Decimal? @map("submitted_lng") @db.Decimal(11, 8)
+  submittedAccuracyMeters     Int?     @map("submitted_accuracy_meters")
+  distanceFromGeofenceMeters  Decimal? @map("distance_from_geofence_meters") @db.Decimal(10, 2)
+  userAgent                   String?  @map("user_agent")
+  ipAddress                   String?  @map("ip_address")
+  createdAt                   DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId],       references: [id], onDelete: Restrict)
+  classBooking ClassBooking @relation(fields: [classBookingId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId],       references: [id], onDelete: Cascade)
+
+  @@index([tenantId, attemptedAt])
+  @@index([classBookingId, attemptedAt])
+  @@index([clientId, attemptedAt])
+  @@map("class_check_in_attempt")
 }
