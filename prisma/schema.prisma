@@ -409,6 +409,9 @@ model Tenant {
   locationGeofences         LocationGeofence[]
   classCheckInAttempts      ClassCheckInAttempt[]
 
+  // Geofence Auto Check-in epic PR 8a — magic-link token foundation.
+  magicLinkTokens           MagicLinkToken[]
+
   @@index([deletedAt])
   @@map("tenants")
 }
@@ -667,6 +670,9 @@ model Client {
 
   // Geofence Auto Check-in epic Phase 2 — audit log for per-client check-in attempts.
   classCheckInAttempts ClassCheckInAttempt[]
+
+  // Geofence Auto Check-in epic PR 8a — magic-link tokens scoped to this client.
+  magicLinkTokens      MagicLinkToken[]
 
   @@unique([tenantId, clientNumber])
   @@index([tenantId])
@@ -1064,6 +1070,9 @@ model ClassBooking {
   // booking (success or failure) lands here for fraud review.
   attempts          ClassCheckInAttempt[]
 
+  // Geofence Auto Check-in epic PR 8a — magic-link tokens scoped to this booking.
+  magicLinkTokens   MagicLinkToken[]
+
   @@unique([tenantId, idempotencyKey])
   @@index([classInstanceId, state])
   @@index([clientId])
@@ -1232,6 +1241,9 @@ model Appointment {
   bookingAnswers      AppointmentBookingAnswer[]
   noteAcknowledgments ClientNoteAcknowledgment[]
   intakeFormSubmissions IntakeFormSubmission[]
+
+  // Geofence Auto Check-in epic PR 8a — magic-link tokens scoped to this appointment.
+  magicLinkTokens     MagicLinkToken[]
 
   @@index([tenantId, scheduledStartAt])
   @@index([staffId, scheduledStartAt])
@@ -1983,4 +1995,48 @@ model ClassCheckInAttempt {
   @@index([classBookingId, attemptedAt])
   @@index([clientId, attemptedAt])
   @@map("class_check_in_attempt")
+}
+
+// ---------- Magic Link Token (PR 8a of the Geofence Auto Check-in epic) ----------
+//
+// Bearer-token foundation for unauthenticated client surfaces. PR 8b uses it
+// for the geofence check-in flow (purpose='geofence_check_in'). The
+// 'manage_booking' purpose is reserved for a future manage-flow revival.
+//
+// Conventions:
+//   - Raw token is NEVER persisted. We store a SHA-256 hex digest in
+//     `tokenHash`; verifyToken recomputes the hash from the inbound bearer
+//     header and looks it up by unique index.
+//   - At least one of (clientId, classBookingId, appointmentId) is NOT NULL.
+//     Enforced by `magic_link_token_scope_check` in migration SQL.
+//   - Purpose is constrained to the listed values by check constraint;
+//     extend the constraint when adding a new purpose.
+//   - Lifecycle is `revokedAt` + `expiresAt`. NOT in SOFT_DELETE_MODELS — the
+//     cron purges rows that have been expired >30 days; revoked rows stay
+//     until they expire so verifyToken can return TOKEN_REVOKED instead of
+//     INVALID_TOKEN (helps diagnose "I rotated my link" support tickets).
+
+model MagicLinkToken {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  clientId        String?   @map("client_id")
+  classBookingId  String?   @map("class_booking_id")
+  appointmentId   String?   @map("appointment_id")
+  tokenHash       String    @unique @map("token_hash")
+  /// 'geofence_check_in' | 'manage_booking' — enforced by check constraint in migration SQL.
+  purpose         String
+  expiresAt       DateTime  @map("expires_at")
+  lastUsedAt      DateTime? @map("last_used_at")
+  revokedAt       DateTime? @map("revoked_at")
+  useCount        Int       @default(0) @map("use_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client       Client?       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  classBooking ClassBooking? @relation(fields: [classBookingId], references: [id], onDelete: Cascade)
+  appointment  Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([tenantId])
+  @@map("magic_link_token")
 }
