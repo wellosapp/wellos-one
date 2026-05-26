@@ -423,6 +423,14 @@ export function CloudIcon(props: IconProps) {
   );
 }
 
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" />
+    </Icon>
+  );
+}
+
 export function ChevronLeftIcon(props: IconProps) {
   return (
     <Icon {...props}>

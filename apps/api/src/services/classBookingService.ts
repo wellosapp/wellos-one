@@ -8,6 +8,7 @@ import type {
   ExtendedPrismaClient,
   ExtendedTransactionClient,
 } from '../db/client.js';
+import { rosterBroadcast } from '../lib/rosterBroadcast.js';
 import { mintToken } from './magicLinkService.js';
 
 // Domain layer for class bookings + waitlist (Phase 3a of the Classes epic).
@@ -642,7 +643,7 @@ export async function cancelBooking(
     initiatedBy: 'studio' | 'client';
   },
 ): Promise<CancelBookingResult> {
-  return await prisma.$transaction(
+  const result = await prisma.$transaction(
     async (tx) => {
       const before = await tx.classBooking.findFirst({
         where: {
@@ -832,6 +833,23 @@ export async function cancelBooking(
       timeout: 8000,
     },
   );
+
+  // Roster SSE broadcasts — AFTER tx commits so a rolled-back cancel
+  // doesn't emit a stale broadcast. The auto-promoted booking (when
+  // present) is a separate event so subscribers can render "Joined from
+  // waitlist" pills distinctly from a vanilla booking-cancelled flip.
+  rosterBroadcast.publish(args.instanceId, {
+    kind: 'booking_cancelled',
+    bookingId: result.cancelled.id,
+  });
+  if (result.promotedBooking) {
+    rosterBroadcast.publish(args.instanceId, {
+      kind: 'waitlist_promoted',
+      bookingId: result.promotedBooking.id,
+    });
+  }
+
+  return result;
 }
 
 // ---------- joinWaitlistManually ----------
@@ -1114,7 +1132,7 @@ export async function checkInBooking(
 ): Promise<{ booking: ClassBooking }> {
   const lateFlag = args.late ?? false;
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.classBooking.findFirst({
       where: {
         id: args.bookingId,
@@ -1131,7 +1149,7 @@ export async function checkInBooking(
     // differs; otherwise return the booking unchanged.
     if (before.state === 'checked_in') {
       if (before.late === lateFlag) {
-        return { booking: before as ClassBooking };
+        return { booking: before as ClassBooking, changed: false };
       }
       const toggled = await tx.classBooking.update({
         where: { id: args.bookingId },
@@ -1147,7 +1165,7 @@ export async function checkInBooking(
         before: before as ClassBooking,
         after: toggled as ClassBooking,
       });
-      return { booking: toggled as ClassBooking };
+      return { booking: toggled as ClassBooking, changed: true };
     }
 
     if (before.state !== 'confirmed') {
@@ -1178,8 +1196,23 @@ export async function checkInBooking(
 
     // TODO(epic-8): notify client of check-in confirmation.
 
-    return { booking: after as ClassBooking };
+    return { booking: after as ClassBooking, changed: true };
   });
+
+  // Roster SSE broadcast — AFTER tx commits. Skip the no-op idempotent
+  // path (state and late both unchanged) so we don't spam subscribers.
+  if (result.changed) {
+    rosterBroadcast.publish(args.instanceId, {
+      kind: 'booking_checked_in',
+      bookingId: result.booking.id,
+      method: 'manual',
+      checkedInAt:
+        result.booking.checkedInAt?.toISOString() ?? new Date().toISOString(),
+      late: result.booking.late,
+    });
+  }
+
+  return { booking: result.booking };
 }
 
 /**
@@ -1201,7 +1234,7 @@ export async function markNoShow(
     bookingId: string;
   },
 ): Promise<{ booking: ClassBooking }> {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.classBooking.findFirst({
       where: {
         id: args.bookingId,
@@ -1246,6 +1279,14 @@ export async function markNoShow(
 
     return { booking: after as ClassBooking };
   });
+
+  // Roster SSE broadcast — AFTER tx commits.
+  rosterBroadcast.publish(args.instanceId, {
+    kind: 'booking_no_show',
+    bookingId: result.booking.id,
+  });
+
+  return result;
 }
 
 /**
@@ -1265,7 +1306,7 @@ export async function revertCheckIn(
     bookingId: string;
   },
 ): Promise<{ booking: ClassBooking }> {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.classBooking.findFirst({
       where: {
         id: args.bookingId,
@@ -1311,4 +1352,12 @@ export async function revertCheckIn(
 
     return { booking: after as ClassBooking };
   });
+
+  // Roster SSE broadcast — AFTER tx commits.
+  rosterBroadcast.publish(args.instanceId, {
+    kind: 'booking_revert_check_in',
+    bookingId: result.booking.id,
+  });
+
+  return result;
 }
