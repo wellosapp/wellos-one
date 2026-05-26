@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type {
   IntakeFormDefinition,
   IntakeFormDefinitionStatus,
@@ -30,6 +31,14 @@ export class IntakeFormReferenceError extends Error {
   ) {
     super(message);
     this.name = 'IntakeFormReferenceError';
+  }
+}
+
+export class FormTemplateNotFoundError extends Error {
+  readonly code = 'FORM_TEMPLATE_NOT_FOUND';
+  constructor(readonly templateId: string) {
+    super(`Form template ${templateId} not found`);
+    this.name = 'FormTemplateNotFoundError';
   }
 }
 
@@ -380,4 +389,160 @@ export async function patchIntakeFormSubmission(
     data: { answers: args.answers as object },
   });
   return { submission };
+}
+
+// ---------- Forms System PR 4 — clone-from-template ----------
+//
+// Templates store FormBuilderSchema JSON. Cloning copies that JSON into a
+// tenant-scoped IntakeFormDefinition row, but every section/field id is
+// regenerated so the clone shares no IDs with the template (or with any
+// other tenant's clone of the same template). Visibility rule fieldId
+// references are rewritten to point at the regenerated ids.
+
+interface CloneSchemaShape {
+  schemaVersion: 2;
+  sections: Array<{ id?: unknown; [k: string]: unknown }>;
+  fields: Array<{
+    id?: unknown;
+    sectionId?: unknown;
+    visibility?: unknown;
+    [k: string]: unknown;
+  }>;
+}
+
+function isCloneSchema(raw: unknown): raw is CloneSchemaShape {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const obj = raw as Record<string, unknown>;
+  return (
+    obj.schemaVersion === 2 &&
+    Array.isArray(obj.sections) &&
+    Array.isArray(obj.fields)
+  );
+}
+
+/**
+ * Deep-copy a FormBuilderSchema and regenerate every section + field id.
+ * Rewrites `fields[].sectionId` and `fields[].visibility.rules[].fieldId`
+ * references so the renamed graph stays connected. Returns the schema
+ * untouched if it doesn't match the expected shape (legacy array schemas
+ * carry no IDs to regenerate — they get serialized as-is).
+ */
+export function regenerateSchemaIds(rawSchema: unknown): unknown {
+  if (!isCloneSchema(rawSchema)) {
+    // Legacy array shape or anything else — return a structural clone so
+    // mutations to the source don't leak into the clone.
+    return JSON.parse(JSON.stringify(rawSchema)) as unknown;
+  }
+
+  const cloned = JSON.parse(JSON.stringify(rawSchema)) as CloneSchemaShape;
+
+  // Build old -> new id maps for both sections and fields.
+  const sectionIdMap = new Map<string, string>();
+  for (const section of cloned.sections) {
+    if (typeof section.id === 'string') {
+      sectionIdMap.set(section.id, crypto.randomUUID());
+    }
+  }
+  const fieldIdMap = new Map<string, string>();
+  for (const field of cloned.fields) {
+    if (typeof field.id === 'string') {
+      fieldIdMap.set(field.id, crypto.randomUUID());
+    }
+  }
+
+  // Apply new section ids.
+  for (const section of cloned.sections) {
+    if (typeof section.id === 'string') {
+      section.id = sectionIdMap.get(section.id) ?? section.id;
+    }
+  }
+
+  // Apply new field ids + rewrite sectionId + visibility rule fieldId.
+  for (const field of cloned.fields) {
+    if (typeof field.id === 'string') {
+      field.id = fieldIdMap.get(field.id) ?? field.id;
+    }
+    if (typeof field.sectionId === 'string') {
+      field.sectionId = sectionIdMap.get(field.sectionId) ?? field.sectionId;
+    }
+    if (
+      field.visibility &&
+      typeof field.visibility === 'object' &&
+      field.visibility !== null
+    ) {
+      const vis = field.visibility as { rules?: unknown };
+      if (Array.isArray(vis.rules)) {
+        for (const rule of vis.rules) {
+          if (
+            rule &&
+            typeof rule === 'object' &&
+            'fieldId' in rule &&
+            typeof (rule as { fieldId: unknown }).fieldId === 'string'
+          ) {
+            const r = rule as { fieldId: string };
+            r.fieldId = fieldIdMap.get(r.fieldId) ?? r.fieldId;
+          }
+        }
+      }
+    }
+  }
+
+  return cloned;
+}
+
+export async function cloneFromTemplate(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    actorUserId: string;
+    templateId: string;
+  },
+): Promise<{ definition: IntakeFormDefinition }> {
+  const template = await prisma.formTemplate.findUnique({
+    where: { id: args.templateId },
+  });
+  if (!template || !template.isActive) {
+    throw new FormTemplateNotFoundError(args.templateId);
+  }
+
+  const newGroupId = crypto.randomUUID();
+  const newSchema = regenerateSchemaIds(template.schema);
+
+  const definition = await prisma.$transaction(async (tx) => {
+    const created = await tx.intakeFormDefinition.create({
+      data: {
+        tenantId: args.tenantId,
+        groupId: newGroupId,
+        title: template.title,
+        description: template.description,
+        formType: template.formType,
+        schema: newSchema as object,
+        version: 1,
+        status: 'draft',
+        isActive: true,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: args.tenantId,
+        actorUserId: args.actorUserId,
+        actorType: 'user',
+        action: 'intake_form_definition.cloned_from_template',
+        entityType: 'intake_form_definition',
+        entityId: created.id,
+        before: Prisma.JsonNull,
+        after: {
+          templateId: template.id,
+          templateSlug: template.slug,
+          templateTitle: template.title,
+          definitionId: created.id,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return created;
+  });
+
+  return { definition };
 }

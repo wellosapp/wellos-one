@@ -1857,6 +1857,36 @@ model FormReminder {
   @@map("form_reminder")
 }
 
+/// Global, system-owned library of starter forms (Phase 4 of the Forms System
+/// rebuild). No tenantId — every tenant sees the same catalog. Cloning copies
+/// the schema into a fresh, tenant-scoped IntakeFormDefinition with all
+/// field/section IDs regenerated. Slug is the stable seed-upsert key. Only
+/// the seed script writes here; admin UI exposes read + clone, never edit.
+model FormTemplate {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String?
+  /// Same enum values as IntakeFormDefinition.formType — CHECK constraint kept
+  /// in sync at the DB level (see migration form_template_form_type_check).
+  formType    String   @map("form_type")
+  /// Coarse filter category — general | massage | medspa | fitness | wellness |
+  /// salon | studio. Loose by design (CHECK constraint).
+  category    String?
+  /// FormBuilderSchema JSON — same shape as IntakeFormDefinition.schema.
+  schema      Json
+  /// Optional Lucide-style icon name for the catalog card; renderer resolves.
+  iconName    String?  @map("icon_name")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([formType])
+  @@index([category])
+  @@index([isActive])
+  @@map("form_template")
+}
+
 /// Per-field file attachments to a submission. References an existing MediaAsset
 /// (R2-backed). RESTRICT on media_asset_id prevents orphaning a submission's
 /// audit history — the app layer should soft-delete files instead.

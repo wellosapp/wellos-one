@@ -72,6 +72,10 @@ export const IntakeFormDefinitionIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+export const CloneFromTemplateBodySchema = z.object({
+  templateId: z.string().min(1),
+});
+
 export const ListIntakeFormDefinitionsQuerySchema = z.object({
   status: z.enum(['draft', 'published', 'archived']).optional(),
   groupId: z.string().optional(),

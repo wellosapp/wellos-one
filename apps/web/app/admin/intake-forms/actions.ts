@@ -5,6 +5,11 @@ import { redirect } from 'next/navigation';
 
 import { ApiError } from '@/lib/api/client';
 import {
+  cloneFormTemplate,
+  listFormTemplates,
+  type FormTemplateDto,
+} from '@/lib/api/form-templates';
+import {
   createIntakeFormDefinition,
   publishIntakeFormDefinition,
   updateIntakeFormDefinition,
@@ -75,6 +80,36 @@ export async function saveIntakeFormDefinitionAction(
     const message =
       err instanceof ApiError ? err.message : 'Could not save form.';
     return { ok: false, error: message };
+  }
+}
+
+export async function listFormTemplatesAction(): Promise<{
+  templates: FormTemplateDto[];
+  error?: string;
+}> {
+  try {
+    const { templates } = await listFormTemplates();
+    return { templates };
+  } catch (err) {
+    const message =
+      err instanceof ApiError
+        ? err.message
+        : 'Could not load templates. Is the API running?';
+    return { templates: [], error: message };
+  }
+}
+
+export async function cloneFromTemplateAction(
+  templateId: string,
+): Promise<{ definitionId: string }> {
+  try {
+    const { definition } = await cloneFormTemplate(templateId);
+    revalidatePath('/admin/intake-forms');
+    return { definitionId: definition.id };
+  } catch (err) {
+    const message =
+      err instanceof ApiError ? err.message : 'Could not clone template.';
+    throw new Error(message);
   }
 }
 

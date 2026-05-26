@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { withIdempotency } from '../../middleware/idempotency.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
+  CloneFromTemplateBodySchema,
   CreateIntakeFormDefinitionBodySchema,
   CreateIntakeFormSubmissionBodySchema,
   IntakeFormDefinitionIdParamsSchema,
@@ -14,9 +15,11 @@ import {
 } from '../../schemas/intakeForm.js';
 import { ClientIdParamsSchema } from '../../schemas/clientNote.js';
 import {
+  FormTemplateNotFoundError,
   IntakeFormNotFoundError,
   IntakeFormReferenceError,
   IntakeFormStateError,
+  cloneFromTemplate,
   createIntakeFormDefinition,
   createIntakeFormSubmission,
   getIntakeFormDefinitionById,
@@ -140,6 +143,48 @@ export default async function intakeFormsRoutes(
                   message: 'Validation failed.',
                   issues: [{ path: err.field, message: err.message }],
                 },
+              };
+            }
+            throw err;
+          }
+        },
+      );
+    },
+  );
+
+  app.post(
+    '/intake-forms/clone-from-template',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const body = CloneFromTemplateBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'intake_form.definition.clone_from_template',
+        },
+        async () => {
+          try {
+            const result = await cloneFromTemplate(app.prisma, {
+              tenantId,
+              actorUserId: user.id,
+              templateId: body.data.templateId,
+            });
+            return { status: 201, body: result };
+          } catch (err) {
+            if (err instanceof FormTemplateNotFoundError) {
+              return {
+                status: 404,
+                body: { error: 'Not Found', message: err.message },
               };
             }
             throw err;

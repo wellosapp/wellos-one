@@ -9,12 +9,15 @@
 //   - 3 roles (admin, manager, staff)
 //   - 19 feature flags (the Studio plan catalog from
 //     docs/wellos-studio-start-plan.md "Studio Feature Flags")
+//   - 16 global form templates (Forms System PR 4)
 //
 // It does NOT create tenants, users, or role assignments — those land via
 // the Clerk webhook (Epic 1, sub-step 7) and the bootstrap admin script
 // (Epic 1, sub-step 9).
 
 import { PrismaClient } from '@prisma/client';
+
+import { seedFormTemplates } from './seeds/form-templates';
 
 // Prefer DIRECT_URL (session pooler, port 5432) for one-off scripts —
 // the transaction pooler (DATABASE_URL, port 6543) breaks Prisma's
@@ -79,6 +82,8 @@ async function main(): Promise<void> {
     });
   }
   console.log(`Seeded ${FEATURE_FLAGS.length} feature flags.`);
+
+  await seedFormTemplates(prisma);
 }
 
 main()
