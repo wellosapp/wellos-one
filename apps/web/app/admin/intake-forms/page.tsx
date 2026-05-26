@@ -5,6 +5,7 @@ import {
   type IntakeFormDefinitionDto,
 } from '@/lib/api/intake-forms';
 
+import { CloneFromTemplateButton } from './CloneFromTemplateButton';
 import { CreateBlankIntakeFormButton } from './CreateBlankIntakeFormButton';
 import { IntakeFormsFilters } from './IntakeFormsFilters';
 import {
@@ -67,7 +68,10 @@ export default async function AdminIntakeFormsPage({
             submissions to clients.
           </p>
         </div>
-        <CreateBlankIntakeFormButton />
+        <div className="flex flex-wrap items-center gap-s3">
+          <CloneFromTemplateButton />
+          <CreateBlankIntakeFormButton />
+        </div>
       </header>
 
       {loadError ? (
