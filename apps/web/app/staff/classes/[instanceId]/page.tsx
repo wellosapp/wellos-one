@@ -16,6 +16,7 @@ import { getWhoami } from '@/lib/api/whoami';
 import { ClassInstanceHeader } from './ClassInstanceHeader';
 import { ClassInstanceSummary } from './ClassInstanceSummary';
 import { ClassRosterTable } from './ClassRosterTable';
+import { RosterStreamSubscriber } from './RosterStreamSubscriber';
 
 // /staff/classes/[instanceId] — Phase 4 of the Classes epic.
 // Staff opens this page to take attendance on a single class instance.
@@ -119,6 +120,10 @@ export default async function StaffClassInstancePage({
       {instance.state === 'completed' && (
         <ClassInstanceSummary summary={summary.summary} />
       )}
+
+      {/* PR 10 — live roster updates via SSE. Triggers router.refresh()
+          whenever a teammate (or geofence) mutates the roster. */}
+      <RosterStreamSubscriber instanceId={instance.id} />
     </div>
   );
 }

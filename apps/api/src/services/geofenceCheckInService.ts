@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import type { ExtendedPrismaClient } from '../db/client.js';
 import { haversineDistanceMeters } from '../lib/geo.js';
+import { rosterBroadcast } from '../lib/rosterBroadcast.js';
 
 // Service layer for the public geofence check-in routes (PR 8b of the
 // Geofence Auto Check-in epic). Two surfaces:
@@ -654,7 +655,18 @@ export async function submitGeofenceCheckIn(
     return after;
   });
 
-  // TODO(epic-8): notify client + roster SSE (PR 10).
+  // Roster SSE — fire AFTER the tx commits so a rolled-back transaction
+  // doesn't emit a stale broadcast. Best-effort: a publish failure can't
+  // affect the user-facing response.
+  rosterBroadcast.publish(booking.classInstanceId, {
+    kind: 'booking_checked_in',
+    bookingId: updated.id,
+    method: 'geofence',
+    checkedInAt: (updated.checkedInAt ?? now).toISOString(),
+    late: false,
+  });
+
+  // TODO(epic-8): notify client of check-in confirmation.
 
   return {
     kind: 'success',

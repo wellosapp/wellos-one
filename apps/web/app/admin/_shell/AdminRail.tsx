@@ -17,6 +17,7 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
   SettingsIcon,
+  ShieldIcon,
   SparkIcon,
   StaffIcon,
   TagIcon,
@@ -74,6 +75,16 @@ const RAIL_GROUPS: RailGroup[] = [
         icon: FileTextIcon,
       },
       { label: 'Media', href: '/admin/media' as Route, icon: ImageIcon },
+    ],
+  },
+  {
+    label: 'Operations',
+    items: [
+      {
+        label: 'Check-in audit',
+        href: '/admin/class-check-in-attempts' as Route,
+        icon: ShieldIcon,
+      },
     ],
   },
 ];

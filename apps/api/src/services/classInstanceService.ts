@@ -5,6 +5,7 @@ import type {
   ExtendedPrismaClient,
   ExtendedTransactionClient,
 } from '../db/client.js';
+import { rosterBroadcast } from '../lib/rosterBroadcast.js';
 import type {
   CreateClassInstanceBody,
   ListClassInstancesQuery,
@@ -538,7 +539,7 @@ export async function setInstanceState(
 ): Promise<{ instance: ClassInstance } | null> {
   const { tenantId, actorUserId, id, state } = args;
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.classInstance.findFirst({
       where: { tenantId, id },
       select: CLASS_INSTANCE_SAFE_FIELDS,
@@ -551,7 +552,7 @@ export async function setInstanceState(
     if (before.state === state) {
       // No-op: target equals current. Return the existing row unchanged so
       // the route layer can still 200 with a sensible body.
-      return { instance: before as ClassInstance };
+      return { instance: before as ClassInstance, changed: false };
     }
     const allowed = ALLOWED_INSTANCE_STATE_TRANSITIONS[before.state] ?? [];
     if (!allowed.includes(state)) {
@@ -576,8 +577,24 @@ export async function setInstanceState(
       after: after as ClassInstance,
     });
 
-    return { instance: after as ClassInstance };
+    return { instance: after as ClassInstance, changed: true };
   });
+
+  if (!result) return null;
+
+  // Roster SSE broadcast — AFTER tx commits, only when state actually moved.
+  if (result.changed) {
+    rosterBroadcast.publish(id, {
+      kind: 'instance_state_changed',
+      state: result.instance.state as
+        | 'scheduled'
+        | 'in_progress'
+        | 'completed'
+        | 'cancelled',
+    });
+  }
+
+  return { instance: result.instance };
 }
 
 export type InstanceSummary = {

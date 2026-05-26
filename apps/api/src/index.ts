@@ -20,6 +20,7 @@ import prismaPlugin from './plugins/prisma.js';
 import adminRoutes from './routes/admin/index.js';
 import meRoutes from './routes/me.js';
 import publicRoutes from './routes/public/index.js';
+import staffClassInstancesStreamRoutes from './routes/staff/class-instances-stream.js';
 import staffSelfRoutes from './routes/staff-self.js';
 import webhookRoutes from './routes/webhooks/index.js';
 
@@ -108,6 +109,10 @@ await app.register(meRoutes);
 // /staff/* self-service surface (e.g. /staff/my-booking-preferences). Top-
 // level (no prefix) so staff don't need to know their own staffId in the URL.
 await app.register(staffSelfRoutes);
+// Staff SSE for live class-roster updates. Bypasses requireRole.staff
+// because EventSource can't send Authorization headers — auth is handled
+// inline against a ?token=... query param. See route file for details.
+await app.register(staffClassInstancesStreamRoutes);
 await app.register(adminRoutes);
 // Login-free public booking (Epic 4) — no requireAuth; tenant scoped per request.
 await app.register(publicRoutes);

@@ -4,6 +4,7 @@ import appointmentsRoutes from './appointments.js';
 import availabilityRoutes from './availability.js';
 import bookingSettingsRoutes from './booking-settings.js';
 import classBookingsRoutes from './class-bookings.js';
+import classCheckInAttemptsRoutes from './class-check-in-attempts.js';
 import classInstancesRoutes from './class-instances.js';
 import classesRoutes from './classes.js';
 import clientNotesRoutes from './client-notes.js';
@@ -43,6 +44,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(classesRoutes, { prefix: '/admin' });
   await app.register(classInstancesRoutes, { prefix: '/admin' });
   await app.register(classBookingsRoutes, { prefix: '/admin' });
+  await app.register(classCheckInAttemptsRoutes, { prefix: '/admin' });
   await app.register(recurrenceRulesRoutes, { prefix: '/admin' });
   await app.register(serviceCategoriesRoutes, { prefix: '/admin' });
   await app.register(staffRoutes, { prefix: '/admin' });
