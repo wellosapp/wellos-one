@@ -53,8 +53,14 @@ export async function saveIntakeFormDefinitionAction(
   } catch {
     return { ok: false, error: 'Schema must be valid JSON.' };
   }
-  if (!Array.isArray(schema)) {
-    return { ok: false, error: 'Schema must be a JSON array of fields.' };
+  // Forms PR 2 introduced a builder schema shape (object with sections +
+  // fields). The legacy JSON editor stored a flat array. Accept either;
+  // the backend Zod schema accepts both for the same reason.
+  if (!Array.isArray(schema) && (typeof schema !== 'object' || schema === null)) {
+    return {
+      ok: false,
+      error: 'Schema must be a JSON array or builder object.',
+    };
   }
 
   try {

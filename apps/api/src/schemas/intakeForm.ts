@@ -2,7 +2,12 @@ import { z } from 'zod';
 
 import { ClientIdParamsSchema } from './clientNote.js';
 
-/** Allowed field types per Epic 5 (MVP slice). */
+/** Allowed field types per Epic 5 (MVP slice).
+ *
+ * Kept for the staff-onboarding schema (which re-exports this enum). The
+ * intake-form schema accepts a strictly broader shape produced by the
+ * Forms-System builder (Forms PR 2) — see IntakeFormSchemaJsonSchema below.
+ */
 export const IntakeFormFieldTypeSchema = z.enum([
   'text',
   'long_text',
@@ -15,7 +20,11 @@ export const IntakeFormFieldTypeSchema = z.enum([
 
 export type IntakeFormFieldType = z.infer<typeof IntakeFormFieldTypeSchema>;
 
-export const IntakeFormSchemaJsonSchema = z
+// Legacy flat-array shape kept for backward-compat with rows written before
+// Forms PR 2. The web builder always normalizes to the new object shape on
+// load, and saves the new shape; this branch only matches definitions that
+// haven't been touched since the builder shipped.
+const LegacyIntakeFormSchemaArraySchema = z
   .array(
     z.object({
       key: z.string().min(1).max(64),
@@ -26,6 +35,21 @@ export const IntakeFormSchemaJsonSchema = z
     }),
   )
   .max(100);
+
+// New builder shape (Forms PR 2). Sections + flat field list. Validation is
+// lenient so the front-end can evolve internals (new field types, new
+// validation knobs) without locking the API schema in step. The web layer
+// owns the per-field rules; we just confirm the outer shape here.
+const BuilderIntakeFormSchemaSchema = z.object({
+  schemaVersion: z.literal(2),
+  sections: z.array(z.record(z.string(), z.unknown())).max(50),
+  fields: z.array(z.record(z.string(), z.unknown())).max(500),
+});
+
+export const IntakeFormSchemaJsonSchema = z.union([
+  BuilderIntakeFormSchemaSchema,
+  LegacyIntakeFormSchemaArraySchema,
+]);
 
 export const CreateIntakeFormDefinitionBodySchema = z.object({
   title: z.string().min(1).max(200),
