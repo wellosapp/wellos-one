@@ -3,6 +3,8 @@ import { Instrument_Serif, Manrope } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { PwaInstallProvider } from './_pwa/PwaInstallProvider';
+import { GeofenceCheckInProvider } from './_pwa/GeofenceCheckInProvider';
+import { GeofenceCheckInBanner } from './_pwa/GeofenceCheckInBanner';
 
 // Editorial serif display face. Used by every heading + the t-display-*
 // utility classes. Variable name `--font-display` is intentionally font-
@@ -66,7 +68,12 @@ export default function RootLayout({
     <html lang="en" className={`${instrumentSerif.variable} ${manrope.variable}`}>
       <body>
         <Providers>
-          <PwaInstallProvider>{children}</PwaInstallProvider>
+          <PwaInstallProvider>
+            <GeofenceCheckInProvider>
+              <GeofenceCheckInBanner />
+              {children}
+            </GeofenceCheckInProvider>
+          </PwaInstallProvider>
         </Providers>
       </body>
     </html>
