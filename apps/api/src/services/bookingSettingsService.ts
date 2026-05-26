@@ -360,10 +360,18 @@ export async function resolveBookingSetting<
   // 2. Staff override (only for keys that have one)
   const staffField = STAFF_OVERRIDE_KEY_OF[args.key];
   if (args.staffId && staffField) {
-    const staff = await prisma.staff.findFirst({
+    // Type-erase through `any` for this call. The soft-delete extension
+    // + N back-relations on Staff (forms reviewer, magic-link tokens,
+    // etc.) push the inferred StaffSelect<...> return type past TS's
+    // recursion depth limit, even with intermediate `unknown` casts.
+    // Runtime select is safe because staffField is restricted to the
+    // keys of STAFF_OVERRIDE_KEY_OF (numeric per-staff override columns).
+    // any-cast is justified per CLAUDE.md hard rule #5 — see comment.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const staff = (await (prisma.staff as any).findFirst({
       where: { id: args.staffId, tenantId: args.tenantId },
-      select: { [staffField]: true } as Prisma.StaffSelect,
-    });
+      select: { [staffField]: true },
+    })) as Record<string, number | null> | null;
     if (staff) {
       // Dynamic select can't narrow the Prisma return type, so we cast
       // through `unknown` to a record lookup. The map STAFF_OVERRIDE_KEY_OF

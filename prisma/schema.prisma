@@ -412,6 +412,11 @@ model Tenant {
   // Geofence Auto Check-in epic PR 8a — magic-link token foundation.
   magicLinkTokens           MagicLinkToken[]
 
+  // Forms System Phase 1 — assignment rules, reminders, per-field file uploads.
+  formAssignmentRules       FormAssignmentRule[]
+  formReminders             FormReminder[]
+  formFileUploads           FormFileUpload[]
+
   @@index([deletedAt])
   @@map("tenants")
 }
@@ -753,6 +758,9 @@ model Staff {
   /// Classes epic Phase 3a — rows where this staff member checked a client in.
   classCheckIns ClassBooking[] @relation("ClassBookingCheckedInBy")
 
+  /// Forms System Phase 1 — submissions this staff member reviewed (provider review flow).
+  reviewedIntakeFormSubmissions IntakeFormSubmission[] @relation("IntakeFormSubmissionReviewer")
+
   @@index([tenantId])
   @@index([tenantId, deletedAt])
   @@index([tenantId, email])
@@ -846,6 +854,9 @@ model Service {
   contentDeliveries ServiceContentDelivery[]
   slotHolds         SlotHold[]
   waitlistEntries   WaitlistEntry[]
+
+  /// Forms System Phase 1 — rules mapping this service to a form group.
+  formAssignmentRules FormAssignmentRule[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1429,6 +1440,9 @@ model MediaAsset {
   // Back-relation for Tenant.logoMediaAsset.
   tenantLogoBackrefs Tenant[] @relation("TenantLogo")
 
+  /// Forms System Phase 1 — submissions that reference this asset via a per-field upload.
+  formFileUploads FormFileUpload[]
+
   @@unique([bucket, objectKey])
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1684,6 +1698,11 @@ model IntakeFormDefinition {
   tenantId  String                     @map("tenant_id")
   groupId   String                     @map("group_id")
   title     String
+  /// Form taxonomy — drives template gallery + admin filters. CHECK constraint
+  /// at the DB layer enforces allowed values (forms_system_phase_1_schema).
+  formType    String?                  @default("intake") @map("form_type")
+  /// Admin-facing helper text shown in the catalog list + form-pick dropdowns.
+  description String?
   /// Field templates: array of { key, type, label, ... } — validated at API layer.
   schema    Json
   version   Int
@@ -1716,6 +1735,24 @@ model IntakeFormSubmission {
 
   submittedAt    DateTime?                @map("submitted_at") @db.Timestamptz(3)
 
+  // ---------- Forms System Phase 1 — delivery / signature / review ----------
+  // All nullable; existing rows carry no delivery history.
+  /// First time the recipient opened the form URL.
+  openedAt              DateTime? @map("opened_at")     @db.Timestamptz(3)
+  /// First time the recipient typed/clicked into a field (engagement signal).
+  startedAt             DateTime? @map("started_at")    @db.Timestamptz(3)
+  /// Hard expiry — submission link no longer accepted past this point.
+  expiresAt             DateTime? @map("expires_at")    @db.Timestamptz(3)
+  /// 'email' | 'sms' | 'both' | 'kiosk' | 'inline_booking' | 'admin_only' (CHECK).
+  deliveryChannel       String?   @map("delivery_channel")
+  /// { imageBase64?, typedSignature?, signedAt, ip, userAgent, formVersion } — API-layer validated.
+  signatureData         Json?     @map("signature_data")
+  /// 'unreviewed' | 'reviewed' | 'requires_follow_up' | 'approved' | 'denied' (CHECK).
+  reviewStatus          String?   @map("review_status")
+  reviewedAt            DateTime? @map("reviewed_at")   @db.Timestamptz(3)
+  reviewedByStaffId     String?   @map("reviewed_by_staff_id")
+  reviewNotes           String?   @map("review_notes")
+
   createdAt      DateTime                 @default(now()) @map("created_at")
   updatedAt      DateTime                 @updatedAt @map("updated_at")
 
@@ -1723,7 +1760,10 @@ model IntakeFormSubmission {
   definition IntakeFormDefinition       @relation(fields: [definitionId], references: [id], onDelete: Restrict)
   client     Client?                    @relation(fields: [clientId], references: [id], onDelete: SetNull)
   appointment Appointment?              @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  reviewedByStaff Staff?                 @relation("IntakeFormSubmissionReviewer", fields: [reviewedByStaffId], references: [id], onDelete: SetNull)
   audits     IntakeFormSubmissionAudit[]
+  reminders  FormReminder[]
+  fileUploads FormFileUpload[]
 
   @@index([tenantId])
   @@index([tenantId, clientId])
@@ -1755,6 +1795,87 @@ model IntakeFormSubmissionAudit {
   @@index([tenantId])
   @@index([submissionId, createdAt])
   @@map("intake_form_submission_audits")
+}
+
+// ---------- Forms System Phase 1 — assignment rules / reminders / file uploads ----------
+//
+// PR 1 of the Forms System rebuild. Schema only — services, routes, UI in
+// subsequent PRs.
+
+/// Maps a Service to a form (resolved at runtime to the latest published version
+/// of the form's groupId). `formDefinitionGroupId` is intentionally NOT a FK —
+/// groupId on IntakeFormDefinition is a version-family identifier, not unique
+/// on its own.
+model FormAssignmentRule {
+  id                            String   @id @default(cuid())
+  tenantId                      String   @map("tenant_id")
+  serviceId                     String   @map("service_id")
+  formDefinitionGroupId         String   @map("form_definition_group_id")
+  /// 'optional' | 'soft_required' | 'hard_required' (CHECK).
+  requiredLevel                 String   @default("optional") @map("required_level")
+  /// 'before_booking' | 'before_appointment' | 'optional' (CHECK).
+  timing                        String   @default("before_appointment")
+  sendAutomaticallyAfterBooking Boolean  @default(true) @map("send_automatically_after_booking")
+  requireProviderReview         Boolean  @default(false) @map("require_provider_review")
+  /// Submission expires N days after send. NULL = never expires. Capped 1..365.
+  expiresAfterDays              Int?     @map("expires_after_days")
+  active                        Boolean  @default(true)
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, formDefinitionGroupId])
+  @@index([tenantId])
+  @@index([serviceId])
+  @@map("form_assignment_rule")
+}
+
+/// Scheduled reminders for unsubmitted assignments. PR 11 wires the cron that
+/// processes these. Lifecycle: sent_at fills when the cron sends; cancelled_at
+/// fills when the submission completes before the reminder fires.
+model FormReminder {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  submissionId  String    @map("submission_id")
+  scheduledFor  DateTime  @map("scheduled_for")
+  /// 'email' | 'sms' | 'both' (CHECK).
+  channel       String    @default("email")
+  sentAt        DateTime? @map("sent_at")
+  cancelledAt   DateTime? @map("cancelled_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission IntakeFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // Migration also creates a PARTIAL index on scheduled_for
+  // WHERE sent_at IS NULL AND cancelled_at IS NULL (cron lookup hot path).
+  // Prisma's @@index can't carry a WHERE clause, so we declare it in raw SQL.
+  @@index([submissionId])
+  @@index([tenantId])
+  @@map("form_reminder")
+}
+
+/// Per-field file attachments to a submission. References an existing MediaAsset
+/// (R2-backed). RESTRICT on media_asset_id prevents orphaning a submission's
+/// audit history — the app layer should soft-delete files instead.
+model FormFileUpload {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  submissionId String   @map("submission_id")
+  /// Which field in the form schema this file belongs to.
+  fieldKey     String   @map("field_key")
+  mediaAssetId String   @map("media_asset_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submission IntakeFormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset           @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([submissionId])
+  @@index([tenantId])
+  @@map("form_file_upload")
 }
 
 // ---------- Staff onboarding forms (W9, license, certs) ----------
