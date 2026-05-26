@@ -13,7 +13,10 @@ import {
   type FormBuilderSchema,
   type FormField as FormFieldT,
   validateInternalKey,
+  type VisibilityConfig,
 } from '../_schema-utils';
+
+import { VisibilitySection } from './VisibilitySection';
 
 type Props = {
   open: boolean;
@@ -403,6 +406,14 @@ export function FieldSettingsDrawer({
             </Select>
           </FormField>
         ) : null}
+
+        <VisibilitySection
+          currentField={field}
+          allFields={schema.fields}
+          onChange={(visibility: VisibilityConfig | undefined) =>
+            onChange({ visibility })
+          }
+        />
       </div>
     </Drawer>
   );

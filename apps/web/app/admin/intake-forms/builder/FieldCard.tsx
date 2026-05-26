@@ -4,7 +4,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 import { Badge } from '@/components/ui';
-import { TrashIcon } from '@/app/admin/_shell/icons';
+import { EyeIcon, TrashIcon } from '@/app/admin/_shell/icons';
 import { cn } from '@/lib/cn';
 
 import { FIELD_TYPE_LABELS, type FormField } from '../_schema-utils';
@@ -82,12 +82,18 @@ export function FieldCard({
           <Icon size={18} />
         </span>
         <span className="flex min-w-0 flex-col gap-[2px]">
-          <span className="flex items-center gap-s2">
+          <span className="flex flex-wrap items-center gap-s2">
             <span className="truncate t-body-md font-medium text-ink">
               {field.label || 'Untitled field'}
             </span>
             {field.required ? (
               <Badge tone="amber">Required</Badge>
+            ) : null}
+            {(field.visibility?.rules.length ?? 0) > 0 ? (
+              <Badge tone="accent">
+                <EyeIcon size={12} />
+                Conditional
+              </Badge>
             ) : null}
           </span>
           <span className="t-caption text-ink-soft">

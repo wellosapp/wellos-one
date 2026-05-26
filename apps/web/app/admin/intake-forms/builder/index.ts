@@ -1,4 +1,6 @@
 export { FormBuilder } from './FormBuilder';
+export { FormPreviewRenderer } from './FormPreviewRenderer';
+export { PreviewModal } from './PreviewModal';
 export type {
   FieldOption,
   FieldType,
@@ -6,4 +8,7 @@ export type {
   FormBuilderSchema,
   FormField,
   FormSection,
+  VisibilityConfig,
+  VisibilityOperator,
+  VisibilityRule,
 } from '../_schema-utils';

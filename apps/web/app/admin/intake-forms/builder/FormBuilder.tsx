@@ -43,6 +43,7 @@ import {
 import { FieldCard } from './FieldCard';
 import { FieldSettingsDrawer } from './FieldSettingsDrawer';
 import { FieldTypePalette } from './FieldTypePalette';
+import { PreviewModal } from './PreviewModal';
 import { SectionCard } from './SectionCard';
 
 type Props = {
@@ -70,6 +71,7 @@ export function FormBuilder({ definition }: Props) {
   const [saving, startSave] = useTransition();
   const [publishing, startPub] = useTransition();
   const [pubMessage, setPubMessage] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const readOnly = definition.status !== 'draft';
 
@@ -373,28 +375,37 @@ export function FormBuilder({ definition }: Props) {
             </p>
           </div>
           <div className="flex flex-col items-end gap-s2">
-            {!readOnly ? (
-              <div className="flex flex-wrap items-center gap-s3">
-                <Button
-                  type="button"
-                  variant="accent"
-                  loading={saving}
-                  disabled={saving || publishing}
-                  onClick={onSave}
-                >
-                  Save draft
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  loading={publishing}
-                  disabled={saving || publishing}
-                  onClick={onPublish}
-                >
-                  Publish
-                </Button>
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-s3">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPreviewOpen(true)}
+              >
+                Preview
+              </Button>
+              {!readOnly ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="accent"
+                    loading={saving}
+                    disabled={saving || publishing}
+                    onClick={onSave}
+                  >
+                    Save draft
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    loading={publishing}
+                    disabled={saving || publishing}
+                    onClick={onPublish}
+                  >
+                    Publish
+                  </Button>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -531,8 +542,8 @@ export function FormBuilder({ definition }: Props) {
           >
             <p className="t-caption text-ink-soft">
               Each field has a snake_case <code className="font-mono">internalKey</code>{' '}
-              used by reports + the API. Conditional logic and mobile preview
-              land in a follow-up.
+              used by reports + the API. Per-field conditional visibility +
+              mobile/desktop preview are live; templates land in a follow-up.
             </p>
           </Card>
         </div>
@@ -549,6 +560,12 @@ export function FormBuilder({ definition }: Props) {
         onDelete={() => {
           if (selectedField) deleteField(selectedField.id);
         }}
+      />
+
+      <PreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        schema={schema}
       />
     </div>
   );
