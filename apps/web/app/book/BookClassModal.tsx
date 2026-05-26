@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn';
 import type { PublicClassInstanceDto } from '@/lib/api/public-booking-server';
 
 import { InstallPromptBanner } from '@/app/_pwa/InstallPromptBanner';
+import { writeGeofenceToken } from '@/app/_pwa/geofenceTokenStore';
 
 import { submitPublicClassBookingAction } from './_actions';
 import { ctaForInstance } from './ClassInstanceCard';
@@ -148,6 +149,24 @@ export function BookClassModal({
         }
 
         if (res.result.kind === 'booking') {
+          // PR 9 — geofence epic. Stash the magic-link bearer token so the
+          // PWA's GeofenceCheckInProvider can poll for auto check-in when
+          // the client arrives at the studio. Null on idempotent replay
+          // (original mint already happened — no fresh token to stash).
+          if (res.result.geofenceCheckInToken) {
+            // Token TTL = scheduled end + 30 min (matches the server mint
+            // in PR 8b). The booking response doesn't echo scheduledEndAt,
+            // so use the instance prop the modal already has.
+            writeGeofenceToken(res.result.id, {
+              token: res.result.geofenceCheckInToken,
+              expiresAt: new Date(
+                new Date(instance.scheduledEndAt).getTime() +
+                  30 * 60 * 1000,
+              ).toISOString(),
+              classInstanceId: instance.id,
+              className: instance.class.name,
+            });
+          }
           setState({
             kind: 'success',
             tone: 'booking',
