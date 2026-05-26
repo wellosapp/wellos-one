@@ -37,6 +37,8 @@ import {
   type SlotHoldResponse,
 } from '@/lib/api/slot-holds';
 
+import { InstallPromptBanner } from '@/app/_pwa/InstallPromptBanner';
+
 import {
   loadPublicAvailabilityAction,
   submitPublicBookingAction,
@@ -333,6 +335,18 @@ export function BookPageBody({
     void releaseSlotHold(holdId);
   }, [selectedSlotStart, activeHold]);
 
+  // PR 2 (geofence epic) — mark the visitor so a future /book visit will
+  // qualify as "returning." The install banner reads this key to decide
+  // whether to surface itself. First visit writes; subsequent visits show.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('wellos.has-visited', 'true');
+    } catch {
+      // localStorage disabled / quota — banner just never appears for this
+      // user. Acceptable fallback.
+    }
+  }, []);
+
   const onSubmitBooking = () => {
     setBookingMessage(null);
     if (
@@ -433,6 +447,13 @@ export function BookPageBody({
       </header>
 
       <main className="mx-auto w-full max-w-[1120px] px-s6 py-s8 md:px-s8">
+        {/* PR 2 (geofence epic) — returning-client install nudge. Banner
+            internally gates on flag + has-visited + dismissal + standalone,
+            so caller doesn't conditionally render. */}
+        <div className="mb-s6">
+          <InstallPromptBanner surface="returning-client" tone="neutral" />
+        </div>
+
         {!tenantSlug ? (
           <div
             className="mb-s6 rounded-2xl border border-amber-200 bg-amber-50 px-s5 py-s4 t-body-md text-ink"
