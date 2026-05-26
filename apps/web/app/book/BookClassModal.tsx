@@ -9,6 +9,8 @@ import { Button, FormField, Input } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import type { PublicClassInstanceDto } from '@/lib/api/public-booking-server';
 
+import { InstallPromptBanner } from '@/app/_pwa/InstallPromptBanner';
+
 import { submitPublicClassBookingAction } from './_actions';
 import { ctaForInstance } from './ClassInstanceCard';
 
@@ -215,16 +217,27 @@ export function BookClassModal({
 
         <div className="flex-1 overflow-y-auto px-s6 py-s5">
           {state.kind === 'success' ? (
-            <div
-              className={cn(
-                'rounded-2xl border px-s5 py-s5 t-body-md',
-                state.tone === 'booking'
-                  ? 'border-accent-mid bg-accent-pale text-ink'
-                  : 'border-amber-200 bg-amber-50 text-ink',
-              )}
-              role="status"
-            >
-              {state.copy}
+            <div className="flex flex-col gap-s4">
+              <div
+                className={cn(
+                  'rounded-2xl border px-s5 py-s5 t-body-md',
+                  state.tone === 'booking'
+                    ? 'border-accent-mid bg-accent-pale text-ink'
+                    : 'border-amber-200 bg-amber-50 text-ink',
+                )}
+                role="status"
+              >
+                {state.copy}
+              </div>
+              {/* PR 2 — geofence epic. The install nudge only appears for
+                  successful bookings (not waitlist) so the value prop
+                  ("auto check-in when you arrive") actually applies. */}
+              {state.tone === 'booking' ? (
+                <InstallPromptBanner
+                  surface="booking-confirmation"
+                  tone="sage"
+                />
+              ) : null}
             </div>
           ) : (
             <form

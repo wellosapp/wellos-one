@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Instrument_Serif, Manrope } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-import { RegisterServiceWorker } from './_pwa/RegisterServiceWorker';
+import { PwaInstallProvider } from './_pwa/PwaInstallProvider';
 
 // Editorial serif display face. Used by every heading + the t-display-*
 // utility classes. Variable name `--font-display` is intentionally font-
@@ -66,8 +66,7 @@ export default function RootLayout({
     <html lang="en" className={`${instrumentSerif.variable} ${manrope.variable}`}>
       <body>
         <Providers>
-          <RegisterServiceWorker />
-          {children}
+          <PwaInstallProvider>{children}</PwaInstallProvider>
         </Providers>
       </body>
     </html>
