@@ -19,7 +19,14 @@
 //     verifyToken looks up by global-unique tokenHash because the token IS
 //     the credential — knowing it proves tenant scope.
 
-import type { MagicLinkToken, Client, ClassBooking, Appointment } from '@prisma/client';
+import type {
+  MagicLinkToken,
+  Client,
+  ClassBooking,
+  Appointment,
+  IntakeFormSubmission,
+  IntakeFormDefinition,
+} from '@prisma/client';
 
 import type {
   ExtendedPrismaClient,
@@ -28,10 +35,15 @@ import type {
 import { generateToken, hashToken } from '../lib/tokenCrypto.js';
 
 // Keep in sync with the magic_link_token_purpose_check CHECK constraint in
-// prisma/migrations/20260526023000_magic_link_token/migration.sql. Adding a
-// new value requires both a new migration that broadens the constraint AND
-// adding to this union.
-export type MagicLinkPurpose = 'geofence_check_in' | 'manage_booking';
+// prisma/migrations/20260526023000_magic_link_token/migration.sql and the
+// PR 6 expansion in
+// prisma/migrations/20260526200000_forms_lifecycle_and_magic_link_form_purpose/migration.sql.
+// Adding a new value requires both a new migration that broadens the
+// constraint AND adding to this union.
+export type MagicLinkPurpose =
+  | 'geofence_check_in'
+  | 'manage_booking'
+  | 'form_submission';
 
 // ---------- Typed errors ----------
 
@@ -74,7 +86,9 @@ export class TokenPurposeMismatchError extends Error {
 export class MagicLinkScopeMissingError extends Error {
   code = 'MAGIC_LINK_SCOPE_MISSING' as const;
   constructor() {
-    super('At least one of clientId, classBookingId, or appointmentId must be set');
+    super(
+      'At least one of clientId, classBookingId, appointmentId, or intakeFormSubmissionId must be set',
+    );
     this.name = 'MagicLinkScopeMissingError';
   }
 }
@@ -89,6 +103,7 @@ export interface MintTokenArgs {
     clientId?: string;
     classBookingId?: string;
     appointmentId?: string;
+    intakeFormSubmissionId?: string;
   };
 }
 
@@ -111,7 +126,12 @@ export async function mintToken(
 ): Promise<MintTokenResult> {
   const { tenantId, purpose, expiresAt, scope } = args;
 
-  if (!scope.clientId && !scope.classBookingId && !scope.appointmentId) {
+  if (
+    !scope.clientId &&
+    !scope.classBookingId &&
+    !scope.appointmentId &&
+    !scope.intakeFormSubmissionId
+  ) {
     throw new MagicLinkScopeMissingError();
   }
 
@@ -124,6 +144,7 @@ export async function mintToken(
       clientId: scope.clientId ?? null,
       classBookingId: scope.classBookingId ?? null,
       appointmentId: scope.appointmentId ?? null,
+      intakeFormSubmissionId: scope.intakeFormSubmissionId ?? null,
       tokenHash,
       purpose,
       expiresAt,
@@ -147,6 +168,13 @@ export interface VerifyTokenResult {
   client: Client | null;
   classBooking: ClassBooking | null;
   appointment: Appointment | null;
+  /**
+   * Eager-loaded with `definition` so the PR 7 form renderer can read
+   * `intakeFormSubmission.definition.schema` without a second round-trip.
+   */
+  intakeFormSubmission:
+    | (IntakeFormSubmission & { definition: IntakeFormDefinition })
+    | null;
 }
 
 export async function verifyToken(
@@ -199,19 +227,36 @@ export async function verifyToken(
   // soft-deleted set. (ClassBooking is NOT in SOFT_DELETE_MODELS so it
   // returns regardless; Client and Appointment ARE — caller should treat
   // a null scope entity as "scope row is gone, token is stale".)
-  const [client, classBooking, appointment] = await Promise.all([
-    updated.clientId
-      ? prisma.client.findFirst({ where: { id: updated.clientId } })
-      : Promise.resolve(null),
-    updated.classBookingId
-      ? prisma.classBooking.findFirst({ where: { id: updated.classBookingId } })
-      : Promise.resolve(null),
-    updated.appointmentId
-      ? prisma.appointment.findFirst({ where: { id: updated.appointmentId } })
-      : Promise.resolve(null),
-  ]);
+  //
+  // For purpose='form_submission' (PR 6+) we also eager-load the submission
+  // joined to its IntakeFormDefinition so the PR 7 renderer can read
+  // `intakeFormSubmission.definition.schema` directly.
+  const [client, classBooking, appointment, intakeFormSubmission] =
+    await Promise.all([
+      updated.clientId
+        ? prisma.client.findFirst({ where: { id: updated.clientId } })
+        : Promise.resolve(null),
+      updated.classBookingId
+        ? prisma.classBooking.findFirst({ where: { id: updated.classBookingId } })
+        : Promise.resolve(null),
+      updated.appointmentId
+        ? prisma.appointment.findFirst({ where: { id: updated.appointmentId } })
+        : Promise.resolve(null),
+      updated.intakeFormSubmissionId
+        ? prisma.intakeFormSubmission.findFirst({
+            where: { id: updated.intakeFormSubmissionId },
+            include: { definition: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
-  return { token: updated, client, classBooking, appointment };
+  return {
+    token: updated,
+    client,
+    classBooking,
+    appointment,
+    intakeFormSubmission,
+  };
 }
 
 // ---------- revokeToken ----------

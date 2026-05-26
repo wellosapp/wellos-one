@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import type { ExtendedPrismaClient, ExtendedTransactionClient } from '../db/client.js';
+import { sendForm } from './formSendService.js';
 
 // Forms System PR 5 — per-service form attachment rules + booking-time
 // auto-assignment of IntakeFormSubmission drafts.
@@ -431,9 +432,10 @@ export async function processBookingAssignments(
       }
 
       // Idempotency: skip if a submission for this (definition, appointment)
-      // already exists. The status enum is draft|submitted today; either
-      // value means "we already created (or completed) the submission for
-      // this booking" so we don't re-create.
+      // already exists in any status. Manual resend is admin-initiated only —
+      // we do NOT auto-trigger another send on a re-process. This guards
+      // against double-creation if an admin re-saves a service form rule or
+      // the appointment-create hook ever fires twice.
       const existing = await prisma.intakeFormSubmission.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -452,7 +454,20 @@ export async function processBookingAssignments(
           ? new Date(Date.now() + rule.expiresAfterDays * 86_400_000)
           : null;
 
-      await prisma.$transaction(async (tx) => {
+      // Auto-detect the channel before the transaction so we can store the
+      // resolved value on the submission row (sendForm will overwrite if it
+      // also passes through). 'email' > 'sms' > 'admin_only' per PR 6.
+      let autoChannel: 'email' | 'sms' | 'admin_only' = 'admin_only';
+      if (args.clientId) {
+        const c = await prisma.client.findFirst({
+          where: { id: args.clientId, tenantId: args.tenantId },
+          select: { email: true, phone: true },
+        });
+        if (c?.email) autoChannel = 'email';
+        else if (c?.phone) autoChannel = 'sms';
+      }
+
+      const createdSubmission = await prisma.$transaction(async (tx) => {
         const submission = await tx.intakeFormSubmission.create({
           data: {
             tenantId: args.tenantId,
@@ -460,8 +475,7 @@ export async function processBookingAssignments(
             clientId: args.clientId,
             appointmentId: args.appointmentId,
             status: 'draft',
-            // PR 6 will swap to email/sms based on tenant settings.
-            deliveryChannel: 'admin_only',
+            deliveryChannel: autoChannel,
             ...(expiresAt ? { expiresAt } : {}),
           },
         });
@@ -485,9 +499,31 @@ export async function processBookingAssignments(
             } as unknown as Prisma.InputJsonValue,
           },
         });
+
+        return submission;
       });
 
       created += 1;
+
+      // PR 6 — auto-dispatch via the send service. Best-effort: a failure
+      // here leaves the submission in 'draft' so the admin can manually
+      // send later from the client intake panel.
+      try {
+        await sendForm(prisma, {
+          tenantId: args.tenantId,
+          actorUserId: null,
+          submissionId: createdSubmission.id,
+          deliveryChannel: autoChannel,
+        });
+      } catch (sendErr) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[form-assignment] auto-send failed for submission %s (rule %s): %s',
+          createdSubmission.id,
+          rule.id,
+          sendErr instanceof Error ? sendErr.message : String(sendErr),
+        );
+      }
     } catch (err) {
       // Per spec: never let one failed rule break the others (or the
       // appointment that already committed). Log + continue.

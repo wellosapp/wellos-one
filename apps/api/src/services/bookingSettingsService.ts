@@ -385,14 +385,18 @@ export async function resolveBookingSetting<
   }
 
   // 3. Tenant default
-  const tenant = await prisma.tenant.findUnique({
+  // Type-erase through `any` for this call. The N back-relations on
+  // Tenant (forms, classes, magic-link tokens, etc.) push the inferred
+  // TenantSelect<...> return type past TS's recursion depth limit, same
+  // class of issue as the Staff cast above on line ~363. Runtime select
+  // is safe because the key comes from TENANT_KEY_OF[args.key].
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tenant = (await (prisma.tenant as any).findUnique({
     where: { id: args.tenantId },
-    select: { [TENANT_KEY_OF[args.key]]: true } as Prisma.TenantSelect,
-  });
+    select: { [TENANT_KEY_OF[args.key]]: true },
+  })) as Record<string, unknown> | null;
   if (tenant) {
-    const value = (tenant as unknown as Record<string, unknown>)[
-      TENANT_KEY_OF[args.key]
-    ];
+    const value = tenant[TENANT_KEY_OF[args.key]];
     if (value !== undefined && value !== null) {
       return value as TenantBookingSettings[K];
     }

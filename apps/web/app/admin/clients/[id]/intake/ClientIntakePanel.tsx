@@ -9,9 +9,27 @@ import { cn } from '@/lib/cn';
 import type {
   IntakeFormDefinitionDto,
   IntakeFormSubmissionDto,
+  IntakeFormSubmissionStatus,
 } from '@/lib/api/intake-forms';
 
-import { startClientIntakeDraftAction } from './_actions';
+import {
+  cancelClientIntakeAction,
+  sendClientIntakeAction,
+  startClientIntakeDraftAction,
+} from './_actions';
+
+const NON_TERMINAL_STATUSES: ReadonlySet<IntakeFormSubmissionStatus> = new Set([
+  'draft',
+  'assigned',
+  'sent',
+  'opened',
+  'in_progress',
+]);
+
+const FRESH_STATUSES: ReadonlySet<IntakeFormSubmissionStatus> = new Set([
+  'draft',
+  'assigned',
+]);
 
 // Two-section panel: Submissions list + Start-a-draft form. Each section is
 // a card matching the SectionHeader chrome used elsewhere on the client
@@ -78,48 +96,14 @@ export function ClientIntakePanel({
           </div>
         ) : (
           <ul className="flex flex-col gap-s2">
-            {submissions.map((s) => {
-              const href =
-                `/admin/clients/${clientId}/intake/${s.id}` as Route;
-              return (
-                <li
-                  key={s.id}
-                  className={cn(
-                    'flex flex-wrap items-center justify-between gap-s3',
-                    'rounded-md border border-line bg-surface-2 px-s4 py-s3 shadow-sm',
-                  )}
-                >
-                  <div className="flex min-w-0 flex-1 flex-col gap-s1">
-                    <div className="flex flex-wrap items-center gap-s2">
-                      <span className="t-body-md font-medium text-ink">
-                        {s.definition.title}
-                      </span>
-                      <span className="t-caption text-ink-4">
-                        v{s.definition.version}
-                      </span>
-                      <StatusBadge status={s.status} />
-                    </div>
-                    <span className="t-caption uppercase tracking-wide text-ink-4">
-                      {s.submittedAt
-                        ? `Submitted ${relativeOrAbsolute(s.submittedAt)}`
-                        : `Draft created ${relativeOrAbsolute(s.createdAt)}`}
-                    </span>
-                  </div>
-                  <Link
-                    href={href}
-                    className={cn(
-                      'inline-flex items-center justify-center rounded-sm border px-[14px] py-[7px]',
-                      't-body-sm font-medium font-sans',
-                      s.status === 'draft'
-                        ? 'border-sage-deep bg-sage-deep text-ink-inv hover:bg-ink'
-                        : 'border-surface-3 bg-surface text-ink hover:border-sage',
-                    )}
-                  >
-                    {s.status === 'draft' ? 'Fill in' : 'View'}
-                  </Link>
-                </li>
-              );
-            })}
+            {submissions.map((s) => (
+              <SubmissionRow
+                key={s.id}
+                clientId={clientId}
+                submission={s}
+                onMessage={setMessage}
+              />
+            ))}
           </ul>
         )}
       </SectionCard>
@@ -259,29 +243,188 @@ function SectionCard({
   );
 }
 
-function StatusBadge({ status }: { status: 'draft' | 'submitted' }) {
-  if (status === 'submitted') {
-    return (
-      <span
-        className={cn(
-          'inline-flex items-center rounded-sm border px-s2 py-[2px]',
-          'border-sage-soft bg-sage-tint text-sage-deep',
-          't-caption uppercase tracking-wide',
+function SubmissionRow({
+  clientId,
+  submission,
+  onMessage,
+}: {
+  clientId: string;
+  submission: IntakeFormSubmissionDto;
+  onMessage: (m: { tone: 'success' | 'error'; text: string } | null) => void;
+}) {
+  const [pendingSend, sendTransition] = useTransition();
+  const [pendingCancel, cancelTransition] = useTransition();
+  const [sentUrl, setSentUrl] = useState<string | null>(null);
+
+  const href =
+    `/admin/clients/${clientId}/intake/${submission.id}` as Route;
+  const isFresh = FRESH_STATUSES.has(submission.status);
+  const canSend = NON_TERMINAL_STATUSES.has(submission.status);
+  const canCancel = NON_TERMINAL_STATUSES.has(submission.status);
+
+  const sendLabel = isFresh ? 'Send' : 'Resend';
+
+  return (
+    <li
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-s3',
+        'rounded-md border border-line bg-surface-2 px-s4 py-s3 shadow-sm',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-s1">
+        <div className="flex flex-wrap items-center gap-s2">
+          <span className="t-body-md font-medium text-ink">
+            {submission.definition.title}
+          </span>
+          <span className="t-caption text-ink-4">
+            v{submission.definition.version}
+          </span>
+          <StatusBadge status={submission.status} />
+        </div>
+        <span className="t-caption uppercase tracking-wide text-ink-4">
+          {submission.submittedAt
+            ? `Submitted ${relativeOrAbsolute(submission.submittedAt)}`
+            : `Created ${relativeOrAbsolute(submission.createdAt)}`}
+        </span>
+        {sentUrl && (
+          <span className="t-caption break-all text-ink-3">
+            Magic-link URL:{' '}
+            <code className="rounded-sm bg-surface px-s1 text-ink-2">
+              {sentUrl}
+            </code>
+          </span>
         )}
-      >
-        Submitted
-      </span>
-    );
-  }
+      </div>
+      <div className="flex flex-wrap items-center gap-s2">
+        {canSend && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            loading={pendingSend}
+            disabled={pendingSend || pendingCancel}
+            onClick={() => {
+              onMessage(null);
+              setSentUrl(null);
+              sendTransition(async () => {
+                const r = await sendClientIntakeAction(
+                  clientId,
+                  submission.id,
+                );
+                if (!r.ok) {
+                  onMessage({ tone: 'error', text: r.error });
+                } else {
+                  setSentUrl(r.url);
+                  const channelLabel =
+                    r.channels.length > 0
+                      ? `via ${r.channels.join(' + ')}`
+                      : `(${r.resolvedChannel})`;
+                  onMessage({
+                    tone: 'success',
+                    text: `${sendLabel === 'Send' ? 'Sent' : 'Resent'} ${channelLabel}.`,
+                  });
+                }
+              });
+            }}
+          >
+            {sendLabel}
+          </Button>
+        )}
+        {canCancel && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            loading={pendingCancel}
+            disabled={pendingSend || pendingCancel}
+            onClick={() => {
+              if (!window.confirm('Cancel this intake form?')) return;
+              onMessage(null);
+              cancelTransition(async () => {
+                const r = await cancelClientIntakeAction(
+                  clientId,
+                  submission.id,
+                );
+                if (!r.ok) {
+                  onMessage({ tone: 'error', text: r.error ?? 'Could not cancel.' });
+                } else {
+                  onMessage({
+                    tone: 'success',
+                    text: 'Submission cancelled.',
+                  });
+                }
+              });
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+        <Link
+          href={href}
+          className={cn(
+            'inline-flex items-center justify-center rounded-sm border px-[14px] py-[7px]',
+            't-body-sm font-medium font-sans',
+            isFresh
+              ? 'border-sage-deep bg-sage-deep text-ink-inv hover:bg-ink'
+              : 'border-surface-3 bg-surface text-ink hover:border-sage',
+          )}
+        >
+          {isFresh ? 'Fill in' : 'View'}
+        </Link>
+      </div>
+    </li>
+  );
+}
+
+const STATUS_BADGE_STYLES: Record<
+  IntakeFormSubmissionStatus,
+  { label: string; classes: string }
+> = {
+  draft: {
+    label: 'Draft',
+    classes: 'border-line bg-surface text-ink-3',
+  },
+  assigned: {
+    label: 'Assigned',
+    classes: 'border-line bg-surface text-ink-3',
+  },
+  sent: {
+    label: 'Sent',
+    classes: 'border-sage-soft bg-sage-tint/50 text-sage-deep',
+  },
+  opened: {
+    label: 'Opened',
+    classes: 'border-sage-soft bg-sage-tint/70 text-sage-deep',
+  },
+  in_progress: {
+    label: 'In progress',
+    classes: 'border-sage-soft bg-sage-tint/80 text-sage-deep',
+  },
+  submitted: {
+    label: 'Submitted',
+    classes: 'border-sage-soft bg-sage-tint text-sage-deep',
+  },
+  expired: {
+    label: 'Expired',
+    classes: 'border-amber/30 bg-amber-pale/60 text-amber',
+  },
+  cancelled: {
+    label: 'Cancelled',
+    classes: 'border-line bg-surface-sunk text-ink-4',
+  },
+};
+
+function StatusBadge({ status }: { status: IntakeFormSubmissionStatus }) {
+  const config = STATUS_BADGE_STYLES[status] ?? STATUS_BADGE_STYLES.draft;
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-sm border px-s2 py-[2px]',
-        'border-line bg-surface text-ink-3',
+        config.classes,
         't-caption uppercase tracking-wide',
       )}
     >
-      Draft
+      {config.label}
     </span>
   );
 }
