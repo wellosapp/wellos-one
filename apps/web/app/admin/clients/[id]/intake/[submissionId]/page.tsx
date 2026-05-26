@@ -2,13 +2,77 @@ import type { Route } from 'next';
 import { notFound } from 'next/navigation';
 
 import { FormFillPanel } from '@/components/forms/FormFillPanel';
+import type { FormFieldConfig, FormFieldType } from '@/components/forms/FormFieldRenderer';
 import { ApiError } from '@/lib/api/client';
 import { getClientIntakeSubmission } from '@/lib/api/intake-forms';
+
+import {
+  normalizeSchema,
+  orderedSections,
+  fieldsInSection,
+  type FieldType as BuilderFieldType,
+} from '@/app/admin/intake-forms/_schema-utils';
 
 import {
   submitClientIntakeAction,
   updateClientIntakeAnswersAction,
 } from '../_actions';
+
+// Forms PR 2: the builder produces a {sections,fields} shape with new
+// field types (short_text, etc). The submission viewer's FormFillPanel
+// still speaks the legacy `{ fields: [{ key, type, label, ... }] }` shape
+// and the legacy field-type enum. Bridge the two so old + new schemas
+// render identically. New types without a legacy renderer (checkbox,
+// dropdown, radio, number, phone, email, image_upload, rating, pain_scale)
+// fall back to the closest existing legacy widget so a published form is
+// never invisible — the richer renderers ship in a follow-up.
+const BUILDER_TO_LEGACY_TYPE: Record<BuilderFieldType, FormFieldType> = {
+  short_text: 'text',
+  long_text: 'long_text',
+  date: 'date',
+  yes_no: 'yes_no',
+  checkbox: 'yes_no',
+  multi_select: 'multi_select',
+  dropdown: 'multi_select',
+  radio: 'multi_select',
+  number: 'text',
+  phone: 'text',
+  email: 'text',
+  signature: 'signature',
+  file_upload: 'file_upload',
+  image_upload: 'file_upload',
+  rating: 'text',
+  pain_scale: 'text',
+};
+
+function schemaToLegacyFields(raw: unknown): { fields: FormFieldConfig[] } {
+  const normalized = normalizeSchema(raw);
+  const out: FormFieldConfig[] = [];
+  // Flatten: top-level fields first (sectionId === null), then each section
+  // in order. Inside each section, fields ordered by `order`.
+  const topLevel = fieldsInSection(normalized, null);
+  for (const f of topLevel) {
+    out.push({
+      key: f.internalKey,
+      type: BUILDER_TO_LEGACY_TYPE[f.type],
+      label: f.label,
+      required: f.required,
+      options: f.options?.map((o) => o.label),
+    });
+  }
+  for (const s of orderedSections(normalized)) {
+    for (const f of fieldsInSection(normalized, s.id)) {
+      out.push({
+        key: f.internalKey,
+        type: BUILDER_TO_LEGACY_TYPE[f.type],
+        label: f.label,
+        required: f.required,
+        options: f.options?.map((o) => o.label),
+      });
+    }
+  }
+  return { fields: out };
+}
 
 export default async function ClientFillIntakePage({
   params,
@@ -50,7 +114,7 @@ export default async function ClientFillIntakePage({
         id: definition.id,
         title: definition.title,
         version: definition.version,
-        schema: definition.schema,
+        schema: schemaToLegacyFields(definition.schema),
       }}
       initialAnswers={submission.answers}
       initialStatus={submission.status}

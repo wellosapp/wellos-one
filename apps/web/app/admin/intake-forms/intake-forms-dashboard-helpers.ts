@@ -46,16 +46,32 @@ export function intakeStatusLabel(status: IntakeFormDefinitionDto['status']): st
 
 /** Short line under title: field count + sample labels (no DB description field yet). */
 export function intakeFormDescriptionLine(schema: unknown): string {
-  if (!Array.isArray(schema)) {
+  // Two shapes possible: legacy flat array, or the Forms-PR-2 builder shape
+  // ({ schemaVersion: 2, sections, fields }).
+  let fieldList: unknown[] = [];
+  if (Array.isArray(schema)) {
+    fieldList = schema;
+  } else if (
+    schema &&
+    typeof schema === 'object' &&
+    'fields' in schema &&
+    Array.isArray((schema as { fields: unknown }).fields)
+  ) {
+    fieldList = (schema as { fields: unknown[] }).fields;
+  } else {
     return 'No fields defined yet.';
   }
-  const n = schema.length;
+  const n = fieldList.length;
   if (n === 0) {
     return 'No fields yet — add questions in the editor.';
   }
-  const labels = schema
+  const labels = fieldList
     .slice(0, 2)
-    .map((f) => (f && typeof f === 'object' && 'label' in f ? String((f as { label: unknown }).label) : ''))
+    .map((f) =>
+      f && typeof f === 'object' && 'label' in f
+        ? String((f as { label: unknown }).label)
+        : '',
+    )
     .filter(Boolean);
   const preview = labels.join(' · ');
   if (n <= 2) {
