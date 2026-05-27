@@ -29,6 +29,7 @@ import {
   transitionAppointmentState,
   updateAppointment,
 } from '../../services/appointmentService.js';
+import { listIntakeSubmissionsForAppointment } from '../../services/intakeFormService.js';
 import {
   StaffBookingComplianceError,
   logRequiredFormsBookingAcknowledgment,
@@ -223,6 +224,61 @@ export default async function appointmentsRoutes(
       }
 
       return reply.send({ appointment });
+    },
+  );
+
+  // GET /admin/appointments/:id/forms
+  // PR 8 — Forms tab on the appointment drawer. Returns IntakeFormSubmissions
+  // attached to this appointment. Read-only — actions (send, resend, cancel)
+  // reuse the existing /admin/intake-form-submissions/... endpoints.
+  app.get(
+    '/appointments/:id/forms',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = AppointmentIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      const existing = await getAppointmentById(app.prisma, {
+        tenantId,
+        id: params.data.id,
+      });
+      if (!existing) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const scope = await staffAppointmentScope(
+        app.prisma,
+        user,
+        tenantId,
+        existing.staffId,
+      );
+      if (scope === 'no_staff_profile') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message:
+            'No staff profile linked to your account. Ask an admin to set your Work email on Staff.',
+        });
+      }
+      if (scope === 'forbidden') {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: 'Appointment not found.',
+        });
+      }
+
+      const result = await listIntakeSubmissionsForAppointment(app.prisma, {
+        tenantId,
+        appointmentId: params.data.id,
+      });
+      return reply.send(result);
     },
   );
 

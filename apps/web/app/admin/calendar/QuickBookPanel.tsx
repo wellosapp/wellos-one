@@ -44,6 +44,7 @@ import {
   bookingFormStatusLabel,
 } from './booking-form-helpers';
 import { QuickBookFormsAckSection } from './QuickBookFormsAckSection';
+import { QuickBookFormReadinessChip } from './QuickBookFormReadinessChip';
 
 const INITIAL: ActionState = { ok: false };
 
@@ -81,8 +82,24 @@ interface QuickBookPanelProps {
   lockedStaffId?: string | null;
 }
 
-function SubmitButton({ disabled }: { disabled: boolean }) {
+function SubmitButton({
+  disabled,
+  formsBlocked,
+}: {
+  disabled: boolean;
+  /** When true, intercept the submit with a confirmation dialog. */
+  formsBlocked: boolean;
+}) {
   const { pending } = useFormStatus();
+  // Admin override: form submission still goes through, but the operator
+  // confirms they're overriding the unsatisfied hard_required forms.
+  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    if (!formsBlocked) return;
+    const ok = window.confirm(
+      'Required forms are not complete for this client and service. Book anyway?',
+    );
+    if (!ok) e.preventDefault();
+  };
   return (
     <Button
       type="submit"
@@ -91,8 +108,9 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
       disabled={disabled || pending}
       loading={pending}
       className="w-full min-h-[44px]"
+      onClick={handleClick}
     >
-      Book appointment
+      {formsBlocked ? 'Book anyway' : 'Book appointment'}
     </Button>
   );
 }
@@ -147,6 +165,8 @@ export function QuickBookPanel({
 
   const [ackChecked, setAckChecked] = useState<Record<string, boolean>>({});
   const [formsAckChecked, setFormsAckChecked] = useState(false);
+  /** PR 8 — hard_required forms unsatisfied? Surfaces a Book Anyway confirm. */
+  const [formsBlocked, setFormsBlocked] = useState(false);
 
   useEffect(() => {
     if (lockedStaffId) setStaffId(lockedStaffId);
@@ -248,6 +268,10 @@ export function QuickBookPanel({
 
   useEffect(() => {
     setAckChecked({});
+    // The chip will re-emit blocksBooking when it re-resolves; clearing here
+    // prevents a stale "blocked" state from lingering across client/service
+    // swaps (the chip's own useEffect also clears on missing inputs).
+    setFormsBlocked(false);
   }, [chosenClient?.id, serviceId, effectiveStaffId]);
 
   const alertsNeedingAck = useMemo(
@@ -883,6 +907,18 @@ export function QuickBookPanel({
           </Select>
         </FormField>
 
+        {/* PR 8 — Form readiness chip. Shows once service + client are both
+            picked. Surfaces hard_required (red), soft_required (amber), and
+            "all complete" (sage) states. Admin can still book through. */}
+        {chosenClient && serviceId ? (
+          <QuickBookFormReadinessChip
+            serviceId={serviceId}
+            clientId={chosenClient.id}
+            intakeHref={`/admin/clients/${chosenClient.id}/intake`}
+            onBlocksBookingChange={setFormsBlocked}
+          />
+        ) : null}
+
         <FormField label="Date" required>
           <Input
             type="date"
@@ -978,7 +1014,7 @@ export function QuickBookPanel({
           <Button type="button" variant="ghost" size="md" onClick={onClose}>
             Cancel
           </Button>
-          <SubmitButton disabled={!canSubmit} />
+          <SubmitButton disabled={!canSubmit} formsBlocked={formsBlocked} />
         </div>
       </form>
     </>

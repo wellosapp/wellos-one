@@ -18,7 +18,11 @@ import {
   InvalidStateTransitionError,
   assertTransition,
 } from './appointmentStateMachine.js';
-import { processBookingAssignments } from './formAssignmentRuleService.js';
+import {
+  FormsRequiredError,
+  evaluateFormReadiness,
+  processBookingAssignments,
+} from './formAssignmentRuleService.js';
 import { findEligibleEntriesForOpening } from './waitlistService.js';
 
 // Domain layer for Appointment admin CRUD (E3-S1).
@@ -342,10 +346,33 @@ export async function createAppointment(
     /** Null when created by the login-free public booking surface (Epic 4). */
     actorUserId: string | null;
     body: CreateAppointmentBody;
+    /**
+     * When true, evaluate form-readiness BEFORE creating the appointment.
+     * Unsatisfied hard_required rules throw FormsRequiredError (route layer
+     * maps to 422 + code='FORMS_REQUIRED'). Used by the public booking flow.
+     *
+     * Admin flows leave this false — the readiness check is exposed via the
+     * dedicated /admin/services/:serviceId/form-readiness endpoint so the UI
+     * can surface a warning + offer "Book anyway" without backend gating.
+     */
+    enforceFormReadiness?: boolean;
   },
 ): Promise<CreateAppointmentResult> {
-  const { tenantId, actorUserId, body } = args;
+  const { tenantId, actorUserId, body, enforceFormReadiness } = args;
   const startAt = new Date(body.scheduledStartAt);
+
+  // Form-readiness gate runs BEFORE the appointment transaction so a 422
+  // response never wraps a half-written transaction. Public booking only.
+  if (enforceFormReadiness) {
+    const readiness = await evaluateFormReadiness(prisma, {
+      tenantId,
+      serviceId: body.serviceId,
+      clientId: body.clientId,
+    });
+    if (readiness.blocksBooking) {
+      throw new FormsRequiredError(readiness.hardRequiredUnsatisfied);
+    }
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const { durationMinutes, basePriceCents } = await validateReferences(tx, {

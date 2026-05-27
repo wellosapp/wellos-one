@@ -19,6 +19,7 @@ import {
   listAvailableSlots,
 } from '../../services/availabilityService.js';
 import { resolveOrCreateClientForPublicBooking } from '../../services/clientService.js';
+import { FormsRequiredError } from '../../services/formAssignmentRuleService.js';
 import {
   getPublicBookingCatalog,
   resolvePublicBookingTenant,
@@ -236,6 +237,10 @@ export default async function publicBookingRoutes(
           const { appointment } = await createAppointment(app.prisma, {
             tenantId: tenant.tenantId,
             actorUserId: null,
+            // PR 8 (Forms System) — public flow enforces hard_required form
+            // readiness. Admin flows leave this off and surface a warning chip
+            // + "Book anyway" override instead.
+            enforceFormReadiness: true,
             body: {
               locationId: parsed.data.locationId,
               clientId,
@@ -269,6 +274,24 @@ export default async function publicBookingRoutes(
             },
           };
         } catch (err) {
+          if (err instanceof FormsRequiredError) {
+            // 422 Unprocessable Entity — the request is well-formed but
+            // missing prerequisite forms. The UI renders the per-form list
+            // so the client knows exactly which forms to complete.
+            return {
+              status: 422,
+              body: {
+                error: 'Unprocessable Entity',
+                code: 'FORMS_REQUIRED',
+                message: err.message,
+                requiredForms: err.unsatisfied.map((r) => ({
+                  formDefinitionGroupId: r.formDefinitionGroupId,
+                  formTitle: r.formTitle,
+                  formType: r.formType,
+                })),
+              },
+            };
+          }
           if (err instanceof InvalidAppointmentReferenceError) {
             return {
               status: 400,
