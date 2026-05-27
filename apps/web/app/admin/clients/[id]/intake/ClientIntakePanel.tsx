@@ -12,6 +12,8 @@ import type {
   IntakeFormSubmissionStatus,
 } from '@/lib/api/intake-forms';
 
+import { ReviewStatusPill } from '@/app/admin/_components/forms/ReviewStatusPill';
+
 import {
   cancelClientIntakeAction,
   sendClientIntakeAction,
@@ -264,6 +266,12 @@ function SubmissionRow({
 
   const sendLabel = isFresh ? 'Send' : 'Resend';
 
+  // Compact subtitle: prefer the most recent meaningful lifecycle timestamp,
+  // but always show the create date as the rightmost element so the row has
+  // an absolute reference. PR 6 audit-write did not include rich metadata
+  // for every action; render what's on the submission row.
+  const sentishAt = submission.openedAt ?? submission.startedAt ?? null;
+
   return (
     <li
       className={cn(
@@ -280,12 +288,31 @@ function SubmissionRow({
             v{submission.definition.version}
           </span>
           <StatusBadge status={submission.status} />
+          <ReviewStatusPill
+            reviewStatus={submission.reviewStatus}
+            submissionId={submission.id}
+            reviewedByStaffName={null}
+            reviewedAt={submission.reviewedAt}
+            reviewNotes={submission.reviewNotes}
+          />
         </div>
-        <span className="t-caption uppercase tracking-wide text-ink-4">
-          {submission.submittedAt
-            ? `Submitted ${relativeOrAbsolute(submission.submittedAt)}`
-            : `Created ${relativeOrAbsolute(submission.createdAt)}`}
-        </span>
+        <div className="flex flex-wrap items-center gap-s3 t-caption uppercase tracking-wide text-ink-4">
+          {submission.submittedAt ? (
+            <span>Submitted {relativeOrAbsolute(submission.submittedAt)}</span>
+          ) : sentishAt ? (
+            <span>
+              {submission.openedAt ? 'Opened' : 'Started'}{' '}
+              {relativeOrAbsolute(sentishAt)}
+            </span>
+          ) : (
+            <span>Created {relativeOrAbsolute(submission.createdAt)}</span>
+          )}
+          {submission.submittedAt && sentishAt ? (
+            <span className="normal-case text-ink-4/80">
+              · Opened {relativeOrAbsolute(sentishAt)}
+            </span>
+          ) : null}
+        </div>
         {sentUrl && (
           <span className="t-caption break-all text-ink-3">
             Magic-link URL:{' '}

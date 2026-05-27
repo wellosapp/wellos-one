@@ -267,15 +267,38 @@ export async function listIntakeSubmissionsForAppointment(
   return { submissions };
 }
 
-/// Single-record fetch used by the fill-out page. Returns the submission + the
-/// full definition (schema included) so the renderer can render fields without
-/// a second round-trip.
+/// Single-record fetch used by the client-profile detail page (Forms PR 10).
+/// Returns the submission + the full definition (schema included) so the
+/// renderer can render fields without a second round-trip, plus the audit
+/// timeline, file uploads and linked appointment/service for the rich viewer.
 export async function getIntakeSubmissionForClient(
   prisma: ExtendedPrismaClient,
   args: { tenantId: string; clientId: string; submissionId: string },
 ): Promise<{
   submission: IntakeFormSubmission;
   definition: IntakeFormDefinition;
+  appointment: {
+    id: string;
+    scheduledStartAt: string;
+    scheduledEndAt: string;
+    state: string;
+    staffId: string;
+  } | null;
+  service: { id: string; name: string } | null;
+  reviewedByStaffName: string | null;
+  fileUploads: Array<{
+    id: string;
+    fieldKey: string;
+    mediaAssetId: string;
+    mediaAssetUrl: string | null;
+  }>;
+  audits: Array<{
+    id: string;
+    action: string;
+    createdAt: string;
+    ip: string | null;
+    userAgent: string | null;
+  }>;
 } | null> {
   const row = await prisma.intakeFormSubmission.findFirst({
     where: {
@@ -283,11 +306,89 @@ export async function getIntakeSubmissionForClient(
       tenantId: args.tenantId,
       clientId: args.clientId,
     },
-    include: { definition: true },
+    include: {
+      definition: true,
+      appointment: {
+        select: {
+          id: true,
+          scheduledStartAt: true,
+          scheduledEndAt: true,
+          state: true,
+          staffId: true,
+          serviceId: true,
+          service: { select: { id: true, name: true } },
+        },
+      },
+      reviewedByStaff: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+      fileUploads: {
+        select: {
+          id: true,
+          fieldKey: true,
+          mediaAssetId: true,
+          mediaAsset: { select: { objectKey: true } },
+        },
+      },
+      audits: {
+        select: {
+          id: true,
+          action: true,
+          createdAt: true,
+          ip: true,
+          userAgent: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      },
+    },
   });
   if (!row) return null;
-  const { definition, ...submission } = row;
-  return { submission, definition };
+  const {
+    definition,
+    appointment,
+    reviewedByStaff,
+    fileUploads,
+    audits,
+    ...submission
+  } = row;
+
+  const staffNameParts = reviewedByStaff
+    ? [reviewedByStaff.firstName, reviewedByStaff.lastName].filter(
+        (p): p is string => typeof p === 'string' && p.length > 0,
+      )
+    : [];
+
+  return {
+    submission,
+    definition,
+    appointment: appointment
+      ? {
+          id: appointment.id,
+          scheduledStartAt: appointment.scheduledStartAt.toISOString(),
+          scheduledEndAt: appointment.scheduledEndAt.toISOString(),
+          state: appointment.state,
+          staffId: appointment.staffId,
+        }
+      : null,
+    service: appointment?.service
+      ? { id: appointment.service.id, name: appointment.service.name }
+      : null,
+    reviewedByStaffName:
+      staffNameParts.length > 0 ? staffNameParts.join(' ') : null,
+    fileUploads: fileUploads.map((f) => ({
+      id: f.id,
+      fieldKey: f.fieldKey,
+      mediaAssetId: f.mediaAssetId,
+      mediaAssetUrl: f.mediaAsset?.objectKey ?? null,
+    })),
+    audits: audits.map((a) => ({
+      id: a.id,
+      action: a.action,
+      createdAt: a.createdAt.toISOString(),
+      ip: a.ip,
+      userAgent: a.userAgent,
+    })),
+  };
 }
 
 export async function createIntakeFormSubmission(
