@@ -444,6 +444,12 @@ model Tenant {
   formReminders             FormReminder[]
   formFileUploads           FormFileUpload[]
 
+  // Automation System Phase A PR 1 — workflow definitions + per-trigger runs.
+  // No back-relation for AutomationTemplate (system-owned, no tenantId).
+  // No back-relation for AutomationWebhookDelivery (scoped via workflow → tenant).
+  automationWorkflows       AutomationWorkflow[]
+  automationRuns            AutomationRun[]
+
   @@index([deletedAt])
   @@map("tenants")
 }
@@ -2224,4 +2230,178 @@ model MagicLinkToken {
   @@index([expiresAt])
   @@index([tenantId])
   @@map("magic_link_token")
+}
+
+// ---------- Automation System (Phase A PR 1) ----------
+//
+// See docs/specs/automation-system-epic.md.
+//
+// Five tables — workflow definitions, per-run records, per-node-run audit,
+// system-owned starter template library, and webhook-action dispatch log.
+// All status/type fields stored as TEXT + CHECK at the DB level (no Postgres
+// enums) so adding a new value later is a single ALTER CONSTRAINT instead of
+// the non-transactional ALTER TYPE dance.
+//
+// Partial indexes (status-scoped, pending-only) live in raw migration SQL
+// because Prisma 5 can't express @@index(..., where: ...). The Prisma
+// @@index entries below cover the broader index; the partial is additive
+// in the migration. Same pattern as form_reminder_scheduled_for_pending_idx.
+
+/// Workflow definition — React Flow JSON + trigger type + status. One row per
+/// workflow per tenant. Versioning is incremental (counter, not history rows);
+/// archive instead of delete via status='archived'.
+model AutomationWorkflow {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  name            String
+  description     String?
+  /// 'draft' | 'active' | 'paused' | 'archived' | 'error' (CHECK).
+  status          String    @default("draft")
+  version         Int       @default(1)
+  /// One of the AutomationEventType union values from
+  /// apps/api/src/lib/automationEventBus.ts. The dispatcher (PR 3) joins on this.
+  triggerType     String    @map("trigger_type")
+  /// React Flow shape extended with per-node config:
+  ///   { nodes: Array<{ id, type, position, data: {...} }>,
+  ///     edges: Array<{ id, source, target, sourceHandle?, targetHandle?, label? }> }
+  /// API-layer Zod validation lands in PR 2.
+  workflowJson    Json      @map("workflow_json")
+  createdByUserId String?   @map("created_by_user_id")
+  updatedByUserId String?   @map("updated_by_user_id")
+  /// Denormalized — engine updates these on terminal transition for the
+  /// dashboard list. Null until the workflow runs once.
+  lastRunStatus   String?   @map("last_run_status")
+  lastRunAt       DateTime? @map("last_run_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt      @map("updated_at")
+
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  runs              AutomationRun[]
+  webhookDeliveries AutomationWebhookDelivery[]
+
+  @@index([tenantId])
+  // Hot path: dispatcher (PR 3) looks up active workflows matching an event's trigger.
+  @@index([tenantId, triggerType, status])
+  @@index([tenantId, status])
+  @@map("automation_workflows")
+}
+
+/// Per-trigger execution record. Immutable once terminal (succeeded/failed/
+/// cancelled). The engine (PR 2) walks the workflow_json, creating one row
+/// here per dispatched trigger and one AutomationNodeRun per visited node.
+model AutomationRun {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  workflowId    String    @map("workflow_id")
+  /// AutomationEventType value the dispatcher matched on.
+  triggerEvent  String    @map("trigger_event")
+  /// The event payload that triggered the run + any context the engine
+  /// accumulates as it walks the graph (resolved client, appointment, etc.).
+  contextJson   Json      @map("context_json")
+  /// 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' (CHECK).
+  status        String    @default("pending")
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  errorMessage  String?   @map("error_message")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  tenant            Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow          AutomationWorkflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  nodeRuns          AutomationNodeRun[]
+  webhookDeliveries AutomationWebhookDelivery[]
+
+  // Migration also creates a PARTIAL index on (status, created_at)
+  // WHERE status IN ('pending', 'running') — engine hot path for resume-
+  // after-restart. Prisma can't carry the WHERE clause; declared in raw SQL.
+  @@index([tenantId, status])
+  @@index([workflowId, createdAt(sort: Desc)])
+  @@map("automation_runs")
+}
+
+/// Per-node execution within an AutomationRun. Tracks status, input/output
+/// JSON, retry count, timing. Immutable once terminal — retries write a new
+/// row with retry_count++ rather than mutating in place (Phase F decision).
+model AutomationNodeRun {
+  id            String    @id @default(cuid())
+  runId         String    @map("run_id")
+  /// Matches a node.id in the parent workflow's workflow_json.nodes[].id.
+  nodeId        String    @map("node_id")
+  /// 'trigger' | 'action' | 'condition' | 'delay' | 'branch' | 'filter' |
+  /// 'webhook' | 'ai' (CHECK).
+  nodeType      String    @map("node_type")
+  /// 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'retrying' (CHECK).
+  status        String    @default("pending")
+  inputJson     Json?     @map("input_json")
+  outputJson    Json?     @map("output_json")
+  errorMessage  String?   @map("error_message")
+  retryCount    Int       @default(0) @map("retry_count")
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+
+  run AutomationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, startedAt])
+  @@index([runId, status])
+  @@map("automation_node_runs")
+}
+
+/// Global, system-owned library of starter workflows. No tenant_id — every
+/// tenant sees the same catalog. Cloning copies workflow_json into a fresh,
+/// tenant-scoped AutomationWorkflow with node IDs regenerated (PR 17). Slug
+/// is the stable seed-upsert key. Only the seed script writes here; admin UI
+/// exposes read + clone, never edit. Same pattern as FormTemplate.
+model AutomationTemplate {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  /// 'booking' | 'client' | 'forms' | 'payment' | 'membership' |
+  /// 'communication' | 'staff' | 'clinical' | 'general' (CHECK).
+  category      String
+  description   String?
+  /// AutomationEventType value — same vocabulary as AutomationWorkflow.triggerType.
+  triggerType   String   @map("trigger_type")
+  workflowJson  Json     @map("workflow_json")
+  /// Optional Lucide-style icon name for the catalog card; renderer resolves.
+  iconName      String?  @map("icon_name")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt      @map("updated_at")
+
+  @@index([category])
+  @@index([triggerType])
+  @@index([isActive])
+  @@map("automation_templates")
+}
+
+/// Webhook-action dispatch log with retry schedule. Exercised by PR 16 of
+/// this epic; the schema lands here so the engine + retry cron can be wired
+/// independently. run_id is nullable + ON DELETE SET NULL — a delivery can
+/// outlive its run (future retention prune) and we still want the record for
+/// audit/retry reconciliation.
+model AutomationWebhookDelivery {
+  id                 String    @id @default(cuid())
+  workflowId         String    @map("workflow_id")
+  runId              String?   @map("run_id")
+  targetUrl          String    @map("target_url")
+  payloadJson        Json      @map("payload_json")
+  /// 'pending' | 'sending' | 'succeeded' | 'failed' (CHECK).
+  status             String    @default("pending")
+  responseStatusCode Int?      @map("response_status_code")
+  responseBody       String?   @map("response_body")
+  retryCount         Int       @default(0) @map("retry_count")
+  nextRetryAt        DateTime? @map("next_retry_at")
+  deliveredAt        DateTime? @map("delivered_at")
+  failedAt           DateTime? @map("failed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  workflow AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  run      AutomationRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  // Migration also creates a PARTIAL index on (status, next_retry_at)
+  // WHERE status IN ('pending', 'sending') AND next_retry_at IS NOT NULL —
+  // cron retry hot path. Prisma can't carry the WHERE clause; declared in
+  // raw SQL.
+  @@index([workflowId])
+  @@index([runId])
+  @@map("automation_webhook_deliveries")
 }
