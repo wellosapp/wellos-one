@@ -4,6 +4,7 @@ import { ZodError } from 'zod';
 import { withIdempotency } from '../../middleware/idempotency.js';
 import { requireRole } from '../../middleware/requireRole.js';
 import {
+  CancelIntakeFormSubmissionBodySchema,
   CloneFromTemplateBodySchema,
   CreateIntakeFormDefinitionBodySchema,
   CreateIntakeFormSubmissionBodySchema,
@@ -11,6 +12,8 @@ import {
   IntakeSubmissionIdParamsSchema,
   ListIntakeFormDefinitionsQuerySchema,
   PatchIntakeFormSubmissionBodySchema,
+  SendIntakeFormSubmissionBodySchema,
+  SubmissionIdOnlyParamsSchema,
   UpdateIntakeFormDefinitionBodySchema,
 } from '../../schemas/intakeForm.js';
 import { ClientIdParamsSchema } from '../../schemas/clientNote.js';
@@ -30,6 +33,13 @@ import {
   publishIntakeFormDefinition,
   updateIntakeFormDefinition,
 } from '../../services/intakeFormService.js';
+import {
+  FormSendNotEligibleError,
+  IntakeFormSubmissionNotCancellableError,
+  IntakeFormSubmissionNotFoundError,
+  cancelSubmission,
+  sendForm,
+} from '../../services/formSendService.js';
 
 function zodErrorBody(err: ZodError) {
   return {
@@ -415,6 +425,124 @@ export default async function intakeFormsRoutes(
           return reply.code(422).send({
             error: 'Unprocessable Entity',
             message: err.message,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // ---------- Forms System PR 6 — submission send + cancel ----------
+
+  app.post(
+    '/intake-form-submissions/:id/send',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = SubmissionIdOnlyParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = SendIntakeFormSubmissionBodySchema.safeParse(
+        request.body ?? {},
+      );
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      return withIdempotency(
+        request,
+        reply,
+        {
+          prisma: app.prisma,
+          tenantId,
+          scope: 'intake_form.submission.send',
+        },
+        async () => {
+          try {
+            const result = await sendForm(app.prisma, {
+              tenantId,
+              actorUserId: user.id,
+              submissionId: params.data.id,
+              deliveryChannel: body.data?.deliveryChannel,
+              log: request.log,
+            });
+            return {
+              status: 200,
+              body: {
+                submission: result.submission,
+                url: result.url,
+                channels: result.channels,
+                resolvedChannel: result.resolvedChannel,
+              },
+            };
+          } catch (err) {
+            if (err instanceof IntakeFormSubmissionNotFoundError) {
+              return {
+                status: 404,
+                body: { error: 'Not Found', message: err.message, code: err.code },
+              };
+            }
+            if (err instanceof FormSendNotEligibleError) {
+              return {
+                status: 409,
+                body: {
+                  error: 'Conflict',
+                  message: err.message,
+                  code: err.code,
+                  status: err.status,
+                },
+              };
+            }
+            throw err;
+          }
+        },
+      );
+    },
+  );
+
+  app.post(
+    '/intake-form-submissions/:id/cancel',
+    { preHandler: requireRole.admin },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = SubmissionIdOnlyParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const body = CancelIntakeFormSubmissionBodySchema.safeParse(
+        request.body ?? {},
+      );
+      if (!body.success) {
+        return reply.code(400).send(zodErrorBody(body.error));
+      }
+
+      try {
+        const result = await cancelSubmission(app.prisma, {
+          tenantId,
+          actorUserId: user.id,
+          submissionId: params.data.id,
+          reason: body.data?.reason,
+        });
+        return reply.send({ submission: result.submission });
+      } catch (err) {
+        if (err instanceof IntakeFormSubmissionNotFoundError) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: err.message,
+            code: err.code,
+          });
+        }
+        if (err instanceof IntakeFormSubmissionNotCancellableError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: err.message,
+            code: err.code,
+            status: err.status,
           });
         }
         throw err;

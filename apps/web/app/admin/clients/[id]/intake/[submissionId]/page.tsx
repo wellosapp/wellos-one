@@ -117,7 +117,13 @@ export default async function ClientFillIntakePage({
         schema: schemaToLegacyFields(definition.schema),
       }}
       initialAnswers={submission.answers}
-      initialStatus={submission.status}
+      // FormFillPanel only distinguishes editable (draft) vs read-only (submitted)
+      // for now. Map the widened lifecycle status (PR 6) down to the panel's
+      // narrow binary. Terminal `submitted` stays read-only; everything else
+      // (draft/assigned/sent/opened/in_progress/expired/cancelled) treats the
+      // staff editor as still able to record answers — staff-side fill-in
+      // remains the source of truth pre-Submit.
+      initialStatus={submission.status === 'submitted' ? 'submitted' : 'draft'}
       saveDraftAction={saveDraft}
       submitAction={submit}
       closeHref={closeHref}

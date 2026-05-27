@@ -105,3 +105,32 @@ export const PatchIntakeFormSubmissionBodySchema = z
   .refine((b) => b.answers !== undefined || b.status !== undefined, {
     message: 'At least one of answers, status is required.',
   });
+
+// Forms System PR 6 — send + cancel admin actions on a submission.
+
+export const SubmissionIdOnlyParamsSchema = z.object({
+  id: z.string().min(1),
+});
+
+/** Allowed delivery channels on the send endpoint. Mirrors FormDeliveryChannel
+ *  in formSendService. 'inline_booking' is not exposed via the admin endpoint
+ *  — booking-time inline rendering is a PR 8 surface, not an admin action. */
+export const FormDeliveryChannelSchema = z.enum([
+  'email',
+  'sms',
+  'both',
+  'kiosk',
+  'admin_only',
+]);
+
+export const SendIntakeFormSubmissionBodySchema = z
+  .object({
+    deliveryChannel: FormDeliveryChannelSchema.optional(),
+  })
+  .optional();
+
+export const CancelIntakeFormSubmissionBodySchema = z
+  .object({
+    reason: z.string().max(500).optional(),
+  })
+  .optional();

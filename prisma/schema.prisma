@@ -273,14 +273,41 @@ enum IntakeFormDefinitionStatus {
   archived
 }
 
+// Submission lifecycle (Forms System PR 6). State machine:
+//   draft ─→ assigned ─→ sent ─→ opened ─→ in_progress ─→ submitted
+//      └─→ cancelled            │            │
+//                               └─→ expired ─┘  (and similar terminal transitions)
+// PR 6 implements: draft → assigned/sent, sent ↔ sent (resend), and
+// admin-initiated → cancelled. PR 7 implements opened/in_progress/submitted.
+// PR 11 cron implements timed → expired. Review-status track lives on the
+// separate `review_status` text column from PR 1 — keep submission status
+// clean (no `completed` value; a "completed" form is status=submitted +
+// review_status reviewed/approved).
 enum IntakeFormSubmissionStatus {
   draft
+  assigned
+  sent
+  opened
+  in_progress
   submitted
+  expired
+  cancelled
 }
 
-// Append-only audit row action (expand when amend/redact flows land).
+// Append-only audit row actions. Mirrors the submission lifecycle plus
+// review track. Forms System PR 6 expanded from {submitted} to the full
+// set so PRs 7/9/11 don't each need their own enum-add migration.
 enum IntakeFormSubmissionAuditAction {
+  created
+  sent
+  opened
+  started
   submitted
+  cancelled
+  expired
+  reviewed
+  approved
+  denied
 }
 
 // Staff onboarding forms (W9, license, certifications). Mirrors the IntakeForm
@@ -1764,6 +1791,8 @@ model IntakeFormSubmission {
   audits     IntakeFormSubmissionAudit[]
   reminders  FormReminder[]
   fileUploads FormFileUpload[]
+  // Forms System PR 6 — magic-link tokens scoped to this submission.
+  magicLinkTokens MagicLinkToken[]
 
   @@index([tenantId])
   @@index([tenantId, clientId])
@@ -2168,24 +2197,29 @@ model ClassCheckInAttempt {
 //     INVALID_TOKEN (helps diagnose "I rotated my link" support tickets).
 
 model MagicLinkToken {
-  id              String    @id @default(cuid())
-  tenantId        String    @map("tenant_id")
-  clientId        String?   @map("client_id")
-  classBookingId  String?   @map("class_booking_id")
-  appointmentId   String?   @map("appointment_id")
-  tokenHash       String    @unique @map("token_hash")
-  /// 'geofence_check_in' | 'manage_booking' — enforced by check constraint in migration SQL.
-  purpose         String
-  expiresAt       DateTime  @map("expires_at")
-  lastUsedAt      DateTime? @map("last_used_at")
-  revokedAt       DateTime? @map("revoked_at")
-  useCount        Int       @default(0) @map("use_count")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id                     String    @id @default(cuid())
+  tenantId               String    @map("tenant_id")
+  clientId               String?   @map("client_id")
+  classBookingId         String?   @map("class_booking_id")
+  appointmentId          String?   @map("appointment_id")
+  /// Forms System PR 6 — optional scope when purpose='form_submission'.
+  /// Callers typically set this alongside clientId so verifyToken eager-loads
+  /// both the client and the submission (+ its definition) for the renderer.
+  intakeFormSubmissionId String?   @map("intake_form_submission_id")
+  tokenHash              String    @unique @map("token_hash")
+  /// 'geofence_check_in' | 'manage_booking' | 'form_submission' — enforced by check constraint in migration SQL.
+  purpose                String
+  expiresAt              DateTime  @map("expires_at")
+  lastUsedAt             DateTime? @map("last_used_at")
+  revokedAt              DateTime? @map("revoked_at")
+  useCount               Int       @default(0) @map("use_count")
+  createdAt              DateTime  @default(now()) @map("created_at")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client       Client?       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  classBooking ClassBooking? @relation(fields: [classBookingId], references: [id], onDelete: Cascade)
-  appointment  Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client               Client?               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  classBooking         ClassBooking?         @relation(fields: [classBookingId], references: [id], onDelete: Cascade)
+  appointment          Appointment?          @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  intakeFormSubmission IntakeFormSubmission? @relation(fields: [intakeFormSubmissionId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
   @@index([tenantId])

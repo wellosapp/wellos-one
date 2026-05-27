@@ -16,6 +16,28 @@ export type IntakeFormDefinitionDto = {
   updatedAt: string;
 };
 
+/** Full submission lifecycle per Forms System PR 6.
+ *  draft → assigned → sent → opened → in_progress → submitted
+ *     └→ cancelled                        └→ expired
+ */
+export type IntakeFormSubmissionStatus =
+  | 'draft'
+  | 'assigned'
+  | 'sent'
+  | 'opened'
+  | 'in_progress'
+  | 'submitted'
+  | 'expired'
+  | 'cancelled';
+
+/** Delivery channel choices the admin Send/Resend dialog can request. */
+export type FormDeliveryChannel =
+  | 'email'
+  | 'sms'
+  | 'both'
+  | 'kiosk'
+  | 'admin_only';
+
 export type IntakeFormSubmissionDto = {
   id: string;
   tenantId: string;
@@ -23,7 +45,9 @@ export type IntakeFormSubmissionDto = {
   clientId: string | null;
   appointmentId: string | null;
   answers: Record<string, unknown>;
-  status: 'draft' | 'submitted';
+  status: IntakeFormSubmissionStatus;
+  deliveryChannel?: FormDeliveryChannel | null;
+  expiresAt?: string | null;
   submittedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -122,5 +146,35 @@ export async function patchClientIntakeSubmission(
   return apiFetch<{ submission: IntakeFormSubmissionDto }>(
     `/admin/clients/${clientId}/intake-submissions/${submissionId}`,
     { method: 'PATCH', body },
+  );
+}
+
+// Forms System PR 6 — admin send + cancel actions.
+
+export async function sendIntakeFormSubmission(
+  submissionId: string,
+  body?: { deliveryChannel?: FormDeliveryChannel },
+) {
+  return apiFetch<{
+    submission: IntakeFormSubmissionDto;
+    url: string;
+    channels: string[];
+    resolvedChannel: FormDeliveryChannel;
+  }>(`/admin/intake-form-submissions/${submissionId}/send`, {
+    method: 'POST',
+    body: body ?? {},
+  });
+}
+
+export async function cancelIntakeFormSubmission(
+  submissionId: string,
+  reason?: string,
+) {
+  return apiFetch<{ submission: IntakeFormSubmissionDto }>(
+    `/admin/intake-form-submissions/${submissionId}/cancel`,
+    {
+      method: 'POST',
+      body: reason ? { reason } : {},
+    },
   );
 }
