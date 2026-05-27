@@ -7,6 +7,7 @@ import type { Route } from 'next';
 
 import {
   CalendarIcon,
+  ClipboardCheckIcon,
   ClipboardIcon,
   FileTextIcon,
   GridIcon,
@@ -80,6 +81,11 @@ const RAIL_GROUPS: RailGroup[] = [
   {
     label: 'Operations',
     items: [
+      {
+        label: 'Review queue',
+        href: '/admin/forms/review-queue' as Route,
+        icon: ClipboardCheckIcon,
+      },
       {
         label: 'Check-in audit',
         href: '/admin/class-check-in-attempts' as Route,
