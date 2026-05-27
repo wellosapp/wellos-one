@@ -24,6 +24,7 @@ import {
   validateAnswers,
   type FieldError,
 } from '../lib/formValidation.js';
+import { checkRequiresReview } from './formReviewService.js';
 
 // Terminal states — no further mutations allowed on the public surface.
 const TERMINAL_STATUSES = new Set(['submitted', 'expired', 'cancelled']);
@@ -417,6 +418,31 @@ export async function submitSubmission(
       },
       data: { revokedAt: new Date() },
     });
+
+    // Forms System PR 9 — auto-enroll in the review queue when the
+    // originating rule has requireProviderReview=true. Submissions without
+    // an appointment (admin-sent for a client outside any booking) skip the
+    // lookup; review_status stays null and the row never lands in the queue.
+    let appointmentServiceId: string | null = null;
+    if (submission.appointmentId) {
+      const appt = await tx.appointment.findFirst({
+        where: { id: submission.appointmentId, tenantId: submission.tenantId },
+        select: { serviceId: true },
+      });
+      appointmentServiceId = appt?.serviceId ?? null;
+    }
+    const requiresReview = await checkRequiresReview(tx, {
+      tenantId: submission.tenantId,
+      serviceId: appointmentServiceId,
+      definitionGroupId: submission.definition.groupId,
+    });
+    if (requiresReview) {
+      const reviewed = await tx.intakeFormSubmission.update({
+        where: { id: submission.id },
+        data: { reviewStatus: 'unreviewed' },
+      });
+      return reviewed;
+    }
     return next;
   });
 

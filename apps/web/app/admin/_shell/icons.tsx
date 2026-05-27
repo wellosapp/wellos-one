@@ -127,6 +127,16 @@ export function ClipboardIcon(props: IconProps) {
   );
 }
 
+export function ClipboardCheckIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
+      <path d="M8.5 13l2.5 2.5L15.5 11" />
+    </Icon>
+  );
+}
+
 export function ImageIcon(props: IconProps) {
   return (
     <Icon {...props}>
