@@ -1,5 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 
+import { ApiError } from './errors';
+
 // Server-side fetch wrapper for the Wellos API (api.wellos.one). Attaches
 // the caller's Clerk session token as a Bearer header so the Fastify backend
 // can run loadCurrentUser + requireRole.
@@ -15,16 +17,11 @@ import { auth } from '@clerk/nextjs/server';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.wellos.one';
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: unknown,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+// Re-exported from the client-safe `errors` module so existing callers that
+// `import { ApiError } from '@/lib/api/client'` keep working unchanged. PR 7
+// extracted the class so client components can import it without dragging
+// `@clerk/nextjs/server` into the browser bundle.
+export { ApiError };
 
 type ApiFetchOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
