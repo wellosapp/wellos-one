@@ -246,7 +246,10 @@ export default async function ClientFillIntakePage({
               )}
             </p>
           </div>
-          <PdfDownloadStub />
+          <PdfDownloadStub
+            submissionId={submission.id}
+            available={submission.status === 'submitted'}
+          />
         </div>
       </header>
 

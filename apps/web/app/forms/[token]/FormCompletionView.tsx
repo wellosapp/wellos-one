@@ -285,6 +285,7 @@ export function FormCompletionView({ token, data }: Props) {
       <FormConfirmationView
         formTitle={confirmation.confirmation.formTitle}
         clientFirstName={confirmation.confirmation.clientFirstName}
+        token={token}
       />
     );
   }

@@ -15,6 +15,10 @@ import {
   SubmissionTerminalError,
   SubmissionValidationError,
 } from '../../services/publicFormService.js';
+import {
+  PdfNotAvailableError,
+  renderSubmissionPdf,
+} from '../../services/formPdfService.js';
 
 // Public form completion routes — PR 7 of the Forms System epic.
 //
@@ -290,6 +294,58 @@ export default async function publicFormsRoutes(
           'FORMS_FILE_UPLOAD_ENABLED is on but the upload handler has not yet been wired. ' +
           'See follow-up PR.',
       });
+    },
+  );
+
+  // ---------- GET /public/forms/:token/pdf ----------
+  //
+  // PR 12 — public PDF export. The magic-link token is the credential;
+  // when it's revoked (because the form was resent or cancelled or the
+  // submission expired), requireMagicLinkAuthFromPath returns 401 before
+  // this handler runs. Admins always have the parallel
+  // /admin/intake-form-submissions/:id/pdf path which doesn't share the
+  // token lifecycle.
+  //
+  // Only status='submitted' submissions get a PDF — drafts return 409 so
+  // the confirmation-page link doesn't 500 on a stale token that points
+  // at an unfinished submission.
+  app.get(
+    '/public/forms/:token/pdf',
+    { preHandler: requireMagicLinkAuthFromPath('form_submission') },
+    async (request, reply) => {
+      const auth = request.magicLinkAuth!;
+      const submission = auth.intakeFormSubmission;
+      if (!submission) {
+        return reply.code(401).send({
+          error: 'Unauthorized',
+          code: 'TOKEN_MISSING_SUBMISSION',
+          message: 'Token is not scoped to a form submission.',
+        });
+      }
+
+      try {
+        const buffer = await renderSubmissionPdf(app.prisma, {
+          tenantId: submission.tenantId,
+          submissionId: submission.id,
+        });
+        return reply
+          .header('Content-Type', 'application/pdf')
+          .header(
+            'Content-Disposition',
+            `inline; filename="form-${submission.id}.pdf"`,
+          )
+          .send(buffer);
+      } catch (err) {
+        if (err instanceof PdfNotAvailableError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            code: err.code,
+            status: err.status,
+            message: err.message,
+          });
+        }
+        throw err;
+      }
     },
   );
 }

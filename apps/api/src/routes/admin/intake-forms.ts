@@ -40,6 +40,11 @@ import {
   cancelSubmission,
   sendForm,
 } from '../../services/formSendService.js';
+import {
+  PdfNotAvailableError,
+  PdfSubmissionNotFoundError,
+  renderSubmissionPdf,
+} from '../../services/formPdfService.js';
 
 function zodErrorBody(err: ZodError) {
   return {
@@ -538,6 +543,59 @@ export default async function intakeFormsRoutes(
           });
         }
         if (err instanceof IntakeFormSubmissionNotCancellableError) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: err.message,
+            code: err.code,
+            status: err.status,
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // ---------- Forms System PR 12 — submission PDF export ----------
+  //
+  // Returns a binary PDF rendered server-side via @react-pdf/renderer. Only
+  // available for status='submitted' rows — drafts / sent / in-progress
+  // return 409 with code PDF_NOT_AVAILABLE so the UI keeps the affordance
+  // visible but disabled. Content-Disposition is `inline` so the browser
+  // opens the PDF in a new tab; the user can still download from the
+  // built-in PDF viewer.
+  app.get(
+    '/intake-form-submissions/:id/pdf',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = SubmissionIdOnlyParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+
+      try {
+        const buffer = await renderSubmissionPdf(app.prisma, {
+          tenantId,
+          submissionId: params.data.id,
+        });
+        return reply
+          .header('Content-Type', 'application/pdf')
+          .header(
+            'Content-Disposition',
+            `inline; filename="form-${params.data.id}.pdf"`,
+          )
+          .send(buffer);
+      } catch (err) {
+        if (err instanceof PdfSubmissionNotFoundError) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: err.message,
+            code: err.code,
+          });
+        }
+        if (err instanceof PdfNotAvailableError) {
           return reply.code(409).send({
             error: 'Conflict',
             message: err.message,
