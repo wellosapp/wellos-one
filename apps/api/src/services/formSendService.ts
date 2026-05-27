@@ -20,6 +20,7 @@ import type {
 } from '@prisma/client';
 
 import type { ExtendedPrismaClient } from '../db/client.js';
+import { cancelPendingReminders } from '../jobs/formReminders.js';
 import { mintToken } from './magicLinkService.js';
 
 export type FormDeliveryChannel =
@@ -256,6 +257,18 @@ export async function sendForm(
 
   // 'kiosk' / 'admin_only' / 'inline_booking' — no dispatch, URL returned.
 
+  // 7. Schedule default reminders. Resend case: existing pending reminders
+  // are cancelled inside the helper before new ones are inserted, so the
+  // cadence restarts from this send time.
+  await scheduleDefaultReminders(prisma, {
+    tenantId: args.tenantId,
+    submissionId: submission.id,
+    sendChannel: resolvedChannel,
+    sentAt: new Date(),
+    appointmentScheduledStartAt:
+      submission.appointment?.scheduledStartAt ?? null,
+  });
+
   return {
     submission: updatedSubmission,
     url,
@@ -318,6 +331,9 @@ export async function cancelSubmission(
       },
     });
 
+    // Cancel any pending reminders — terminal state never receives them.
+    await cancelPendingReminders(tx, existing.id);
+
     return submission;
   });
 
@@ -353,4 +369,75 @@ function resolveExpiry(args: {
   const fallback = new Date();
   fallback.setDate(fallback.getDate() + 7);
   return fallback;
+}
+
+// ---------- Default-reminder scheduling (PR 11) ----------
+
+/**
+ * Schedule the two default reminders for a freshly-sent submission:
+ *   - Reminder 1: 24h after sentAt
+ *   - Reminder 2: 4h before the linked appointment (if any)
+ *
+ * Skip rules:
+ *   - Reminder 1 skipped if the appointment is < 24h away (would fire
+ *     after the second reminder).
+ *   - Reminder 2 skipped if the appointment is < 4h away (would never
+ *     fire in time) or if there's no appointment.
+ *
+ * Resend: any prior pending reminders are cancelled first so the cadence
+ * restarts from this send time.
+ *
+ * For non-dispatch channels (admin_only / kiosk / inline_booking) we skip
+ * scheduling entirely — no email/SMS contact point means no reminder to fire.
+ */
+async function scheduleDefaultReminders(
+  prisma: ExtendedPrismaClient,
+  args: {
+    tenantId: string;
+    submissionId: string;
+    sendChannel: FormDeliveryChannel;
+    sentAt: Date;
+    appointmentScheduledStartAt: Date | null;
+  },
+): Promise<void> {
+  // Resend hygiene — cancel anything pending before scheduling new rows.
+  await cancelPendingReminders(prisma, args.submissionId);
+
+  const reminderChannel = mapDeliveryToReminderChannel(args.sendChannel);
+  if (!reminderChannel) return;
+
+  const reminders: { scheduledFor: Date }[] = [];
+
+  // Reminder 1 — 24h after send.
+  const r1 = new Date(args.sentAt.getTime() + 24 * 60 * 60 * 1000);
+  const appt = args.appointmentScheduledStartAt;
+  if (!appt || r1.getTime() < appt.getTime()) {
+    reminders.push({ scheduledFor: r1 });
+  }
+
+  // Reminder 2 — 4h before appointment.
+  if (appt) {
+    const r2 = new Date(appt.getTime() - 4 * 60 * 60 * 1000);
+    if (r2.getTime() > args.sentAt.getTime()) {
+      reminders.push({ scheduledFor: r2 });
+    }
+  }
+
+  if (reminders.length === 0) return;
+
+  await prisma.formReminder.createMany({
+    data: reminders.map((r) => ({
+      tenantId: args.tenantId,
+      submissionId: args.submissionId,
+      scheduledFor: r.scheduledFor,
+      channel: reminderChannel,
+    })),
+  });
+}
+
+function mapDeliveryToReminderChannel(
+  c: FormDeliveryChannel,
+): 'email' | 'sms' | 'both' | null {
+  if (c === 'email' || c === 'sms' || c === 'both') return c;
+  return null;
 }

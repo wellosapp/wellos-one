@@ -18,6 +18,7 @@ import type {
 } from '@prisma/client';
 
 import type { ExtendedPrismaClient } from '../db/client.js';
+import { cancelPendingReminders } from '../jobs/formReminders.js';
 import {
   coerceSchema,
   schemaRequiresSignature,
@@ -103,6 +104,8 @@ async function markExpired(
       },
       data: { revokedAt: new Date() },
     });
+    // Cancel any pending reminders — terminal state never receives them.
+    await cancelPendingReminders(tx, submission.id);
     return next;
   });
   return updated;
@@ -418,6 +421,9 @@ export async function submitSubmission(
       },
       data: { revokedAt: new Date() },
     });
+
+    // Cancel any pending reminders — terminal state never receives them.
+    await cancelPendingReminders(tx, submission.id);
 
     // Forms System PR 9 — auto-enroll in the review queue when the
     // originating rule has requireProviderReview=true. Submissions without
