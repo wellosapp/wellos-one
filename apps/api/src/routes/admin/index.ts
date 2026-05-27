@@ -15,6 +15,7 @@ import formReviewRoutes from './form-review.js';
 import formTemplatesRoutes from './form-templates.js';
 import impersonateRoutes from './impersonate.js';
 import intakeFormsRoutes from './intake-forms.js';
+import jobsRoutes from './jobs.js';
 import linkedRecordsRoutes from './linked-records.js';
 import locationGeofenceRoutes from './location-geofence.js';
 import mediaRoutes from './media.js';
@@ -67,6 +68,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(mediaRoutes, { prefix: '/admin' });
   await app.register(onboardingRoutes, { prefix: '/admin' });
   await app.register(intakeFormsRoutes, { prefix: '/admin' });
+  await app.register(jobsRoutes, { prefix: '/admin' });
   await app.register(formReviewRoutes, { prefix: '/admin' });
   await app.register(formTemplatesRoutes, { prefix: '/admin' });
   await app.register(staffOnboardingFormsRoutes, { prefix: '/admin' });
