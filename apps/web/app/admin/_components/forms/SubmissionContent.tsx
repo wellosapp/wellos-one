@@ -1,17 +1,18 @@
-// Renders a submitted form's answers + signature for the admin review view.
+// Shared read-only submission viewer — renders the form answers, captured
+// signature card and any file uploads. Used by:
+//   - /admin/forms/review-queue/[id]   (PR 9 — provider review surface)
+//   - /admin/clients/[id]/intake/[submissionId]  (PR 10 — client-profile detail)
 //
-// Reuses the admin builder's FormPreviewRenderer (PR 3) in read-only mode —
-// the public PR 7 renderer is heavier (signature canvas, file upload, autosave
-// debouncing) than the admin review surface needs. PreviewRenderer already
-// handles section ordering + conditional visibility, so we just feed it the
-// captured answers and the schema.
+// Reuses the admin builder's FormPreviewRenderer in read-only mode so all
+// 16 field types render identically to how they appear in the builder
+// preview, including conditional visibility against the captured answers.
 
 import { Card } from '@/components/ui';
 
-import { FormPreviewRenderer } from '../../intake-forms/builder/FormPreviewRenderer';
-import { normalizeSchema } from '../../intake-forms/_schema-utils';
+import { FormPreviewRenderer } from '@/app/admin/intake-forms/builder/FormPreviewRenderer';
+import { normalizeSchema } from '@/app/admin/intake-forms/_schema-utils';
 
-interface SubmissionViewerProps {
+interface SubmissionContentProps {
   schema: unknown;
   answers: Record<string, unknown>;
   signatureData: unknown;
@@ -48,14 +49,14 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function SubmissionViewer({
+export function SubmissionContent({
   schema,
   answers,
   signatureData,
   submittedAt,
   clientName,
   fileUploads,
-}: SubmissionViewerProps) {
+}: SubmissionContentProps) {
   const normalizedSchema = normalizeSchema(schema);
   const sig = isSignatureBlob(signatureData) ? signatureData : null;
 

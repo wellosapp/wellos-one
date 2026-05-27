@@ -49,6 +49,14 @@ export type IntakeFormSubmissionDto = {
   deliveryChannel?: FormDeliveryChannel | null;
   expiresAt?: string | null;
   submittedAt: string | null;
+  /** Delivery / review timestamps surfaced for the client-profile Forms tab (PR 10). */
+  openedAt?: string | null;
+  startedAt?: string | null;
+  signatureData?: unknown;
+  reviewStatus?: string | null;
+  reviewedAt?: string | null;
+  reviewedByStaffId?: string | null;
+  reviewNotes?: string | null;
   createdAt: string;
   updatedAt: string;
   definition: {
@@ -56,6 +64,15 @@ export type IntakeFormSubmissionDto = {
     title: string;
     version: number;
   };
+};
+
+/** Audit-trail row returned by GET /admin/clients/:id/intake-submissions/:submissionId */
+export type IntakeFormSubmissionAuditDto = {
+  id: string;
+  action: string;
+  createdAt: string;
+  ip: string | null;
+  userAgent: string | null;
 };
 
 export type ListIntakeDefinitionsParams = {
@@ -118,6 +135,22 @@ export async function getClientIntakeSubmission(
   return apiFetch<{
     submission: IntakeFormSubmissionDto;
     definition: IntakeFormDefinitionDto;
+    appointment: {
+      id: string;
+      scheduledStartAt: string;
+      scheduledEndAt: string;
+      state: string;
+      staffId: string;
+    } | null;
+    service: { id: string; name: string } | null;
+    reviewedByStaffName: string | null;
+    fileUploads: Array<{
+      id: string;
+      fieldKey: string;
+      mediaAssetId: string;
+      mediaAssetUrl: string | null;
+    }>;
+    audits: IntakeFormSubmissionAuditDto[];
   }>(`/admin/clients/${clientId}/intake-submissions/${submissionId}`);
 }
 

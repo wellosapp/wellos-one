@@ -6,8 +6,9 @@ import { Alert, Badge, Card } from '@/components/ui';
 import { ApiError } from '@/lib/api/client';
 import { getReviewSubmission } from '@/lib/api/form-review';
 
+import { SubmissionContent } from '@/app/admin/_components/forms/SubmissionContent';
+
 import { ReviewActions } from '../ReviewActions';
-import { SubmissionViewer } from '../SubmissionViewer';
 
 // /admin/forms/review-queue/[id] — full-page review surface. Two-column on
 // desktop (viewer + sidebar), single-column on mobile. The Review modal is
@@ -189,7 +190,7 @@ export default async function ReviewSubmissionPage({
 
       <div className="grid grid-cols-1 gap-s6 lg:grid-cols-[1fr_360px]">
         <section aria-label="Submission" className="min-w-0">
-          <SubmissionViewer
+          <SubmissionContent
             schema={definition.schema}
             answers={submission.answers}
             signatureData={submission.signatureData}
