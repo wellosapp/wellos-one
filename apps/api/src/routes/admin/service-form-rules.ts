@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
+import { z } from 'zod';
+
 import { requireRole } from '../../middleware/requireRole.js';
 import {
   ServiceFormRuleIdParamsSchema,
@@ -15,9 +17,14 @@ import {
   ServiceNotFoundError,
   createFormAssignmentRule,
   deleteFormAssignmentRule,
+  evaluateFormReadiness,
   listFormAssignmentRules,
   updateFormAssignmentRule,
 } from '../../services/formAssignmentRuleService.js';
+
+const FormReadinessQuerySchema = z.object({
+  clientId: z.string().min(1, 'clientId is required'),
+});
 
 // /admin/services/:serviceId/form-rules — per-service form attachment rules.
 // Reads (staff). Writes (admin). Tenant scoping via request.currentUser.
@@ -65,6 +72,52 @@ export default async function serviceFormRulesRoutes(
         }
         throw err;
       }
+    },
+  );
+
+  // GET /admin/services/:serviceId/form-readiness?clientId=...
+  // PR 8 — used by Quick Book + admin-on-behalf-of-client to show the
+  // form-status chip before booking. Returns FormReadinessResult.
+  app.get(
+    '/services/:serviceId/form-readiness',
+    { preHandler: requireRole.staff },
+    async (request, reply) => {
+      const user = request.currentUser!;
+      const tenantId = user.tenantId!;
+
+      const params = ServiceFormRuleParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send(zodErrorBody(params.error));
+      }
+      const query = FormReadinessQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return reply.code(400).send(zodErrorBody(query.error));
+      }
+
+      try {
+        // Cheap existence guard — listFormAssignmentRules already does this,
+        // but evaluateFormReadiness does not. Keep the 404 path consistent.
+        await listFormAssignmentRules(app.prisma, {
+          tenantId,
+          serviceId: params.data.serviceId,
+        });
+      } catch (err) {
+        if (err instanceof ServiceNotFoundError) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: err.message,
+            code: err.code,
+          });
+        }
+        throw err;
+      }
+
+      const result = await evaluateFormReadiness(app.prisma, {
+        tenantId,
+        serviceId: params.data.serviceId,
+        clientId: query.data.clientId,
+      });
+      return reply.send(result);
     },
   );
 

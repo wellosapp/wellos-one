@@ -73,6 +73,16 @@ export async function loadPublicAvailabilityAction(params: {
   }
 }
 
+/** PR 8 — when the public booking is blocked because of unsatisfied forms,
+ *  the API returns 422 + code='FORMS_REQUIRED' + the per-form list. The UI
+ *  renders this as an amber "Required forms" alert instead of the generic
+ *  red error message. */
+export type PublicBookingRequiredForm = {
+  formDefinitionGroupId: string;
+  formTitle: string;
+  formType: string;
+};
+
 export async function submitPublicBookingAction(args: {
   tenantSlug: string;
   guest: {
@@ -89,7 +99,13 @@ export async function submitPublicBookingAction(args: {
   idempotencyKey: string;
 }): Promise<
   | { ok: true; result: CreatePublicAppointmentResult }
-  | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
+  | {
+      ok: false;
+      message: string;
+      issues?: Array<{ path: string; message: string }>;
+      /** Set when the API returned 422 + code='FORMS_REQUIRED'. */
+      requiredForms?: PublicBookingRequiredForm[];
+    }
 > {
   try {
     const result = await createPublicAppointmentRequest(args);
@@ -98,8 +114,29 @@ export async function submitPublicBookingAction(args: {
     if (err instanceof PublicApiError) {
       const body = err.body as {
         message?: string;
+        code?: string;
         issues?: Array<{ path: string; message: string }>;
+        requiredForms?: PublicBookingRequiredForm[];
       } | null;
+
+      // PR 8 — forms-required gate. 422 + code='FORMS_REQUIRED' surfaces the
+      // amber alert card listing each unsatisfied form. No appointment row
+      // was created — the API ran the check before the transaction.
+      if (
+        err.status === 422 &&
+        body?.code === 'FORMS_REQUIRED' &&
+        Array.isArray(body.requiredForms)
+      ) {
+        return {
+          ok: false,
+          message:
+            typeof body.message === 'string'
+              ? body.message
+              : 'Required forms must be completed before booking.',
+          requiredForms: body.requiredForms,
+        };
+      }
+
       const message =
         typeof body?.message === 'string'
           ? body.message

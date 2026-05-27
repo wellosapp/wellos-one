@@ -21,6 +21,7 @@ import {
   bookingFormBadgeTone,
   bookingFormStatusLabel,
 } from '@/app/admin/calendar/booking-form-helpers';
+import { QuickBookFormReadinessChip } from '@/app/admin/calendar/QuickBookFormReadinessChip';
 import { QuickBookFormsAckSection } from '@/app/admin/calendar/QuickBookFormsAckSection';
 import { Alert, Badge, Button, Drawer, FormField, Input, Select } from '@/components/ui';
 import type { Service } from '@/lib/api/services';
@@ -81,11 +82,21 @@ function ClientBadgeRow({ client }: { client: ClientQuickBookSummary }) {
 function SubmitBookButton({
   disabled,
   formId,
+  formsBlocked,
 }: {
   disabled: boolean;
   formId: string;
+  /** PR 8 — confirm before booking when hard_required forms are unsatisfied. */
+  formsBlocked: boolean;
 }) {
   const { pending } = useFormStatus();
+  const handleClick: React.MouseEventHandler<HTMLButtonElement> = (e) => {
+    if (!formsBlocked) return;
+    const ok = window.confirm(
+      'Required forms are not complete for this client and service. Book anyway?',
+    );
+    if (!ok) e.preventDefault();
+  };
   return (
     <Button
       type="submit"
@@ -97,8 +108,9 @@ function SubmitBookButton({
       className={cn(
         'min-h-[48px] flex-1 rounded-lg font-semibold shadow-md',
       )}
+      onClick={handleClick}
     >
-      Book appointment
+      {formsBlocked ? 'Book anyway' : 'Book appointment'}
     </Button>
   );
 }
@@ -186,6 +198,8 @@ export function ClientQuickBookDrawer({
   >(null);
   const [ackChecked, setAckChecked] = useState<Record<string, boolean>>({});
   const [formsAckChecked, setFormsAckChecked] = useState(false);
+  /** PR 8 — hard_required forms unsatisfied? Surfaces a Book Anyway confirm. */
+  const [formsBlocked, setFormsBlocked] = useState(false);
 
   const name = displayName(client);
   const initials = clientInitials(client);
@@ -255,6 +269,9 @@ export function ClientQuickBookDrawer({
   useEffect(() => {
     setAckChecked({});
     setFormsAckChecked(false);
+    // Reset blocked state on (client, service, staff) churn; the chip emits
+    // a fresh value as soon as the new context resolves.
+    setFormsBlocked(false);
   }, [client.id, serviceId, staffId]);
 
   const alertsNeedingAck = useMemo(
@@ -539,6 +556,16 @@ export function ClientQuickBookDrawer({
           </FormField>
         </StepShell>
 
+        {/* PR 8 — Form readiness chip. Same component used in QuickBookPanel. */}
+        {serviceId ? (
+          <QuickBookFormReadinessChip
+            serviceId={serviceId}
+            clientId={client.id}
+            intakeHref={`/admin/clients/${client.id}/intake`}
+            onBlocksBookingChange={setFormsBlocked}
+          />
+        ) : null}
+
         {staffBookingContextLoading && (
           <p className="t-caption text-ink-soft">Loading client snapshot…</p>
         )}
@@ -698,7 +725,11 @@ export function ClientQuickBookDrawer({
         {bookingSummaryCard}
 
         <div className="flex justify-end border-t border-surface-3 pt-s6">
-          <SubmitBookButton disabled={!canSubmit} formId={formId} />
+          <SubmitBookButton
+            disabled={!canSubmit}
+            formId={formId}
+            formsBlocked={formsBlocked}
+          />
         </div>
       </div>
     );
@@ -731,7 +762,11 @@ export function ClientQuickBookDrawer({
             >
               Cancel
             </Button>
-            <SubmitBookButton disabled={!canSubmit} formId={formId} />
+            <SubmitBookButton
+              disabled={!canSubmit}
+              formId={formId}
+              formsBlocked={formsBlocked}
+            />
           </div>
         </div>
       }

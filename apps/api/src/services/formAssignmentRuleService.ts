@@ -366,6 +366,199 @@ export async function deleteFormAssignmentRule(
   });
 }
 
+// ---------- Form readiness evaluation (PR 8) ----------
+//
+// Single source of truth for "for this (client, service), are all
+// hard_required forms satisfied today?" Reused by both the public
+// booking flow (which blocks) and the admin booking UIs (which warn
+// + allow override).
+//
+// Definition of "satisfied" for a (client, formDefinitionGroupId):
+//   - There exists an IntakeFormSubmission for this client + a definition
+//     in the same groupId family, status='submitted', and within the
+//     rule's expires_after_days window (when set).
+//   - Submissions are evergreen across appointments — a recent waiver
+//     from one booking satisfies a future booking's waiver rule.
+//
+// Timing distinction is intentionally collapsed: any hard_required rule
+// blocks regardless of timing field. Inline 'before_booking' rendering
+// (forms shown during the booking flow itself) is a future PR.
+
+export type FormReadinessUnsatisfiedReason = 'never_submitted' | 'expired_per_rule';
+
+export interface FormReadinessRule {
+  ruleId: string;
+  formDefinitionGroupId: string;
+  formTitle: string;
+  formType: string;
+  requiredLevel: RequiredLevel;
+  /** Whether the client has a satisfying submission today. */
+  satisfied: boolean;
+  /** If unsatisfied: why. Null when satisfied. */
+  unsatisfiedReason: FormReadinessUnsatisfiedReason | null;
+  /** Most recent submission (any status) for display. */
+  latestSubmissionStatus: string | null;
+  latestSubmissionId: string | null;
+  /** submittedAt for submitted rows; createdAt for in-progress drafts. */
+  latestSubmittedAt: string | null;
+}
+
+export interface FormReadinessResult {
+  rules: FormReadinessRule[];
+  /** Convenience: hard_required rules where satisfied===false. */
+  hardRequiredUnsatisfied: FormReadinessRule[];
+  /** Convenience: soft_required rules where satisfied===false. */
+  softRequiredUnsatisfied: FormReadinessRule[];
+  /** True iff at least one hard_required rule is unsatisfied. */
+  blocksBooking: boolean;
+}
+
+/** Thrown by appointmentService.createAppointment when the public flow tries
+ *  to book with unsatisfied hard_required forms. Route layer maps to 422 +
+ *  `code: 'FORMS_REQUIRED'` with the per-form list in the body. */
+export class FormsRequiredError extends Error {
+  readonly code = 'FORMS_REQUIRED' as const;
+  constructor(public readonly unsatisfied: FormReadinessRule[]) {
+    super(
+      `${unsatisfied.length} required form${unsatisfied.length === 1 ? '' : 's'} must be completed before booking.`,
+    );
+    this.name = 'FormsRequiredError';
+  }
+}
+
+export async function evaluateFormReadiness(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; serviceId: string; clientId: string },
+): Promise<FormReadinessResult> {
+  const rules = await prisma.formAssignmentRule.findMany({
+    where: {
+      tenantId: args.tenantId,
+      serviceId: args.serviceId,
+      active: true,
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (rules.length === 0) {
+    return {
+      rules: [],
+      hardRequiredUnsatisfied: [],
+      softRequiredUnsatisfied: [],
+      blocksBooking: false,
+    };
+  }
+
+  const now = Date.now();
+
+  const resolved: FormReadinessRule[] = await Promise.all(
+    rules.map(async (rule) => {
+      const [title, latest] = await Promise.all([
+        resolveLatestPublishedTitleForGroup(
+          prisma,
+          args.tenantId,
+          rule.formDefinitionGroupId,
+        ),
+        // Latest submission for this client + groupId family, any status.
+        // We need the latest *submitted* row for the satisfaction decision,
+        // but ALSO want to surface latestSubmissionStatus when a draft/sent
+        // row exists. Do both queries in parallel.
+        prisma.intakeFormSubmission.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            clientId: args.clientId,
+            definition: { groupId: rule.formDefinitionGroupId },
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            submittedAt: true,
+            createdAt: true,
+          },
+        }),
+      ]);
+
+      // Find the most recent SUBMITTED row (may differ from `latest` if a
+      // newer draft exists). That's the row that drives the satisfied/expired
+      // decision.
+      const latestSubmitted = await prisma.intakeFormSubmission.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          clientId: args.clientId,
+          status: 'submitted',
+          definition: { groupId: rule.formDefinitionGroupId },
+        },
+        orderBy: { submittedAt: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          submittedAt: true,
+        },
+      });
+
+      let satisfied = false;
+      let unsatisfiedReason: FormReadinessUnsatisfiedReason | null = null;
+
+      if (!latestSubmitted || !latestSubmitted.submittedAt) {
+        unsatisfiedReason = 'never_submitted';
+      } else if (rule.expiresAfterDays !== null) {
+        // Strict less-than: submissions exactly at the boundary are treated
+        // as expired so a "365 days ago" waiver doesn't squeak through.
+        const cutoff = now - rule.expiresAfterDays * 86_400_000;
+        if (latestSubmitted.submittedAt.getTime() <= cutoff) {
+          unsatisfiedReason = 'expired_per_rule';
+        } else {
+          satisfied = true;
+        }
+      } else {
+        satisfied = true;
+      }
+
+      const displayedRow = latestSubmitted ?? latest ?? null;
+      const displayedAt =
+        displayedRow?.status === 'submitted'
+          ? displayedRow.submittedAt ?? null
+          : displayedRow
+            ? // Non-submitted rows: prefer submittedAt if somehow set, else fall through.
+              ((displayedRow as { submittedAt?: Date | null }).submittedAt ??
+                (displayedRow as { createdAt?: Date }).createdAt ??
+                null)
+            : null;
+
+      return {
+        ruleId: rule.id,
+        formDefinitionGroupId: rule.formDefinitionGroupId,
+        formTitle: title.title,
+        formType: title.formType,
+        requiredLevel: rule.requiredLevel as RequiredLevel,
+        satisfied,
+        unsatisfiedReason,
+        latestSubmissionStatus: displayedRow?.status ?? null,
+        latestSubmissionId: displayedRow?.id ?? null,
+        latestSubmittedAt: displayedAt
+          ? displayedAt instanceof Date
+            ? displayedAt.toISOString()
+            : String(displayedAt)
+          : null,
+      };
+    }),
+  );
+
+  const hardRequiredUnsatisfied = resolved.filter(
+    (r) => r.requiredLevel === 'hard_required' && !r.satisfied,
+  );
+  const softRequiredUnsatisfied = resolved.filter(
+    (r) => r.requiredLevel === 'soft_required' && !r.satisfied,
+  );
+
+  return {
+    rules: resolved,
+    hardRequiredUnsatisfied,
+    softRequiredUnsatisfied,
+    blocksBooking: hardRequiredUnsatisfied.length > 0,
+  };
+}
+
 // ---------- Booking-time auto-assignment ----------
 //
 // Called by appointmentService.createAppointment AFTER the appointment

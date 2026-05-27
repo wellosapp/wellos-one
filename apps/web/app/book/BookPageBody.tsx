@@ -42,6 +42,7 @@ import { InstallPromptBanner } from '@/app/_pwa/InstallPromptBanner';
 import {
   loadPublicAvailabilityAction,
   submitPublicBookingAction,
+  type PublicBookingRequiredForm,
 } from './_actions';
 import { SlotHoldTimer } from './SlotHoldTimer';
 import { WaitlistSignupSheet } from './WaitlistSignupSheet';
@@ -148,6 +149,11 @@ export function BookPageBody({
   const [guestPhone, setGuestPhone] = useState('');
   const [guestNote, setGuestNote] = useState('');
   const [bookingMessage, setBookingMessage] = useState<string | null>(null);
+  /** PR 8 — when set, the booking was rejected with FORMS_REQUIRED. UI shows
+   *  an amber alert listing each unsatisfied form. */
+  const [requiredFormsBlock, setRequiredFormsBlock] = useState<
+    PublicBookingRequiredForm[] | null
+  >(null);
   const [bookingDone, setBookingDone] = useState<{
     id: string;
     scheduledStartAt: string;
@@ -349,6 +355,7 @@ export function BookPageBody({
 
   const onSubmitBooking = () => {
     setBookingMessage(null);
+    setRequiredFormsBlock(null);
     if (
       !tenantSlug ||
       !selectedLocationId ||
@@ -396,6 +403,7 @@ export function BookPageBody({
               res.result.appointment.state === 'requested',
           });
           setBookingMessage(null);
+          setRequiredFormsBlock(null);
           // The appointment row now holds the DB-level exclusion, so the
           // hold is redundant. Release it so the row doesn't linger in
           // `active` until TTL. (A future PR can wire holdId into the
@@ -405,6 +413,13 @@ export function BookPageBody({
           if (finishedHold) {
             void releaseSlotHold(finishedHold.holdId);
           }
+          return;
+        }
+        // PR 8 — FORMS_REQUIRED renders as a distinct amber alert listing
+        // each unsatisfied form. Other failures keep the red banner copy.
+        if (res.requiredForms && res.requiredForms.length > 0) {
+          setRequiredFormsBlock(res.requiredForms);
+          setBookingMessage(null);
           return;
         }
         setBookingMessage(res.message);
@@ -978,6 +993,38 @@ export function BookPageBody({
                   >
                     {bookingMessage}
                   </p>
+                ) : null}
+
+                {requiredFormsBlock && requiredFormsBlock.length > 0 ? (
+                  <div
+                    className="mt-s4 rounded-xl border border-amber-200 bg-amber-50 px-s3 py-s3"
+                    role="alert"
+                  >
+                    <strong className="t-body-sm font-semibold text-ink">
+                      Required forms
+                    </strong>
+                    <p className="mt-s1 t-body-sm text-ink-soft">
+                      Please complete{' '}
+                      {requiredFormsBlock.length === 1
+                        ? 'this form'
+                        : 'these forms'}{' '}
+                      before booking:
+                    </p>
+                    <ul className="mt-s2 list-disc pl-s4 t-body-sm text-ink">
+                      {requiredFormsBlock.map((f) => (
+                        <li key={f.formDefinitionGroupId}>
+                          <span className="font-medium">{f.formTitle}</span>{' '}
+                          <span className="text-ink-soft">
+                            ({f.formType})
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-s2 t-caption text-ink-soft">
+                      Contact the studio for a form link, or check your email
+                      for previous form messages.
+                    </p>
+                  </div>
                 ) : null}
 
                 {isRequestApproval ? (

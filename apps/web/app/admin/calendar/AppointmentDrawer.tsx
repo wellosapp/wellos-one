@@ -14,6 +14,7 @@ import type { CalendarViewMode } from '@/lib/calendar-view';
 import { AuditTab } from './tabs/AuditTab';
 import { ClientTab } from './tabs/ClientTab';
 import { FilesTab } from './tabs/FilesTab';
+import { FormsTab } from './tabs/FormsTab';
 import { IntakeTab } from './tabs/IntakeTab';
 import { NotesTab } from './tabs/NotesTab';
 import { OverviewTab } from './tabs/OverviewTab';
@@ -24,6 +25,7 @@ const TAB_KEYS = [
   'client',
   'payment',
   'intake',
+  'forms',
   'files',
   'notes',
   'audit',
@@ -97,6 +99,8 @@ export function AppointmentDrawer({
           <Badge tone="accent">{bookingAnswers.length}</Badge>
         ) : null,
     },
+    // PR 8 — Forms tab. IntakeFormSubmission rows attached to this appointment.
+    { key: 'forms', label: 'Forms' },
     { key: 'files', label: 'Files' },
     {
       key: 'notes',
@@ -147,6 +151,9 @@ export function AppointmentDrawer({
           {tab === 'client' && <ClientTab client={client} />}
           {tab === 'payment' && <PaymentTab />}
           {tab === 'intake' && <IntakeTab answers={bookingAnswers} />}
+          {tab === 'forms' && (
+            <FormsTab appointmentId={appointment.id} clientId={client.id} />
+          )}
           {tab === 'files' && <FilesTab />}
           {tab === 'notes' && (
             <NotesTab

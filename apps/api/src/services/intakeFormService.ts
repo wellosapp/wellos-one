@@ -239,6 +239,34 @@ export async function listIntakeSubmissionsForClient(
   return { submissions };
 }
 
+/// PR 8 — Forms tab on the appointment drawer. Returns submissions whose
+/// appointmentId matches. Tenant-scoped. No mutations; the tab reuses
+/// existing send/cancel flows from /admin/intake-form-submissions/...
+export async function listIntakeSubmissionsForAppointment(
+  prisma: ExtendedPrismaClient,
+  args: { tenantId: string; appointmentId: string },
+): Promise<{
+  submissions: Array<
+    IntakeFormSubmission & {
+      definition: { id: string; title: string; version: number };
+    }
+  >;
+}> {
+  const submissions = await prisma.intakeFormSubmission.findMany({
+    where: {
+      tenantId: args.tenantId,
+      appointmentId: args.appointmentId,
+    },
+    include: {
+      definition: {
+        select: { id: true, title: true, version: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  return { submissions };
+}
+
 /// Single-record fetch used by the fill-out page. Returns the submission + the
 /// full definition (schema included) so the renderer can render fields without
 /// a second round-trip.
