@@ -14,6 +14,7 @@ import {
   saveAutomationWorkflowAction,
 } from '../../../_actions';
 import { WorkflowStatusBadge } from '../../../_components/WorkflowStatusBadge';
+import { PaletteSidebar } from './PaletteSidebar';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import type { CanvasGraph, FlowEdge, FlowNode } from './WorkflowCanvas';
 
@@ -239,12 +240,15 @@ export function WorkflowCanvasShell({ workflow }: Props) {
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 bg-surface-2">
-        <WorkflowCanvas
-          initialGraph={initialGraph}
-          readOnly={readOnly}
-          onChange={onGraphChange}
-        />
+      <div className="flex min-h-0 flex-1 bg-surface-2">
+        {!readOnly ? <PaletteSidebar /> : null}
+        <div className="min-h-0 flex-1">
+          <WorkflowCanvas
+            initialGraph={initialGraph}
+            readOnly={readOnly}
+            onChange={onGraphChange}
+          />
+        </div>
       </div>
     </div>
   );
