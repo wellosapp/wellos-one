@@ -449,6 +449,8 @@ model Tenant {
   // No back-relation for AutomationWebhookDelivery (scoped via workflow → tenant).
   automationWorkflows       AutomationWorkflow[]
   automationRuns            AutomationRun[]
+  // Phase A PR 4 — delay queue persistence (one row per paused run).
+  automationDelayedNodes    AutomationDelayedNode[]
 
   @@index([deletedAt])
   @@map("tenants")
@@ -2309,6 +2311,8 @@ model AutomationRun {
   workflow          AutomationWorkflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   nodeRuns          AutomationNodeRun[]
   webhookDeliveries AutomationWebhookDelivery[]
+  // Phase A PR 4 — pause sentinels for delay nodes within this run.
+  delayedNodes      AutomationDelayedNode[]
 
   // Migration also creates a PARTIAL index on (status, created_at)
   // WHERE status IN ('pending', 'running') — engine hot path for resume-
@@ -2404,4 +2408,39 @@ model AutomationWebhookDelivery {
   @@index([workflowId])
   @@index([runId])
   @@map("automation_webhook_deliveries")
+}
+
+/// Persisted pause sentinel for a workflow run that stopped at a delay node.
+/// PR 4 of the Automation System epic. The trigger dispatcher (PR 3) and the
+/// cron resumer both INSERT here via persistDelayedNode; the cron
+/// (processDelayedNodes) picks up rows whose resume_at <= NOW and where
+/// neither resumed_at nor cancelled_at is set, atomically claims them via
+/// updateMany, and calls engine.resumeRun.
+///
+/// Lifecycle: resumed_at=null AND cancelled_at=null → pending. cancelled_at
+/// is set either by Phase F cascade (cancelling a run cancels its delays) or
+/// by the cron's pre-resume check finding the run already terminal — those
+/// two pathways are distinct only by who set the field; the row's terminal
+/// state is the same.
+model AutomationDelayedNode {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  runId           String    @map("run_id")
+  pausedAtNodeId  String    @map("paused_at_node_id")
+  resumeAt        DateTime  @map("resume_at")
+  resumedAt       DateTime? @map("resumed_at")
+  cancelledAt     DateTime? @map("cancelled_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    AutomationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // Migration also creates a PARTIAL index on (resume_at)
+  // WHERE resumed_at IS NULL AND cancelled_at IS NULL — cron hot path.
+  // Prisma 5 can't carry the WHERE clause; declared in raw SQL alongside
+  // a plain index for diff hygiene.
+  @@index([resumeAt])
+  @@index([runId])
+  @@index([tenantId])
+  @@map("automation_delayed_nodes")
 }

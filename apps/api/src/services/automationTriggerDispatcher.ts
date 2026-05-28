@@ -41,6 +41,7 @@ import {
   type WorkflowNode,
 } from '../lib/automationWorkflowTypes.js';
 import { enrichEventContext } from './automationContextEnricher.js';
+import { persistDelayedNode } from './automationDelayedNodeService.js';
 import { startRun } from './automationEngineService.js';
 
 // ----- Public API -----
@@ -254,9 +255,8 @@ export async function handleAutomationEvent(
       //    completes before we move to the next workflow. Engine errors are
       //    swallowed at this layer — engine already persists 'failed' status.
       //
-      //    TODO(PR 4): if result.kind === 'delayed', persist a row in the
-      //    automation_delayed_nodes table so the cron resumer can pick it up.
-      //    For PR 3 we just log — PR 4 owns the delay queue.
+      //    If the engine returns 'delayed', persist a row in
+      //    automation_delayed_nodes so PR 4's cron resumer can pick it up.
       try {
         const result = await startRun({
           prisma,
@@ -265,6 +265,12 @@ export async function handleAutomationEvent(
         });
 
         if (result.kind === 'delayed') {
+          await persistDelayedNode(prisma, {
+            tenantId: event.tenantId,
+            runId: run.id,
+            pausedAtNodeId: result.pausedAtNodeId,
+            resumeAt: result.resumeAt,
+          });
           log.info(
             {
               runId: run.id,
@@ -273,7 +279,7 @@ export async function handleAutomationEvent(
               resumeAt: result.resumeAt.toISOString(),
               pausedAtNodeId: result.pausedAtNodeId,
             },
-            'Automation dispatcher: run paused on delay (PR 4 will resume)',
+            'Automation dispatcher: run paused on delay node',
           );
         } else if (result.status === 'failed') {
           log.warn(
