@@ -70,6 +70,7 @@ const RAIL_GROUPS: RailGroup[] = [
       { label: 'Classes', href: '/admin/classes' as Route, icon: SparkIcon },
       { label: 'Categories', href: '/admin/service-categories' as Route, icon: GridIcon },
       { label: 'Tags', href: '/admin/client-tags' as Route, icon: TagIcon },
+      { label: 'Automations', href: '/admin/automations' as Route, icon: ActivityIcon },
       { label: 'Intake forms', href: '/admin/intake-forms' as Route, icon: ClipboardIcon },
       {
         label: 'Staff onboarding forms',
@@ -103,8 +104,18 @@ const RAIL_GROUPS: RailGroup[] = [
 
 // `/admin` only matches the exact root; everything else matches by prefix
 // so e.g. `/admin/clients/abc/notes` activates the Clients item.
+//
+// `/admin/automations` is special-cased so it does NOT swallow
+// `/admin/automations/runs` (a sibling rail entry in the Operations group).
 function isActive(itemHref: string, pathname: string): boolean {
   if (itemHref === '/admin') return pathname === '/admin';
+  if (itemHref === '/admin/automations') {
+    return (
+      pathname === '/admin/automations' ||
+      (pathname.startsWith('/admin/automations/') &&
+        !pathname.startsWith('/admin/automations/runs'))
+    );
+  }
   return pathname === itemHref || pathname.startsWith(`${itemHref}/`);
 }
 
