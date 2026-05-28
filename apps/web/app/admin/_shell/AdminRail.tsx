@@ -139,7 +139,7 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
       <Link
         href={'/admin' as Route}
         aria-label="Wellos admin home"
-        className="flex items-center gap-s3 overflow-hidden whitespace-nowrap px-s2 pb-s4 pt-s1 text-ink no-underline focus-visible:shadow-focus focus-visible:outline-none rounded-sm"
+        className="flex shrink-0 items-center gap-s3 overflow-hidden whitespace-nowrap px-s2 pb-s4 pt-s1 text-ink no-underline focus-visible:shadow-focus focus-visible:outline-none rounded-sm"
       >
         {hasLogo ? (
           // Signed R2 URLs expire and can't be optimized by next/image
@@ -171,9 +171,19 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
         )}
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-s1">
+      {/*
+        Scrollable section. The rail's catalog grew past short-laptop viewport
+        heights — previously items shrank vertically because the flex column
+        had no overflow handling. Now the section list scrolls in place while
+        the logo (above) and settings + collapse footer (below) stay pinned.
+        - min-h-0 lets the flex item shrink below content size (otherwise
+          overflow-y-auto on a flex child never triggers).
+        - shrink-0 on items + section labels prevents the visual crush at
+          intermediate heights where overflow is close but not yet active.
+      */}
+      <nav className="flex min-h-0 flex-1 flex-col gap-s1 overflow-y-auto">
         {RAIL_GROUPS.map((group) => (
-          <div key={group.label} className="flex flex-col gap-s1">
+          <div key={group.label} className="flex shrink-0 flex-col gap-s1">
             <RailSectionLabel expanded={expanded}>{group.label}</RailSectionLabel>
             {group.items.map((item) => {
               const active = isActive(item.href, pathname);
@@ -190,39 +200,37 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
             })}
           </div>
         ))}
-
-        <div className="flex-1" />
-
-        <div className="flex flex-col gap-s1 border-t border-line pt-s3">
-          <RailLink
-            href={'/admin/settings' as Route}
-            label="Settings"
-            Icon={SettingsIcon}
-            active={settingsActive}
-            expanded={expanded}
-          />
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
-            aria-expanded={expanded}
-            className="mt-s1 flex items-center gap-s3 rounded-sm border-0 bg-transparent px-s3 py-[10px] text-left text-[12.5px] font-medium text-ink-4 transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink-2 focus-visible:shadow-focus focus-visible:outline-none"
-          >
-            {expanded ? (
-              <PanelLeftIcon size={18} className="shrink-0 max-w-none" />
-            ) : (
-              <PanelRightIcon size={18} className="shrink-0 max-w-none" />
-            )}
-            <span
-              className={`whitespace-nowrap transition-[opacity,transform] duration-base ${
-                expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
-              }`}
-            >
-              {expanded ? 'Collapse' : 'Expand'}
-            </span>
-          </button>
-        </div>
       </nav>
+
+      <div className="flex shrink-0 flex-col gap-s1 border-t border-line pt-s3">
+        <RailLink
+          href={'/admin/settings' as Route}
+          label="Settings"
+          Icon={SettingsIcon}
+          active={settingsActive}
+          expanded={expanded}
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+          aria-expanded={expanded}
+          className="mt-s1 flex items-center gap-s3 rounded-sm border-0 bg-transparent px-s3 py-[10px] text-left text-[12.5px] font-medium text-ink-4 transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink-2 focus-visible:shadow-focus focus-visible:outline-none"
+        >
+          {expanded ? (
+            <PanelLeftIcon size={18} className="shrink-0 max-w-none" />
+          ) : (
+            <PanelRightIcon size={18} className="shrink-0 max-w-none" />
+          )}
+          <span
+            className={`whitespace-nowrap transition-[opacity,transform] duration-base ${
+              expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
+            }`}
+          >
+            {expanded ? 'Collapse' : 'Expand'}
+          </span>
+        </button>
+      </div>
     </aside>
   );
 }
