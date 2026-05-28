@@ -8,8 +8,6 @@ import type { Route } from 'next';
 import {
   ActivityIcon,
   CalendarIcon,
-  ChevronRightIcon,
-  ClipboardCheckIcon,
   ClipboardIcon,
   GridIcon,
   HourglassIcon,
@@ -23,20 +21,65 @@ import {
   SparkIcon,
   StaffIcon,
   TagIcon,
+  UserPlusIcon,
   UsersIcon,
+  ZapIcon,
 } from './icons';
+import { RailLink } from './RailLink';
+import { RailGroup } from './RailGroup';
 
-// Matches the IconProps shape exported by ./icons. We only ever pass
-// `size`, so this loose contract is intentional — anything else (className,
-// aria-*, etc.) flows through the underlying <svg>.
-type IconComponent = ComponentType<{ size?: number; className?: string }>;
-
-// ---- Data shape ----
+// Admin rail — top-level navigation.
 //
-// Entries inside a group can be either a leaf (a routed link) or a parent
-// (a collapsible header with leaf children one level deep). One level of
-// nesting is intentional — deeper nests blow past the rail's design and
-// invite "where the hell is X" navigation fatigue.
+// Information architecture (intent-based; replaces the prior system-buckets):
+//
+//   Dashboard                         (top-of-rail leaf)
+//   Schedule                          (top-of-rail leaf)
+//   Clients & Team        (group)
+//     - Clients
+//     - Team
+//   Services & Scheduling (group)
+//     - Services
+//     - Classes
+//     - Service Categories
+//     - Tags
+//     - Waitlist
+//   Intake & Onboarding   (group)
+//     - Client Intake
+//     - Team Onboarding
+//   Automations & Activity (group)
+//     - Automations
+//     - Activity Log
+//   Media Library                     (top-of-rail leaf)
+//
+//   Settings + Collapse toggle stay pinned in the footer.
+//
+// Routes preserved:
+//   /admin                          → Dashboard
+//   /admin/calendar                 → Schedule
+//   /admin/clients                  → Clients
+//   /admin/staff                    → Team
+//   /admin/services                 → Services
+//   /admin/classes                  → Classes
+//   /admin/service-categories       → Service Categories
+//   /admin/client-tags              → Tags
+//   /admin/waitlist                 → Waitlist
+//   /admin/intake-forms             → Client Intake
+//   /admin/staff-onboarding-forms   → Team Onboarding
+//   /admin/automations              → Automations
+//   /admin/automations/runs         → Activity Log
+//   /admin/media                    → Media Library
+//   /admin/settings                 → Settings (footer)
+//
+// Routes intentionally NOT in the rail (still reachable by direct URL or
+// contextual buttons elsewhere in the app):
+//   /admin/forms/review-queue
+//   /admin/class-check-in-attempts
+//
+// If/when a unified Activity Log page lands, those two can fold into it.
+
+// ---- Types + helpers ----
+
+type IconComponent = ComponentType<{ size?: number; className?: string }>;
 
 interface RailLeaf {
   type: 'leaf';
@@ -45,104 +88,86 @@ interface RailLeaf {
   icon: IconComponent;
 }
 
-interface RailParent {
-  type: 'parent';
-  /** Stable id used as the localStorage key suffix. */
+interface RailGroupEntry {
+  type: 'group';
+  /** Stable id — used as localStorage key suffix and ARIA controls target. */
   id: string;
   label: string;
   icon: IconComponent;
-  children: RailLeaf[];
+  children: Omit<RailLeaf, 'type'>[];
 }
 
-type RailEntry = RailLeaf | RailParent;
-
-interface RailGroup {
-  label: string;
-  entries: RailEntry[];
-}
+type RailEntry = RailLeaf | RailGroupEntry;
 
 function leaf(label: string, href: Route, icon: IconComponent): RailLeaf {
   return { type: 'leaf', label, href, icon };
 }
-function parent(
+
+function group(
   id: string,
   label: string,
   icon: IconComponent,
-  children: RailLeaf[],
-): RailParent {
-  return { type: 'parent', id, label, icon, children };
+  children: Omit<RailLeaf, 'type'>[],
+): RailGroupEntry {
+  return { type: 'group', id, label, icon, children };
 }
 
-// Order mirrors the design's RAIL_GROUPS, mapped to existing routes on
-// main. Routes that exist on feature branches but not yet on main re-
-// appear when those branches merge. The super-admin-only /admin/impersonate
-// route stays accessible via direct URL + the ImpersonationBanner.
-const RAIL_GROUPS: RailGroup[] = [
-  {
-    label: 'Workspace',
-    entries: [
-      leaf('Overview', '/admin' as Route, LayoutIcon),
-      leaf('Calendar', '/admin/calendar' as Route, CalendarIcon),
-    ],
-  },
-  {
-    label: 'People',
-    entries: [
-      leaf('Clients', '/admin/clients' as Route, UsersIcon),
-      leaf('Staff', '/admin/staff' as Route, StaffIcon),
-    ],
-  },
-  {
-    label: 'Catalog',
-    entries: [
-      parent('booking', 'Booking', GridIcon, [
-        leaf('Services', '/admin/services' as Route, SparkIcon),
-        leaf('Classes', '/admin/classes' as Route, SparkIcon),
-        leaf('Categories', '/admin/service-categories' as Route, GridIcon),
-        leaf('Tags', '/admin/client-tags' as Route, TagIcon),
-      ]),
-      parent('forms', 'Forms', ClipboardIcon, [
-        leaf('Intake forms', '/admin/intake-forms' as Route, ClipboardIcon),
-        leaf(
-          'Staff onboarding',
-          '/admin/staff-onboarding-forms' as Route,
-          ClipboardIcon,
-        ),
-      ]),
-    ],
-  },
-  {
-    label: 'Operations',
-    entries: [
-      leaf('Automations', '/admin/automations' as Route, ActivityIcon),
-      leaf('Media', '/admin/media' as Route, ImageIcon),
-      leaf('Waitlist', '/admin/waitlist' as Route, HourglassIcon),
-      parent('audit', 'Audit', ShieldIcon, [
-        leaf(
-          'Review queue',
-          '/admin/forms/review-queue' as Route,
-          ClipboardCheckIcon,
-        ),
-        leaf(
-          'Automation runs',
-          '/admin/automations/runs' as Route,
-          ActivityIcon,
-        ),
-        leaf(
-          'Check-in audit',
-          '/admin/class-check-in-attempts' as Route,
-          ShieldIcon,
-        ),
-      ]),
-    ],
-  },
+// ---- The IA ----
+
+const RAIL_ENTRIES: RailEntry[] = [
+  leaf('Dashboard', '/admin' as Route, LayoutIcon),
+  leaf('Schedule', '/admin/calendar' as Route, CalendarIcon),
+  group('clients-team', 'Clients & Team', UsersIcon, [
+    { label: 'Clients', href: '/admin/clients' as Route, icon: UsersIcon },
+    { label: 'Team', href: '/admin/staff' as Route, icon: StaffIcon },
+  ]),
+  group('services-scheduling', 'Services & Scheduling', SparkIcon, [
+    { label: 'Services', href: '/admin/services' as Route, icon: SparkIcon },
+    { label: 'Classes', href: '/admin/classes' as Route, icon: SparkIcon },
+    {
+      label: 'Service Categories',
+      href: '/admin/service-categories' as Route,
+      icon: GridIcon,
+    },
+    { label: 'Tags', href: '/admin/client-tags' as Route, icon: TagIcon },
+    {
+      label: 'Waitlist',
+      href: '/admin/waitlist' as Route,
+      icon: HourglassIcon,
+    },
+  ]),
+  group('intake-onboarding', 'Intake & Onboarding', ClipboardIcon, [
+    {
+      label: 'Client Intake',
+      href: '/admin/intake-forms' as Route,
+      icon: ClipboardIcon,
+    },
+    {
+      label: 'Team Onboarding',
+      href: '/admin/staff-onboarding-forms' as Route,
+      icon: UserPlusIcon,
+    },
+  ]),
+  group('automations-activity', 'Automations & Activity', ZapIcon, [
+    {
+      label: 'Automations',
+      href: '/admin/automations' as Route,
+      icon: ActivityIcon,
+    },
+    {
+      label: 'Activity Log',
+      href: '/admin/automations/runs' as Route,
+      icon: ShieldIcon,
+    },
+  ]),
+  leaf('Media Library', '/admin/media' as Route, ImageIcon),
 ];
 
-// `/admin` only matches the exact root; everything else matches by prefix
-// so e.g. `/admin/clients/abc/notes` activates the Clients item.
+// `/admin` matches only the exact root; every other route matches by prefix,
+// so e.g. /admin/clients/abc/notes activates Clients.
 //
-// `/admin/automations` is special-cased so it does NOT swallow
-// `/admin/automations/runs` (a sibling rail entry in the Operations group).
+// /admin/automations is special-cased so its prefix does NOT swallow
+// /admin/automations/runs (its sibling Activity Log entry).
 function isActive(itemHref: string, pathname: string): boolean {
   if (itemHref === '/admin') return pathname === '/admin';
   if (itemHref === '/admin/automations') {
@@ -155,18 +180,17 @@ function isActive(itemHref: string, pathname: string): boolean {
   return pathname === itemHref || pathname.startsWith(`${itemHref}/`);
 }
 
-function parentHasActiveChild(p: RailParent, pathname: string): boolean {
-  return p.children.some((c) => isActive(c.href, pathname));
+function groupHasActiveChild(g: RailGroupEntry, pathname: string): boolean {
+  return g.children.some((c) => isActive(c.href, pathname));
 }
 
-// localStorage key prefix for per-parent open state. Each parent's id is
-// appended (e.g. `wellos:admin-rail-group:booking`). Default state for any
-// parent is OPEN — users see all options on first visit.
-const PARENT_STORAGE_PREFIX = 'wellos:admin-rail-group:';
+// localStorage key prefix for per-group open state. Each group's id is
+// appended (e.g. `wellos:admin-rail-group:clients-team`). Default = open.
+const GROUP_STORAGE_PREFIX = 'wellos:admin-rail-group:';
 
-function readStoredParentOpen(id: string): boolean | null {
+function readStoredGroupOpen(id: string): boolean | null {
   try {
-    const raw = window.localStorage.getItem(`${PARENT_STORAGE_PREFIX}${id}`);
+    const raw = window.localStorage.getItem(`${GROUP_STORAGE_PREFIX}${id}`);
     if (raw === 'true') return true;
     if (raw === 'false') return false;
     return null;
@@ -175,16 +199,23 @@ function readStoredParentOpen(id: string): boolean | null {
   }
 }
 
-function writeStoredParentOpen(id: string, open: boolean) {
+function writeStoredGroupOpen(id: string, open: boolean) {
   try {
     window.localStorage.setItem(
-      `${PARENT_STORAGE_PREFIX}${id}`,
+      `${GROUP_STORAGE_PREFIX}${id}`,
       String(open),
     );
   } catch {
     // Storage unavailable (privacy mode) — feature degrades silently.
   }
 }
+
+// Stable list of group ids — module-scope so it doesn't churn render-to-render.
+const ALL_GROUP_IDS: readonly string[] = RAIL_ENTRIES.filter(
+  (e): e is RailGroupEntry => e.type === 'group',
+).map((g) => g.id);
+
+// ---- Root ----
 
 interface AdminRailProps {
   expanded: boolean;
@@ -198,31 +229,37 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
   const settingsActive = isActive('/admin/settings', pathname);
   const hasLogo = !!logo?.displayUrl;
 
-  // Per-parent open state. SSR + first client paint use the default (open);
-  // a follow-up effect rehydrates from localStorage. Avoids a hydration
-  // mismatch by not reading storage during render.
-  const allParentIds = useAllParentIds();
-  const [openByParentId, setOpenByParentId] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(allParentIds.map((id) => [id, true])),
+  // SSR + first client paint use default-open for every group; the effect
+  // below rehydrates from localStorage. This avoids a hydration mismatch
+  // without disabling SSR.
+  const [openByGroupId, setOpenByGroupId] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(ALL_GROUP_IDS.map((id) => [id, true])),
   );
   useEffect(() => {
-    setOpenByParentId((prev) => {
+    setOpenByGroupId((prev) => {
       const next: Record<string, boolean> = { ...prev };
-      for (const id of allParentIds) {
-        const stored = readStoredParentOpen(id);
+      for (const id of ALL_GROUP_IDS) {
+        const stored = readStoredGroupOpen(id);
         if (stored !== null) next[id] = stored;
       }
       return next;
     });
-  }, [allParentIds]);
+  }, []);
 
-  const toggleParent = useCallback((id: string) => {
-    setOpenByParentId((prev) => {
+  const toggleGroup = useCallback((id: string) => {
+    setOpenByGroupId((prev) => {
       const next = { ...prev, [id]: !prev[id] };
-      writeStoredParentOpen(id, next[id] ?? true);
+      writeStoredGroupOpen(id, next[id] ?? true);
       return next;
     });
   }, []);
+
+  // Curried matcher passed to RailGroup so it doesn't need to import
+  // isActive + pathname itself.
+  const checkActive = useCallback(
+    (href: string) => isActive(href, pathname),
+    [pathname],
+  );
 
   return (
     <aside
@@ -241,9 +278,10 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
           <img
             src={logo!.displayUrl!}
             alt=""
-            className={`h-8 shrink-0 object-contain transition-[width,max-width] duration-base ${
-              expanded ? 'w-auto max-w-[140px]' : 'w-8 max-w-8'
-            }`}
+            className={[
+              'h-8 shrink-0 object-contain transition-[width,max-width] duration-base',
+              expanded ? 'w-auto max-w-[140px]' : 'w-8 max-w-8',
+            ].join(' ')}
           />
         ) : (
           <>
@@ -254,9 +292,10 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
               <LeafIcon size={18} />
             </span>
             <span
-              className={`font-display text-[22px] leading-none tracking-[-0.01em] transition-[opacity,transform] duration-base ${
-                expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
-              }`}
+              className={[
+                'font-display text-[22px] leading-none tracking-[-0.01em] transition-[opacity,transform] duration-base',
+                expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0',
+              ].join(' ')}
             >
               Wellos
             </span>
@@ -265,47 +304,43 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
       </Link>
 
       {/*
-        Middle scroll region. Even with collapsible parents, the absolute
-        worst case (every parent expanded on a very short viewport) can
-        still overflow — keep overflow-y-auto as a safety net. min-h-0 is
-        the magic flex sauce that lets the scroll engage at all.
+        Scrollable middle. The new IA fits on most viewports without scroll,
+        but overflow-y-auto + min-h-0 stay as a safety net for tall-content
+        edge cases (every group open on a short viewport).
       */}
       <nav className="flex min-h-0 flex-1 flex-col gap-s1 overflow-y-auto">
-        {RAIL_GROUPS.map((group) => (
-          <div key={group.label} className="flex shrink-0 flex-col gap-s1">
-            <RailSectionLabel expanded={expanded}>{group.label}</RailSectionLabel>
-            {group.entries.map((entry) => {
-              if (entry.type === 'leaf') {
-                return (
-                  <RailLink
-                    key={entry.href}
-                    href={entry.href}
-                    label={entry.label}
-                    Icon={entry.icon}
-                    active={isActive(entry.href, pathname)}
-                    expanded={expanded}
-                  />
-                );
-              }
-              const childActive = parentHasActiveChild(entry, pathname);
-              const userOpen = openByParentId[entry.id] ?? true;
-              // Force-open while a child is the active route — otherwise
-              // the user gets a "where am I" gap when navigating to a
-              // nested page after collapsing its parent.
-              const open = childActive ? true : userOpen;
-              return (
-                <RailParentBlock
-                  key={entry.id}
-                  parent={entry}
-                  open={open}
-                  onToggle={() => toggleParent(entry.id)}
-                  expanded={expanded}
-                  pathname={pathname}
-                />
-              );
-            })}
-          </div>
-        ))}
+        {RAIL_ENTRIES.map((entry) => {
+          if (entry.type === 'leaf') {
+            return (
+              <RailLink
+                key={entry.href}
+                href={entry.href}
+                label={entry.label}
+                Icon={entry.icon}
+                active={isActive(entry.href, pathname)}
+                expanded={expanded}
+              />
+            );
+          }
+          const childActive = groupHasActiveChild(entry, pathname);
+          const userOpen = openByGroupId[entry.id] ?? true;
+          // Force-open when a child route is active — never strand the user
+          // in a collapsed group whose child they just navigated to.
+          const open = childActive ? true : userOpen;
+          return (
+            <RailGroup
+              key={entry.id}
+              id={entry.id}
+              label={entry.label}
+              Icon={entry.icon}
+              items={entry.children}
+              expanded={expanded}
+              open={open}
+              onToggle={() => toggleGroup(entry.id)}
+              isActive={checkActive}
+            />
+          );
+        })}
       </nav>
 
       <div className="flex shrink-0 flex-col gap-s1 border-t border-line pt-s3">
@@ -329,181 +364,15 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
             <PanelRightIcon size={18} className="shrink-0 max-w-none" />
           )}
           <span
-            className={`whitespace-nowrap transition-[opacity,transform] duration-base ${
-              expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
-            }`}
+            className={[
+              'whitespace-nowrap transition-[opacity,transform] duration-base',
+              expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0',
+            ].join(' ')}
           >
             {expanded ? 'Collapse' : 'Expand'}
           </span>
         </button>
       </div>
     </aside>
-  );
-}
-
-// Stable-identity list of parent ids. Computed from the static catalog so
-// the effect dependency doesn't refire across renders.
-function useAllParentIds(): readonly string[] {
-  // RAIL_GROUPS is module-scope and never mutates — safe to compute once.
-  // Wrap in a hook so React's exhaustive-deps lint stays happy without
-  // sprinkling eslint-disable comments at the call site.
-  return ALL_PARENT_IDS;
-}
-
-const ALL_PARENT_IDS: readonly string[] = RAIL_GROUPS.flatMap((g) =>
-  g.entries.filter((e): e is RailParent => e.type === 'parent').map((p) => p.id),
-);
-
-function RailSectionLabel({
-  children,
-  expanded,
-}: {
-  children: React.ReactNode;
-  expanded: boolean;
-}) {
-  // Collapsed: render a thin separator dash centered in the gap. Expanded:
-  // render the eyebrow.
-  if (!expanded) {
-    return (
-      <div className="flex h-[14px] items-center justify-center pb-s1 pt-s2">
-        <span aria-hidden="true" className="block h-[1px] w-4 bg-line-strong" />
-      </div>
-    );
-  }
-  return (
-    <div className="flex h-[26px] items-center px-s3 pb-s1 pt-s3 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-4">
-      {children}
-    </div>
-  );
-}
-
-interface RailLinkProps {
-  href: Route;
-  label: string;
-  Icon: IconComponent;
-  active: boolean;
-  expanded: boolean;
-  /** Nested children render with a slight indent in expanded mode. */
-  nested?: boolean;
-}
-
-function RailLink({ href, label, Icon, active, expanded, nested }: RailLinkProps) {
-  return (
-    <Link
-      href={href}
-      title={label}
-      aria-current={active ? 'page' : undefined}
-      className={`group relative flex items-center gap-s3 overflow-hidden whitespace-nowrap rounded-sm py-[10px] text-[13.5px] font-medium no-underline transition-colors duration-fast focus-visible:shadow-focus focus-visible:outline-none ${
-        // Nested leaves indent slightly when the rail is expanded; in the
-        // collapsed icon-only mode we re-align to the full-width pad.
-        nested && expanded ? 'pl-s6 pr-s3' : 'px-s3'
-      } ${
-        active
-          ? 'bg-sage-tint text-sage-deep'
-          : 'text-ink-3 hover:bg-sage-tint-2 hover:text-ink'
-      }`}
-    >
-      {active ? (
-        <span
-          aria-hidden="true"
-          className="absolute -left-s2 top-s2 bottom-s2 w-[3px] rounded-r-sm bg-sage"
-        />
-      ) : null}
-      {/* shrink-0 + max-w-none override Tailwind preflight's `max-width: 100%`
-          on svg — without them, flex shrinking + a narrow 28px collapsed-rail
-          inner width collapsed the icon to roughly nothing. */}
-      <Icon size={20} className="shrink-0 max-w-none" />
-      <span
-        className={`transition-[opacity,transform] duration-base ${
-          expanded ? 'opacity-100 translate-x-0' : '-translate-x-1 opacity-0'
-        }`}
-      >
-        {label}
-      </span>
-      {/* Tooltip — collapsed-rail only, on hover/focus. */}
-      {!expanded ? (
-        <span
-          role="tooltip"
-          className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-20 -translate-y-1/2 -translate-x-1 whitespace-nowrap rounded-sm bg-ink px-s2 py-[5px] text-[12px] text-ink-inv opacity-0 shadow-md transition-[opacity,transform] duration-fast group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
-        >
-          {label}
-        </span>
-      ) : null}
-    </Link>
-  );
-}
-
-interface RailParentBlockProps {
-  parent: RailParent;
-  open: boolean;
-  onToggle: () => void;
-  expanded: boolean;
-  pathname: string;
-}
-
-function RailParentBlock({
-  parent,
-  open,
-  onToggle,
-  expanded,
-  pathname,
-}: RailParentBlockProps) {
-  const Icon = parent.icon;
-
-  // Collapsed rail (68px icons-only): the parent itself isn't a link, so
-  // we render each leaf child as its own row instead of the parent. The
-  // hierarchy is purely a feature of expanded mode.
-  if (!expanded) {
-    return (
-      <>
-        {parent.children.map((child) => (
-          <RailLink
-            key={child.href}
-            href={child.href}
-            label={child.label}
-            Icon={child.icon}
-            active={isActive(child.href, pathname)}
-            expanded={expanded}
-          />
-        ))}
-      </>
-    );
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={`rail-parent-${parent.id}`}
-        title={parent.label}
-        className="group relative flex items-center gap-s3 overflow-hidden whitespace-nowrap rounded-sm border-0 bg-transparent px-s3 py-[10px] text-left text-[13.5px] font-medium text-ink-3 transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink focus-visible:shadow-focus focus-visible:outline-none"
-      >
-        <Icon size={20} className="shrink-0 max-w-none" />
-        <span className="flex-1">{parent.label}</span>
-        <ChevronRightIcon
-          size={14}
-          className={`shrink-0 max-w-none text-ink-4 transition-transform duration-fast ${
-            open ? 'rotate-90' : ''
-          }`}
-        />
-      </button>
-      {open ? (
-        <div id={`rail-parent-${parent.id}`} className="flex flex-col gap-s1">
-          {parent.children.map((child) => (
-            <RailLink
-              key={child.href}
-              href={child.href}
-              label={child.label}
-              Icon={child.icon}
-              active={isActive(child.href, pathname)}
-              expanded={expanded}
-              nested
-            />
-          ))}
-        </div>
-      ) : null}
-    </>
   );
 }
