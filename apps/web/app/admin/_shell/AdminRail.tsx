@@ -6,6 +6,7 @@ import type { ComponentType } from 'react';
 import type { Route } from 'next';
 
 import {
+  ActivityIcon,
   CalendarIcon,
   ClipboardCheckIcon,
   ClipboardIcon,
@@ -85,6 +86,11 @@ const RAIL_GROUPS: RailGroup[] = [
         label: 'Review queue',
         href: '/admin/forms/review-queue' as Route,
         icon: ClipboardCheckIcon,
+      },
+      {
+        label: 'Automation runs',
+        href: '/admin/automations/runs' as Route,
+        icon: ActivityIcon,
       },
       {
         label: 'Check-in audit',

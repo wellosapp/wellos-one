@@ -449,6 +449,16 @@ export function ChevronLeftIcon(props: IconProps) {
   );
 }
 
+// Heartbeat line — matches Lucide's `activity` glyph. Used in the rail for
+// "Automation runs" under the Operations group.
+export function ActivityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 12h4l2 -6 4 12 2 -6h6" />
+    </Icon>
+  );
+}
+
 export function ChevronRightIcon(props: IconProps) {
   return (
     <Icon {...props}>
