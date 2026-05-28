@@ -86,8 +86,12 @@ export function RunsTable({ runs }: { runs: AutomationRunListItem[] }) {
                   </div>
                 </td>
                 <td className="px-s4 py-s3 t-body-sm">
-                  {/* PR 6 will turn this into a link to /admin/automations/[id]. */}
-                  <span className="font-medium text-ink">{r.workflowName}</span>
+                  <Link
+                    href={`/admin/automations/${r.workflowId}/edit` as Route}
+                    className="font-medium text-ink no-underline hover:underline"
+                  >
+                    {r.workflowName}
+                  </Link>
                 </td>
                 <td className="px-s4 py-s3 t-body-sm">
                   <TriggerEventPill type={r.triggerEvent} />
