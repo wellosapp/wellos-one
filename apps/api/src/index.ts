@@ -23,6 +23,7 @@ import publicRoutes from './routes/public/index.js';
 import staffClassInstancesStreamRoutes from './routes/staff/class-instances-stream.js';
 import staffSelfRoutes from './routes/staff-self.js';
 import webhookRoutes from './routes/webhooks/index.js';
+import { mountAutomationTriggerDispatcher } from './services/automationTriggerDispatcher.js';
 
 const { default: Fastify } = await import('fastify');
 
@@ -52,6 +53,16 @@ Sentry.setupFastifyErrorHandler(app);
 await app.register(corsPlugin);
 await app.register(clerkPlugin);
 await app.register(prismaPlugin);
+
+// Automation trigger dispatcher (PR 3 of the Automation System epic).
+// Mounts AFTER prismaPlugin so app.prisma is available; mounts BEFORE the
+// route registrations so the bus has a subscriber on the very first event
+// any route emits (PR 11+ wires publishers from inside services). The bus
+// is in-process today — TODO(scale) in automationEventBus.ts.
+mountAutomationTriggerDispatcher({
+  prisma: app.prisma,
+  log: app.log,
+});
 
 // Public routes — no requireAuth. /healthz is hit by BetterStack uptime
 // monitoring without credentials; / is a humans-curl smoke target.
