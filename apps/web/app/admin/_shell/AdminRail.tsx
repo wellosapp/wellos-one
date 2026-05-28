@@ -90,7 +90,6 @@ const RAIL_GROUPS: RailGroup[] = [
     entries: [
       leaf('Clients', '/admin/clients' as Route, UsersIcon),
       leaf('Staff', '/admin/staff' as Route, StaffIcon),
-      leaf('Waitlist', '/admin/waitlist' as Route, HourglassIcon),
     ],
   },
   {
@@ -102,7 +101,6 @@ const RAIL_GROUPS: RailGroup[] = [
         leaf('Categories', '/admin/service-categories' as Route, GridIcon),
         leaf('Tags', '/admin/client-tags' as Route, TagIcon),
       ]),
-      leaf('Automations', '/admin/automations' as Route, ActivityIcon),
       parent('forms', 'Forms', ClipboardIcon, [
         leaf('Intake forms', '/admin/intake-forms' as Route, ClipboardIcon),
         leaf(
@@ -111,27 +109,31 @@ const RAIL_GROUPS: RailGroup[] = [
           ClipboardIcon,
         ),
       ]),
-      leaf('Media', '/admin/media' as Route, ImageIcon),
     ],
   },
   {
     label: 'Operations',
     entries: [
-      leaf(
-        'Review queue',
-        '/admin/forms/review-queue' as Route,
-        ClipboardCheckIcon,
-      ),
-      leaf(
-        'Automation runs',
-        '/admin/automations/runs' as Route,
-        ActivityIcon,
-      ),
-      leaf(
-        'Check-in audit',
-        '/admin/class-check-in-attempts' as Route,
-        ShieldIcon,
-      ),
+      leaf('Automations', '/admin/automations' as Route, ActivityIcon),
+      leaf('Media', '/admin/media' as Route, ImageIcon),
+      leaf('Waitlist', '/admin/waitlist' as Route, HourglassIcon),
+      parent('audit', 'Audit', ShieldIcon, [
+        leaf(
+          'Review queue',
+          '/admin/forms/review-queue' as Route,
+          ClipboardCheckIcon,
+        ),
+        leaf(
+          'Automation runs',
+          '/admin/automations/runs' as Route,
+          ActivityIcon,
+        ),
+        leaf(
+          'Check-in audit',
+          '/admin/class-check-in-attempts' as Route,
+          ShieldIcon,
+        ),
+      ]),
     ],
   },
 ];
