@@ -22,6 +22,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type DragEvent,
@@ -33,6 +34,7 @@ import {
   findPaletteItem,
   type PaletteNodeType,
 } from './paletteCatalog';
+import { WorkflowEdge } from './edges/WorkflowEdge';
 import { ActionNodeRenderer } from './nodes/ActionNodeRenderer';
 import { AiNodeRenderer } from './nodes/AiNodeRenderer';
 import { BranchNodeRenderer } from './nodes/BranchNodeRenderer';
@@ -41,6 +43,7 @@ import { DelayNodeRenderer } from './nodes/DelayNodeRenderer';
 import { FilterNodeRenderer } from './nodes/FilterNodeRenderer';
 import { TriggerNodeRenderer } from './nodes/TriggerNodeRenderer';
 import { WebhookNodeRenderer } from './nodes/WebhookNodeRenderer';
+import type { RunStatus } from './runStatus';
 
 // React Flow canvas — PR 8 adds selection emission + an imperative API for
 // the settings drawer to mutate the selected node's data. PR 6 shipped the
@@ -79,6 +82,18 @@ const nodeTypes = {
   ai: AiNodeRenderer,
 };
 
+// Single custom edge type. PR 9 introduces it; the engine doesn't care what
+// `type` an edge has since persistence strips it, so existing workflow_json
+// rows without a `type` still load fine — React Flow falls back to the
+// default-edge prop when a saved edge lacks a type.
+const edgeTypes = {
+  workflow: WorkflowEdge,
+};
+
+const defaultEdgeOptions = {
+  type: 'workflow',
+} as const;
+
 interface WorkflowCanvasProps {
   initialGraph: CanvasGraph;
   /** When true, drag/select/delete/connect are disabled. */
@@ -87,6 +102,15 @@ interface WorkflowCanvasProps {
   onChange: (graph: CanvasGraph) => void;
   /** Fires when the selected node changes (single-select). */
   onSelectionChange?: (nodeId: string | null) => void;
+  /**
+   * Run-status overlay for nodes — keyed by node.id. Merged into each
+   * node's `data.runStatus` at render time without touching the canonical
+   * state, so saving the workflow never persists ephemeral run state.
+   * PR 9 adds the prop; PR 10's test mode populates it.
+   */
+  nodeRunStatuses?: Readonly<Record<string, RunStatus>>;
+  /** Run-status overlay for edges — keyed by edge.id. Same semantics. */
+  edgeRunStatuses?: Readonly<Record<string, RunStatus>>;
 }
 
 export interface WorkflowCanvasHandle {
@@ -108,7 +132,14 @@ function newEdgeId(source: string, target: string): string {
 
 export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasProps>(
   function WorkflowCanvas(
-    { initialGraph, readOnly, onChange, onSelectionChange },
+    {
+      initialGraph,
+      readOnly,
+      onChange,
+      onSelectionChange,
+      nodeRunStatuses,
+      edgeRunStatuses,
+    },
     ref,
   ) {
     const [nodes, setNodes] = useState<Node[]>(() =>
@@ -126,6 +157,12 @@ export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasPro
         target: e.target,
         sourceHandle: e.sourceHandle,
         label: e.label,
+        // Stamp the custom edge type at load. defaultEdgeOptions only applies
+        // to newly-created edges via React Flow's connect handler; loaded
+        // edges keep whatever type was saved. workflow_json doesn't persist
+        // `type` (emitChange strips it as UI metadata), so reloads pick it
+        // up fresh from this initializer.
+        type: 'workflow',
       })),
     );
 
@@ -225,7 +262,10 @@ export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasPro
         if (!res.ok) return;
         const id = newEdgeId(connection.source, connection.target);
         setEdges((current) => {
-          const next = addEdge({ ...connection, id }, current);
+          const next = addEdge(
+            { ...connection, id, type: 'workflow' },
+            current,
+          );
           emitChange(nodesRef.current, next);
           return next;
         });
@@ -305,6 +345,32 @@ export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasPro
       [emitChange],
     );
 
+    // Render-time overlays. The status maps are merged into each node /
+    // edge's `data.runStatus` here, never into the source-of-truth state,
+    // so toggling test-mode statuses never dirties the workflow or
+    // persists ephemeral run state to workflow_json.
+    const renderedNodes = useMemo(() => {
+      if (!nodeRunStatuses || Object.keys(nodeRunStatuses).length === 0) {
+        return nodes;
+      }
+      return nodes.map((n) => {
+        const status = nodeRunStatuses[n.id];
+        if (!status) return n;
+        return { ...n, data: { ...(n.data ?? {}), runStatus: status } };
+      });
+    }, [nodes, nodeRunStatuses]);
+
+    const renderedEdges = useMemo(() => {
+      if (!edgeRunStatuses || Object.keys(edgeRunStatuses).length === 0) {
+        return edges;
+      }
+      return edges.map((e) => {
+        const status = edgeRunStatuses[e.id];
+        if (!status) return e;
+        return { ...e, data: { ...(e.data ?? {}), runStatus: status } };
+      });
+    }, [edges, edgeRunStatuses]);
+
     return (
       <div
         ref={wrapperRef}
@@ -313,8 +379,8 @@ export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasPro
         onDragOver={onDragOver}
       >
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={renderedNodes}
+          edges={renderedEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -324,6 +390,8 @@ export const WorkflowCanvas = forwardRef<WorkflowCanvasHandle, WorkflowCanvasPro
             reactFlowInstanceRef.current = instance;
           }}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          defaultEdgeOptions={defaultEdgeOptions}
           fitView
           minZoom={0.2}
           maxZoom={2}

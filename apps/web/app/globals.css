@@ -211,3 +211,19 @@
     letter-spacing: 0.12em;
   }
 }
+
+/* Automation canvas — workflow edge stroke variants. Composed onto React
+ * Flow <path> elements by WorkflowEdge.tsx; keyframes live globally so the
+ * SVG-in-foreign-DOM context still sees them. */
+.wellos-edge-dashed {
+  stroke-dasharray: 6 4;
+}
+.wellos-edge-flow {
+  stroke-dasharray: 6 4;
+  animation: wellos-edge-flow 0.8s linear infinite;
+}
+@keyframes wellos-edge-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}

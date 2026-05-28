@@ -2,7 +2,10 @@
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 
+import { cn } from '@/lib/cn';
+
 import { findPaletteItem } from '../paletteCatalog';
+import { nodeStatusClass, readRunStatus } from '../runStatus';
 
 // Action node visual. Per-handler config gets edited in the settings drawer
 // (PR 8). PR 7 just shows the action type label + an unconfigured hint when
@@ -21,9 +24,16 @@ export function ActionNodeRenderer({ data }: NodeProps) {
   const config = (data as { config?: unknown })?.config;
   const isConfigured =
     config && typeof config === 'object' && Object.keys(config as object).length > 0;
+  const status = readRunStatus(data);
 
   return (
-    <div className="rounded-md border border-surface-3 bg-white px-s4 py-s3 shadow-sm min-w-[200px]">
+    <div
+      className={cn(
+        'rounded-md border border-surface-3 bg-white px-s4 py-s3 shadow-sm min-w-[200px]',
+        'transition-shadow duration-fast',
+        nodeStatusClass(status),
+      )}
+    >
       <Handle type="target" position={Position.Top} />
       <div className="t-eyebrow text-accent">ACTION</div>
       <div className="mt-s1 t-body-md text-ink">{actionLabel(actionType)}</div>
