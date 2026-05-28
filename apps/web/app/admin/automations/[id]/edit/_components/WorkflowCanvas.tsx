@@ -5,21 +5,38 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  type Connection,
   type Edge,
   type EdgeChange,
+  type IsValidConnection,
   type Node,
   type NodeChange,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 
+import { validateConnection } from './connectionValidation';
+import {
+  PALETTE_DRAG_MIME,
+  findPaletteItem,
+  type PaletteNodeType,
+} from './paletteCatalog';
+import { ActionNodeRenderer } from './nodes/ActionNodeRenderer';
+import { AiNodeRenderer } from './nodes/AiNodeRenderer';
+import { BranchNodeRenderer } from './nodes/BranchNodeRenderer';
+import { ConditionNodeRenderer } from './nodes/ConditionNodeRenderer';
+import { DelayNodeRenderer } from './nodes/DelayNodeRenderer';
+import { FilterNodeRenderer } from './nodes/FilterNodeRenderer';
 import { TriggerNodeRenderer } from './nodes/TriggerNodeRenderer';
+import { WebhookNodeRenderer } from './nodes/WebhookNodeRenderer';
 
-// React Flow canvas — PR 6 ships an empty canvas with pan/zoom/minimap.
-// No palette, no settings drawer, no test mode. Adding/configuring nodes
-// comes in PRs 7-10.
+// React Flow canvas — PR 7 adds the palette drop target + connection
+// validation. PR 6 left this as an empty canvas with pan/zoom/minimap.
+// PR 8 wires the right-sidebar settings drawer for per-node config.
 
 export type FlowNode = {
   id: string;
@@ -39,21 +56,38 @@ export type FlowEdge = {
 export interface CanvasGraph {
   nodes: FlowNode[];
   edges: FlowEdge[];
-  /** Starting point — engine begins walking from this id. PR 6 keeps it stable. */
+  /** Starting point — engine begins walking from this id. */
   triggerNodeId: string;
 }
 
-// Custom node type registry. PR 7+ adds the rest.
 const nodeTypes = {
   trigger: TriggerNodeRenderer,
+  action: ActionNodeRenderer,
+  condition: ConditionNodeRenderer,
+  branch: BranchNodeRenderer,
+  filter: FilterNodeRenderer,
+  delay: DelayNodeRenderer,
+  webhook: WebhookNodeRenderer,
+  ai: AiNodeRenderer,
 };
 
 interface WorkflowCanvasProps {
   initialGraph: CanvasGraph;
-  /** When true, drag/select/delete are disabled (used for archived workflows). */
+  /** When true, drag/select/delete/connect are disabled. */
   readOnly?: boolean;
   /** Fires on every node/edge change with the full updated graph. */
   onChange: (graph: CanvasGraph) => void;
+}
+
+// Browser-side id generator. crypto.randomUUID is available in all evergreen
+// browsers; the workflow editor only runs client-side so we don't need a
+// fallback path.
+function newNodeId(nodeType: PaletteNodeType): string {
+  return `${nodeType}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function newEdgeId(source: string, target: string): string {
+  return `e-${source}-${target}-${crypto.randomUUID().slice(0, 6)}`;
 }
 
 export function WorkflowCanvas({
@@ -81,12 +115,13 @@ export function WorkflowCanvas({
 
   // Refs let the change handlers reach the latest counterpart-array + the
   // latest onChange callback without resubscribing on every state tick.
-  // React Flow batches changes per-frame; recreating handlers on every node
-  // change cascades into reconciliation pressure.
   const triggerNodeIdRef = useRef(initialGraph.triggerNodeId);
   const onChangeRef = useRef(onChange);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
@@ -138,19 +173,107 @@ export function WorkflowCanvas({
     [emitChange],
   );
 
+  // Pre-flight validation while the user drags a connection. React Flow
+  // calls this for every potential target on mouseover; returning false
+  // prevents the visual completion of a forbidden link.
+  const isValidConnection = useCallback<IsValidConnection>(
+    (connection) => {
+      if (!connection.source || !connection.target) return false;
+      const res = validateConnection({
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        existingEdges: edgesRef.current.map((e) => ({
+          source: e.source,
+          sourceHandle: e.sourceHandle,
+        })),
+        triggerNodeId: triggerNodeIdRef.current,
+      });
+      return res.ok;
+    },
+    [],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+      const res = validateConnection({
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle,
+        existingEdges: edgesRef.current.map((e) => ({
+          source: e.source,
+          sourceHandle: e.sourceHandle,
+        })),
+        triggerNodeId: triggerNodeIdRef.current,
+      });
+      if (!res.ok) return;
+      const id = newEdgeId(connection.source, connection.target);
+      setEdges((current) => {
+        const next = addEdge({ ...connection, id }, current);
+        emitChange(nodesRef.current, next);
+        return next;
+      });
+    },
+    [emitChange],
+  );
+
+  const onDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (readOnly) return;
+    if (!e.dataTransfer.types.includes(PALETTE_DRAG_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, [readOnly]);
+
+  const onDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      if (readOnly) return;
+      const itemId = e.dataTransfer.getData(PALETTE_DRAG_MIME);
+      if (!itemId) return;
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) return;
+      const item = findPaletteItem(itemId);
+      if (!item || item.disabled) return;
+      e.preventDefault();
+
+      const position = instance.screenToFlowPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
+      const id = newNodeId(item.nodeType);
+      const newNode: Node = {
+        id,
+        type: item.nodeType,
+        position,
+        data: { ...item.defaultData },
+      };
+      setNodes((current) => {
+        const next = [...current, newNode];
+        emitChange(next, edgesRef.current);
+        return next;
+      });
+    },
+    [emitChange, readOnly],
+  );
+
   return (
-    <div className="h-full w-full">
+    <div ref={wrapperRef} className="h-full w-full" onDrop={onDrop} onDragOver={onDragOver}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        isValidConnection={isValidConnection}
+        onInit={(instance) => {
+          reactFlowInstanceRef.current = instance;
+        }}
         nodeTypes={nodeTypes}
         fitView
         minZoom={0.2}
         maxZoom={2}
         nodesDraggable={!readOnly}
-        nodesConnectable={false}
+        nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         proOptions={{ hideAttribution: true }}
       >
