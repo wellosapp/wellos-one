@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import appointmentsRoutes from './appointments.js';
+import automationRunsRoutes from './automation-runs.js';
 import availabilityRoutes from './availability.js';
 import bookingSettingsRoutes from './booking-settings.js';
 import classBookingsRoutes from './class-bookings.js';
@@ -57,6 +58,7 @@ export default async function adminRoutes(app: FastifyInstance): Promise<void> {
   await app.register(staffCalendarSyncRoutes, { prefix: '/admin' });
   await app.register(bookingSettingsRoutes, { prefix: '/admin' });
   await app.register(appointmentsRoutes, { prefix: '/admin' });
+  await app.register(automationRunsRoutes, { prefix: '/admin' });
   await app.register(availabilityRoutes, { prefix: '/admin' });
   await app.register(linkedRecordsRoutes, { prefix: '/admin' });
   await app.register(locationGeofenceRoutes, { prefix: '/admin' });
