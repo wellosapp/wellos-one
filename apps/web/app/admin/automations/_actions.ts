@@ -46,12 +46,13 @@ export type SaveAutomationResult =
 
 export async function saveAutomationWorkflowAction(
   workflowId: string,
-  body: { workflowJson?: unknown; name?: string },
+  body: { workflowJson?: unknown; name?: string; triggerType?: string },
 ): Promise<SaveAutomationResult> {
   try {
     await updateAutomationWorkflow(workflowId, {
       workflowJson: body.workflowJson,
       name: body.name,
+      triggerType: body.triggerType,
     });
     revalidatePath('/admin/automations');
     revalidatePath(`/admin/automations/${workflowId}/edit`);
