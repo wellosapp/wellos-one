@@ -2,15 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ComponentType } from 'react';
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import type { Route } from 'next';
 
 import {
   ActivityIcon,
   CalendarIcon,
+  ChevronRightIcon,
   ClipboardCheckIcon,
   ClipboardIcon,
-  FileTextIcon,
   GridIcon,
   HourglassIcon,
   ImageIcon,
@@ -31,73 +31,107 @@ import {
 // aria-*, etc.) flows through the underlying <svg>.
 type IconComponent = ComponentType<{ size?: number; className?: string }>;
 
-interface RailItem {
+// ---- Data shape ----
+//
+// Entries inside a group can be either a leaf (a routed link) or a parent
+// (a collapsible header with leaf children one level deep). One level of
+// nesting is intentional — deeper nests blow past the rail's design and
+// invite "where the hell is X" navigation fatigue.
+
+interface RailLeaf {
+  type: 'leaf';
   label: string;
   href: Route;
   icon: IconComponent;
 }
 
+interface RailParent {
+  type: 'parent';
+  /** Stable id used as the localStorage key suffix. */
+  id: string;
+  label: string;
+  icon: IconComponent;
+  children: RailLeaf[];
+}
+
+type RailEntry = RailLeaf | RailParent;
+
 interface RailGroup {
   label: string;
-  items: RailItem[];
+  entries: RailEntry[];
+}
+
+function leaf(label: string, href: Route, icon: IconComponent): RailLeaf {
+  return { type: 'leaf', label, href, icon };
+}
+function parent(
+  id: string,
+  label: string,
+  icon: IconComponent,
+  children: RailLeaf[],
+): RailParent {
+  return { type: 'parent', id, label, icon, children };
 }
 
 // Order mirrors the design's RAIL_GROUPS, mapped to existing routes on
-// main. Routes that exist on feature branches but not yet on main
-// (appointment-series, disputed-matches) re-appear when those branches
-// merge — add an entry then. The super-admin-only /admin/impersonate
+// main. Routes that exist on feature branches but not yet on main re-
+// appear when those branches merge. The super-admin-only /admin/impersonate
 // route stays accessible via direct URL + the ImpersonationBanner.
 const RAIL_GROUPS: RailGroup[] = [
   {
     label: 'Workspace',
-    items: [
-      { label: 'Overview', href: '/admin' as Route, icon: LayoutIcon },
-      { label: 'Calendar', href: '/admin/calendar' as Route, icon: CalendarIcon },
+    entries: [
+      leaf('Overview', '/admin' as Route, LayoutIcon),
+      leaf('Calendar', '/admin/calendar' as Route, CalendarIcon),
     ],
   },
   {
     label: 'People',
-    items: [
-      { label: 'Clients', href: '/admin/clients' as Route, icon: UsersIcon },
-      { label: 'Staff', href: '/admin/staff' as Route, icon: StaffIcon },
-      { label: 'Waitlist', href: '/admin/waitlist' as Route, icon: HourglassIcon },
+    entries: [
+      leaf('Clients', '/admin/clients' as Route, UsersIcon),
+      leaf('Staff', '/admin/staff' as Route, StaffIcon),
+      leaf('Waitlist', '/admin/waitlist' as Route, HourglassIcon),
     ],
   },
   {
     label: 'Catalog',
-    items: [
-      { label: 'Services', href: '/admin/services' as Route, icon: SparkIcon },
-      { label: 'Classes', href: '/admin/classes' as Route, icon: SparkIcon },
-      { label: 'Categories', href: '/admin/service-categories' as Route, icon: GridIcon },
-      { label: 'Tags', href: '/admin/client-tags' as Route, icon: TagIcon },
-      { label: 'Automations', href: '/admin/automations' as Route, icon: ActivityIcon },
-      { label: 'Intake forms', href: '/admin/intake-forms' as Route, icon: ClipboardIcon },
-      {
-        label: 'Staff onboarding forms',
-        href: '/admin/staff-onboarding-forms' as Route,
-        icon: FileTextIcon,
-      },
-      { label: 'Media', href: '/admin/media' as Route, icon: ImageIcon },
+    entries: [
+      parent('booking', 'Booking', GridIcon, [
+        leaf('Services', '/admin/services' as Route, SparkIcon),
+        leaf('Classes', '/admin/classes' as Route, SparkIcon),
+        leaf('Categories', '/admin/service-categories' as Route, GridIcon),
+        leaf('Tags', '/admin/client-tags' as Route, TagIcon),
+      ]),
+      leaf('Automations', '/admin/automations' as Route, ActivityIcon),
+      parent('forms', 'Forms', ClipboardIcon, [
+        leaf('Intake forms', '/admin/intake-forms' as Route, ClipboardIcon),
+        leaf(
+          'Staff onboarding',
+          '/admin/staff-onboarding-forms' as Route,
+          ClipboardIcon,
+        ),
+      ]),
+      leaf('Media', '/admin/media' as Route, ImageIcon),
     ],
   },
   {
     label: 'Operations',
-    items: [
-      {
-        label: 'Review queue',
-        href: '/admin/forms/review-queue' as Route,
-        icon: ClipboardCheckIcon,
-      },
-      {
-        label: 'Automation runs',
-        href: '/admin/automations/runs' as Route,
-        icon: ActivityIcon,
-      },
-      {
-        label: 'Check-in audit',
-        href: '/admin/class-check-in-attempts' as Route,
-        icon: ShieldIcon,
-      },
+    entries: [
+      leaf(
+        'Review queue',
+        '/admin/forms/review-queue' as Route,
+        ClipboardCheckIcon,
+      ),
+      leaf(
+        'Automation runs',
+        '/admin/automations/runs' as Route,
+        ActivityIcon,
+      ),
+      leaf(
+        'Check-in audit',
+        '/admin/class-check-in-attempts' as Route,
+        ShieldIcon,
+      ),
     ],
   },
 ];
@@ -119,6 +153,37 @@ function isActive(itemHref: string, pathname: string): boolean {
   return pathname === itemHref || pathname.startsWith(`${itemHref}/`);
 }
 
+function parentHasActiveChild(p: RailParent, pathname: string): boolean {
+  return p.children.some((c) => isActive(c.href, pathname));
+}
+
+// localStorage key prefix for per-parent open state. Each parent's id is
+// appended (e.g. `wellos:admin-rail-group:booking`). Default state for any
+// parent is OPEN — users see all options on first visit.
+const PARENT_STORAGE_PREFIX = 'wellos:admin-rail-group:';
+
+function readStoredParentOpen(id: string): boolean | null {
+  try {
+    const raw = window.localStorage.getItem(`${PARENT_STORAGE_PREFIX}${id}`);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredParentOpen(id: string, open: boolean) {
+  try {
+    window.localStorage.setItem(
+      `${PARENT_STORAGE_PREFIX}${id}`,
+      String(open),
+    );
+  } catch {
+    // Storage unavailable (privacy mode) — feature degrades silently.
+  }
+}
+
 interface AdminRailProps {
   expanded: boolean;
   onToggle: () => void;
@@ -130,6 +195,32 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
   const pathname = usePathname();
   const settingsActive = isActive('/admin/settings', pathname);
   const hasLogo = !!logo?.displayUrl;
+
+  // Per-parent open state. SSR + first client paint use the default (open);
+  // a follow-up effect rehydrates from localStorage. Avoids a hydration
+  // mismatch by not reading storage during render.
+  const allParentIds = useAllParentIds();
+  const [openByParentId, setOpenByParentId] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(allParentIds.map((id) => [id, true])),
+  );
+  useEffect(() => {
+    setOpenByParentId((prev) => {
+      const next: Record<string, boolean> = { ...prev };
+      for (const id of allParentIds) {
+        const stored = readStoredParentOpen(id);
+        if (stored !== null) next[id] = stored;
+      }
+      return next;
+    });
+  }, [allParentIds]);
+
+  const toggleParent = useCallback((id: string) => {
+    setOpenByParentId((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      writeStoredParentOpen(id, next[id] ?? true);
+      return next;
+    });
+  }, []);
 
   return (
     <aside
@@ -172,29 +263,42 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
       </Link>
 
       {/*
-        Scrollable section. The rail's catalog grew past short-laptop viewport
-        heights — previously items shrank vertically because the flex column
-        had no overflow handling. Now the section list scrolls in place while
-        the logo (above) and settings + collapse footer (below) stay pinned.
-        - min-h-0 lets the flex item shrink below content size (otherwise
-          overflow-y-auto on a flex child never triggers).
-        - shrink-0 on items + section labels prevents the visual crush at
-          intermediate heights where overflow is close but not yet active.
+        Middle scroll region. Even with collapsible parents, the absolute
+        worst case (every parent expanded on a very short viewport) can
+        still overflow — keep overflow-y-auto as a safety net. min-h-0 is
+        the magic flex sauce that lets the scroll engage at all.
       */}
       <nav className="flex min-h-0 flex-1 flex-col gap-s1 overflow-y-auto">
         {RAIL_GROUPS.map((group) => (
           <div key={group.label} className="flex shrink-0 flex-col gap-s1">
             <RailSectionLabel expanded={expanded}>{group.label}</RailSectionLabel>
-            {group.items.map((item) => {
-              const active = isActive(item.href, pathname);
+            {group.entries.map((entry) => {
+              if (entry.type === 'leaf') {
+                return (
+                  <RailLink
+                    key={entry.href}
+                    href={entry.href}
+                    label={entry.label}
+                    Icon={entry.icon}
+                    active={isActive(entry.href, pathname)}
+                    expanded={expanded}
+                  />
+                );
+              }
+              const childActive = parentHasActiveChild(entry, pathname);
+              const userOpen = openByParentId[entry.id] ?? true;
+              // Force-open while a child is the active route — otherwise
+              // the user gets a "where am I" gap when navigating to a
+              // nested page after collapsing its parent.
+              const open = childActive ? true : userOpen;
               return (
-                <RailLink
-                  key={item.href}
-                  href={item.href}
-                  label={item.label}
-                  Icon={item.icon}
-                  active={active}
+                <RailParentBlock
+                  key={entry.id}
+                  parent={entry}
+                  open={open}
+                  onToggle={() => toggleParent(entry.id)}
                   expanded={expanded}
+                  pathname={pathname}
                 />
               );
             })}
@@ -235,6 +339,19 @@ export function AdminRail({ expanded, onToggle, logo }: AdminRailProps) {
   );
 }
 
+// Stable-identity list of parent ids. Computed from the static catalog so
+// the effect dependency doesn't refire across renders.
+function useAllParentIds(): readonly string[] {
+  // RAIL_GROUPS is module-scope and never mutates — safe to compute once.
+  // Wrap in a hook so React's exhaustive-deps lint stays happy without
+  // sprinkling eslint-disable comments at the call site.
+  return ALL_PARENT_IDS;
+}
+
+const ALL_PARENT_IDS: readonly string[] = RAIL_GROUPS.flatMap((g) =>
+  g.entries.filter((e): e is RailParent => e.type === 'parent').map((p) => p.id),
+);
+
 function RailSectionLabel({
   children,
   expanded,
@@ -242,8 +359,8 @@ function RailSectionLabel({
   children: React.ReactNode;
   expanded: boolean;
 }) {
-  // Collapsed: render a thin separator dash centered in the gap (matches the
-  // design's `.rail-section::after` mini-rule). Expanded: render the eyebrow.
+  // Collapsed: render a thin separator dash centered in the gap. Expanded:
+  // render the eyebrow.
   if (!expanded) {
     return (
       <div className="flex h-[14px] items-center justify-center pb-s1 pt-s2">
@@ -264,15 +381,21 @@ interface RailLinkProps {
   Icon: IconComponent;
   active: boolean;
   expanded: boolean;
+  /** Nested children render with a slight indent in expanded mode. */
+  nested?: boolean;
 }
 
-function RailLink({ href, label, Icon, active, expanded }: RailLinkProps) {
+function RailLink({ href, label, Icon, active, expanded, nested }: RailLinkProps) {
   return (
     <Link
       href={href}
       title={label}
       aria-current={active ? 'page' : undefined}
-      className={`group relative flex items-center gap-s3 overflow-hidden whitespace-nowrap rounded-sm px-s3 py-[10px] text-[13.5px] font-medium no-underline transition-colors duration-fast focus-visible:shadow-focus focus-visible:outline-none ${
+      className={`group relative flex items-center gap-s3 overflow-hidden whitespace-nowrap rounded-sm py-[10px] text-[13.5px] font-medium no-underline transition-colors duration-fast focus-visible:shadow-focus focus-visible:outline-none ${
+        // Nested leaves indent slightly when the rail is expanded; in the
+        // collapsed icon-only mode we re-align to the full-width pad.
+        nested && expanded ? 'pl-s6 pr-s3' : 'px-s3'
+      } ${
         active
           ? 'bg-sage-tint text-sage-deep'
           : 'text-ink-3 hover:bg-sage-tint-2 hover:text-ink'
@@ -286,7 +409,7 @@ function RailLink({ href, label, Icon, active, expanded }: RailLinkProps) {
       ) : null}
       {/* shrink-0 + max-w-none override Tailwind preflight's `max-width: 100%`
           on svg — without them, flex shrinking + a narrow 28px collapsed-rail
-          inner width collapsed the icon to roughly nothing and it disappeared. */}
+          inner width collapsed the icon to roughly nothing. */}
       <Icon size={20} className="shrink-0 max-w-none" />
       <span
         className={`transition-[opacity,transform] duration-base ${
@@ -295,7 +418,7 @@ function RailLink({ href, label, Icon, active, expanded }: RailLinkProps) {
       >
         {label}
       </span>
-      {/* Tooltip — shows only when the rail is collapsed AND the link is hovered. */}
+      {/* Tooltip — collapsed-rail only, on hover/focus. */}
       {!expanded ? (
         <span
           role="tooltip"
@@ -305,5 +428,80 @@ function RailLink({ href, label, Icon, active, expanded }: RailLinkProps) {
         </span>
       ) : null}
     </Link>
+  );
+}
+
+interface RailParentBlockProps {
+  parent: RailParent;
+  open: boolean;
+  onToggle: () => void;
+  expanded: boolean;
+  pathname: string;
+}
+
+function RailParentBlock({
+  parent,
+  open,
+  onToggle,
+  expanded,
+  pathname,
+}: RailParentBlockProps) {
+  const Icon = parent.icon;
+
+  // Collapsed rail (68px icons-only): the parent itself isn't a link, so
+  // we render each leaf child as its own row instead of the parent. The
+  // hierarchy is purely a feature of expanded mode.
+  if (!expanded) {
+    return (
+      <>
+        {parent.children.map((child) => (
+          <RailLink
+            key={child.href}
+            href={child.href}
+            label={child.label}
+            Icon={child.icon}
+            active={isActive(child.href, pathname)}
+            expanded={expanded}
+          />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={`rail-parent-${parent.id}`}
+        title={parent.label}
+        className="group relative flex items-center gap-s3 overflow-hidden whitespace-nowrap rounded-sm border-0 bg-transparent px-s3 py-[10px] text-left text-[13.5px] font-medium text-ink-3 transition-colors duration-fast hover:bg-sage-tint-2 hover:text-ink focus-visible:shadow-focus focus-visible:outline-none"
+      >
+        <Icon size={20} className="shrink-0 max-w-none" />
+        <span className="flex-1">{parent.label}</span>
+        <ChevronRightIcon
+          size={14}
+          className={`shrink-0 max-w-none text-ink-4 transition-transform duration-fast ${
+            open ? 'rotate-90' : ''
+          }`}
+        />
+      </button>
+      {open ? (
+        <div id={`rail-parent-${parent.id}`} className="flex flex-col gap-s1">
+          {parent.children.map((child) => (
+            <RailLink
+              key={child.href}
+              href={child.href}
+              label={child.label}
+              Icon={child.icon}
+              active={isActive(child.href, pathname)}
+              expanded={expanded}
+              nested
+            />
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }
