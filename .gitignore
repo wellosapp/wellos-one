@@ -38,6 +38,12 @@ desktop.ini
 *.swp
 *.swo
 
+# ==== Claude Code (local config + runtime state) ====
+.claude/
+
+# ==== Local personal notes (not repo content) ====
+docs/Startup Claude/
+
 # ==== Coverage / test output ====
 coverage/
 .nyc_output/
